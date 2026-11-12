@@ -16,6 +16,7 @@ find_package(Boost REQUIRED)
 set(TEST_SOURCES
     test_daemon.cpp
     test_daemon_driver.cpp
+    test_daemon_fd.cpp
 )
 
 add_executable(bpftime_daemon_tests ${TEST_SOURCES})
@@ -27,6 +28,13 @@ target_link_libraries(bpftime_daemon_tests PRIVATE
     Catch2::Catch2WithMain
     libbpftime_daemon
 )
+target_link_options(bpftime_daemon_tests PRIVATE
+    -Wl,--wrap=bpf_prog_get_fd_by_id
+    -Wl,--wrap=bpf_map_get_fd_by_id
+    -Wl,--wrap=bpf_obj_get_info_by_fd
+    -Wl,--wrap=bpf_map__lookup_elem
+    -Wl,--wrap=close
+)
 target_include_directories(bpftime_daemon_tests
     PRIVATE
     ${BPFTIME_RUNTIME_INCLUDE}
@@ -34,6 +42,7 @@ target_include_directories(bpftime_daemon_tests
     ${Catch2_INCLUDE}
     ${Boost_INCLUDE}
     ../
+    ${CMAKE_CURRENT_BINARY_DIR}/..
 )
 add_test(NAME bpftime_daemon_tests COMMAND bpftime_daemon_tests)
 

@@ -72,4 +72,8 @@ TEST_CASE("Test tail calling from userspace to userspace")
 	}
 
 	bpftime_destroy_global_shm();
+	// Later tests load standalone programs and set their runtime config.
+	// destroy_global_shm ends the object's lifetime; leave a valid empty
+	// object instead of pointers into the unmapped tailcall segment.
+	bpftime_initialize_global_shm(bpftime::shm_open_type::SHM_NO_CREATE);
 }

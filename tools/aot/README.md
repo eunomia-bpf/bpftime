@@ -223,11 +223,13 @@ Output files will have `.ll` extension containing human-readable LLVM IR.
 
 ```console
 $ bpftime-aot run do_uprobe_trace.o
-[info] [llvm_jit_context.cpp:81] Initializing llvm
-[info] [llvm_jit_context.cpp:204] LLVM-JIT: Loading aot object
-target_func called.
-[info] [main.cpp:190] Output: 0
+Output: 0
 ```
+
+`run` prints the executed program's return value to stdout as `Output: <value>`,
+so the result can be consumed without parsing logs. Diagnostics go to the
+configured log sink (`BPFTIME_LOG_OUTPUT`, default `~/.bpftime/runtime.log`), or
+to stderr when that variable is set to `console`.
 
 ## Performance Benefits
 

@@ -87,6 +87,36 @@ TEST_CASE("bpftime_hash_map basic operations", "[bpftime_hash_map]")
 		REQUIRE(map.elem_lookup(&key2) == nullptr);
 	}
 
+	SECTION("Delete preserves a colliding probe chain")
+	{
+		// With the 11-bucket table used by this fixture, these integer keys
+		// hash to the same initial bucket on little-endian platforms.
+		int key1 = 1;
+		int key2 = 12;
+		int key3 = 23;
+		int64_t value1 = 101;
+		int64_t value2 = 112;
+		int64_t value3 = 123;
+
+		REQUIRE(map.elem_update(&key1, &value1) == true);
+		REQUIRE(map.elem_update(&key2, &value2) == true);
+		REQUIRE(map.elem_delete(&key1) == true);
+
+		auto *second = static_cast<int64_t *>(map.elem_lookup(&key2));
+		REQUIRE(second != nullptr);
+		REQUIRE(*second == value2);
+
+		// A later insertion may reuse the tombstone without making the
+		// existing colliding key unreachable.
+		REQUIRE(map.elem_update(&key3, &value3) == true);
+		second = static_cast<int64_t *>(map.elem_lookup(&key2));
+		auto *third = static_cast<int64_t *>(map.elem_lookup(&key3));
+		REQUIRE(second != nullptr);
+		REQUIRE(*second == value2);
+		REQUIRE(third != nullptr);
+		REQUIRE(*third == value3);
+	}
+
 	SECTION("Get element count")
 	{
 		int key1 = 1234;

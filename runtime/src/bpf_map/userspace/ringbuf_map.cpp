@@ -79,8 +79,26 @@ static inline int roundup_len(__u32 len)
 			     : "memory");                                      \
 		___p;                                                          \
 	})
+#elif defined(__riscv)
+#define smp_store_release_ul(p, v)                                             \
+	do {                                                                   \
+		asm volatile("fence rw,w" ::: "memory");                       \
+		WRITE_ONCE_UL(*p, v);                                          \
+	} while (0)
+#define smp_load_acquire_ul(p)                                                 \
+	({                                                                     \
+		unsigned long ___p = READ_ONCE_UL(*p);                         \
+		asm volatile("fence r,rw" ::: "memory");                       \
+		___p;                                                          \
+	})
+#define smp_load_acquire_i(p)                                                  \
+	({                                                                     \
+		int ___p = READ_ONCE_I(*p);                                    \
+		asm volatile("fence r,rw" ::: "memory");                       \
+		___p;                                                          \
+	})
 #else
-#error Only supports x86_64 and aarch64
+#error Unsupported architecture
 #endif
 
 namespace bpftime
@@ -281,12 +299,30 @@ void *ringbuf::reserve(size_t size, int self_fd)
 		errno = ENOSPC;
 		return nullptr;
 	}
-	auto header =
-		(ringbuf_hdr *)((uintptr_t)data.get() + (prod_pos & mask()));
+	auto off = prod_pos & mask();
+	if (off + total_size > max_ent) {
+		// A record must be contiguous: header and payload cannot
+		// wrap around the end of the data area independently.
+		// Skip to the beginning of the next lap and mark the
+		// skipped bytes as one zero-length discard record, so the
+		// consumer walks over the padding with its existing
+		// roundup_len stepping.
+		prod_pos = prod_pos - off + max_ent;
+		if (max_ent - (prod_pos - cons_pos) < total_size) {
+			errno = ENOSPC;
+			return nullptr;
+		}
+		auto pad = (ringbuf_hdr *)(uintptr_t)(data.get() + off);
+		auto pad_len = (uint32_t)(max_ent - off - BPF_RINGBUF_HDR_SZ);
+		pad->len = pad_len | BPF_RINGBUF_DISCARD_BIT;
+		pad->fd = self_fd;
+		off = 0;
+	}
+	auto header = (ringbuf_hdr *)(uintptr_t)(data.get() + off);
 	header->len = size | BPF_RINGBUF_BUSY_BIT;
 	header->fd = self_fd;
 	smp_store_release_ul(producer_pos.get(), prod_pos + total_size);
-	auto ptr = data.get() + ((prod_pos + BPF_RINGBUF_HDR_SZ) & mask());
+	auto ptr = data.get() + off + BPF_RINGBUF_HDR_SZ;
 	SPDLOG_TRACE("ringbuf: reserved {} bytes at {}, fd {}", size,
 		     (void *)ptr, self_fd);
 	return ptr;

@@ -11,6 +11,7 @@
 #include <optional>
 #include <vector>
 #include <string>
+#include <map>
 namespace bpftime
 {
 
@@ -36,6 +37,9 @@ class bpftime_prog {
 	// if program_name is NULL, will load the first program in the object
 	int bpftime_prog_load(bool jit);
 	int bpftime_prog_unload();
+	// Validate all external calls and compile before installing a signal probe.
+	// Returns -ENOTSUP for unaudited helpers or an unavailable eager JIT.
+	int prepare_for_signal_execution();
 
 	// exec in user space
 	int bpftime_prog_exec(void *memory, size_t memory_size,
@@ -78,13 +82,17 @@ class bpftime_prog {
 	// vm at the first element
 	struct ebpf_vm *vm;
 
-	bool jitted;
+	bool jitted = false;
+	bool program_loaded = false;
+	bool signal_ready = false;
+	bool loaded_from_aot = false;
+	std::map<unsigned, bool> signal_safe_helpers;
 
 	// used in jit
-	ebpf_jit_fn fn;
+	ebpf_jit_fn fn = nullptr;
 	std::vector<struct ebpf_inst> insns;
 
-	char *errmsg;
+	char *errmsg = nullptr;
 
 	// ufunc ctx
 	struct bpftime_ufunc_ctx *ufunc_ctx;

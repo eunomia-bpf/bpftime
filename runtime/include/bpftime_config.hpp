@@ -16,7 +16,6 @@
 #ifndef DEFAULT_VM_NAME
 #define DEFAULT_VM_NAME "llvm"
 #endif
-
 #define LOG_PATH_MAX_LEN 1024
 #define VM_NAME_MAX_LEN 128
 

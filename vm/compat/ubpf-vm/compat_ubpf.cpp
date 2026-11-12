@@ -30,6 +30,11 @@ bpftime_ubpf_vm::bpftime_ubpf_vm()
 	}
 }
 
+bpftime_ubpf_vm::~bpftime_ubpf_vm()
+{
+	ubpf_destroy(ubpf_vm);
+}
+
 std::string bpftime_ubpf_vm::get_error_message()
 {
 	return error_string;

@@ -61,4 +61,17 @@ set(test_sources
 if(BPFTIME_ENABLE_UNIT_TESTING)
   enable_testing()
   message(STATUS "Build unit tests for the project. Tests should always be found in the test folder\n")
+  if(BPFTIME_UBPF_JIT AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # Retain the uBPF factory registration from the static library.
+    add_executable(bpftime_ubpf_lifetime_test
+      test/ubpf_lifetime.cpp
+      $<TARGET_OBJECTS:bpftime_ubpf_vm_obj>)
+    target_link_libraries(bpftime_ubpf_lifetime_test PRIVATE bpftime_vm)
+    target_include_directories(bpftime_ubpf_lifetime_test PRIVATE
+      compat/ubpf-vm)
+    target_compile_features(bpftime_ubpf_lifetime_test PRIVATE cxx_std_17)
+    target_link_options(bpftime_ubpf_lifetime_test PRIVATE
+      -Wl,--wrap=ubpf_create -Wl,--wrap=ubpf_destroy)
+    add_test(NAME bpftime_ubpf_lifetime COMMAND bpftime_ubpf_lifetime_test)
+  endif()
 endif()

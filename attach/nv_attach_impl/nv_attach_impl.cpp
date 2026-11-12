@@ -21,6 +21,7 @@
 #include <boost/process/env.hpp>
 #include <boost/process/io.hpp>
 #include <boost/process/pipe.hpp>
+#include <boost/core/demangle.hpp>
 #include <boost/process/start_dir.hpp>
 #include <chrono>
 #include <cstdlib>
@@ -228,6 +229,9 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 		if (late_bootstrap_done.load(std::memory_order_acquire)) {
 			SPDLOG_INFO(
 				"nv_attach_impl: new hook added after bootstrap; rerunning late bootstrap");
+			// Drop the previous bootstrap's module set so the rerun doesn't
+			// leave two sets with split device-global addresses.
+			clear_patched_state_for_next_session();
 			reset_late_bootstrap_state_for_next_attach();
 		}
 		this->map_basic_info = data.map_basic_info;
@@ -1379,25 +1383,69 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 
 	if (!resolved_var) {
 		// Late attach fallback: resolve host symbol name and mirror to
-		// any patched module that exports the same global.
+		// any patched module that exports the same global. CUDA host
+		// stubs for __constant__ / __device__ globals are Itanium
+		// name-mangled (e.g. _ZL3d_N), while the device module exports
+		// the plain symbol (e.g. d_N); try both.
 		auto name = resolve_host_function_symbol((void *)symbol);
 		if (!name)
 			return;
+		std::vector<std::string> candidates{ *name };
 		{
-			std::lock_guard<std::mutex> guard(
-				patched_global_cache_mutex);
-			auto it = patched_global_by_context.find(
-				{ context, *name });
-			if (it != patched_global_by_context.end()) {
-				resolved_var = variable_info{
-					.symbol_name = *name,
-					.ptr = it->second.first,
-					.size = it->second.second,
-				};
-			}
+			std::string demangled =
+				boost::core::demangle(name->c_str());
+			if (!demangled.empty() && demangled != *name)
+				candidates.push_back(std::move(demangled));
 		}
-		if (!resolved_var) {
-			resolved_var = find_patched_global(*name);
+		for (const auto &cand : candidates) {
+			{
+				std::lock_guard<std::mutex> guard(
+					patched_global_cache_mutex);
+				auto it = patched_global_by_name.find(cand);
+				if (it != patched_global_by_name.end()) {
+					resolved_var = variable_info{
+						.symbol_name = cand,
+						.ptr = it->second.first,
+						.size = it->second.second,
+						.ptx = nullptr,
+					};
+					break;
+				}
+			}
+			for (const auto &rec_uptr : fatbin_records) {
+				auto *rec = rec_uptr.get();
+				if (rec == nullptr)
+					continue;
+				for (const auto &ptx : rec->ptxs) {
+					CUdeviceptr dptr;
+					size_t sz;
+					auto err = cuModuleGetGlobal(
+						&dptr, &sz, ptx->module_ptr,
+						cand.c_str());
+					if (err == CUDA_SUCCESS) {
+						{
+							std::lock_guard<
+								std::mutex>
+								guard(patched_global_cache_mutex);
+							patched_global_by_name[cand] =
+								std::make_pair(
+									dptr,
+									sz);
+						}
+						resolved_var = variable_info{
+							.symbol_name = cand,
+							.ptr = dptr,
+							.size = sz,
+							.ptx = nullptr,
+						};
+						break;
+					}
+				}
+				if (resolved_var)
+					break;
+			}
+			if (resolved_var)
+				break;
 		}
 	}
 

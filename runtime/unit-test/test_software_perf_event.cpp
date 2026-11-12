@@ -1,6 +1,7 @@
 #include "catch2/catch_test_macros.hpp"
 
 #include "handler/perf_event_handler.hpp"
+#include "bpftime_shm.hpp"
 #include "common_def.hpp"
 #include <atomic>
 #include <boost/interprocess/managed_shared_memory.hpp>
@@ -11,6 +12,117 @@
 #include <thread>
 #include <unistd.h>
 #include <vector>
+
+#if __linux__
+#include <linux/bpf.h>
+#include <sched.h>
+
+extern "C" uint64_t bpf_perf_event_output(uint64_t, uint64_t, uint64_t,
+					  uint64_t, uint64_t);
+
+TEST_CASE("Perf output preserves the calling thread's CPU affinity",
+	  "[perf_event][affinity]")
+{
+	cpu_set_t before;
+	REQUIRE(sched_getaffinity(0, sizeof(before), &before) == 0);
+	if (CPU_COUNT(&before) < 2)
+		SKIP("Affinity restoration requires at least two allowed CPUs");
+
+	const char *old_name = getenv("BPFTIME_GLOBAL_SHM_NAME");
+	struct cleanup {
+		cpu_set_t affinity;
+		bool had_name;
+		std::string old_name;
+		int map_fd = -1;
+		int perf_fd = -1;
+		~cleanup()
+		{
+			sched_setaffinity(0, sizeof(affinity), &affinity);
+			for (int fd : { map_fd, perf_fd }) {
+				if (fd >= 0) {
+					bpftime_close(fd);
+					close(fd);
+				}
+			}
+			bpftime_destroy_global_shm();
+			bpftime_initialize_global_shm(
+				bpftime::shm_open_type::SHM_NO_CREATE);
+			if (had_name)
+				setenv("BPFTIME_GLOBAL_SHM_NAME",
+				       old_name.c_str(), 1);
+			else
+				unsetenv("BPFTIME_GLOBAL_SHM_NAME");
+		}
+	} cleanup{ before, old_name != nullptr, old_name ? old_name : "" };
+	const std::string name =
+		"PerfOutputAffinityTestShm-" + std::to_string(getpid());
+	shm_remove remover{ std::string(name) };
+	REQUIRE(setenv("BPFTIME_GLOBAL_SHM_NAME", name.c_str(), 1) == 0);
+	bpftime_destroy_global_shm();
+	bpftime_initialize_global_shm(
+		bpftime::shm_open_type::SHM_REMOVE_AND_CREATE);
+
+	int &map_fd = cleanup.map_fd;
+	uint64_t expected_ret = static_cast<uint64_t>(-1);
+	int expected_errno = ENOENT;
+	SECTION("Unknown map")
+	{
+	}
+	SECTION("CPU index outside the perf array")
+	{
+		// A one-entry map has no slot for any CPU other than CPU 0.
+		CPU_CLR(0, &before);
+		if (CPU_COUNT(&before) < 2)
+			SKIP("This case requires two allowed nonzero CPUs");
+		REQUIRE(sched_setaffinity(0, sizeof(before), &before) == 0);
+		map_fd = bpftime_maps_create(
+			-1, "short_perf_array",
+			{ .type = BPF_MAP_TYPE_PERF_EVENT_ARRAY,
+			  .key_size = 4,
+			  .value_size = 4,
+			  .max_ents = 1 });
+		REQUIRE(map_fd >= 0);
+		expected_errno = EINVAL;
+	}
+	SECTION("Successful output")
+	{
+		map_fd = bpftime_maps_create(
+			-1, "perf_array",
+			{ .type = BPF_MAP_TYPE_PERF_EVENT_ARRAY,
+			  .key_size = 4,
+			  .value_size = 4,
+			  .max_ents = CPU_SETSIZE });
+		REQUIRE(map_fd >= 0);
+		int &perf_fd = cleanup.perf_fd;
+		perf_fd = bpftime_add_software_perf_event(0, 0, 0);
+		REQUIRE(perf_fd >= 0);
+		REQUIRE(bpftime_get_software_perf_event_raw_buffer(
+				perf_fd, 2 * getpagesize()) != nullptr);
+		for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
+			if (CPU_ISSET(cpu, &before))
+				REQUIRE(bpftime_map_update_elem(map_fd, &cpu,
+								&perf_fd,
+								0) == 0);
+		}
+		expected_ret = 0;
+		expected_errno = 0;
+	}
+
+	uint32_t payload = 42;
+	errno = 0;
+	const auto ret =
+		bpf_perf_event_output(0, map_fd, 0,
+				      reinterpret_cast<uint64_t>(&payload),
+				      sizeof(payload));
+	const int output_errno = errno;
+	cpu_set_t after;
+	REQUIRE(sched_getaffinity(0, sizeof(after), &after) == 0);
+	CHECK(ret == expected_ret);
+	if (expected_ret == static_cast<uint64_t>(-1))
+		CHECK(output_errno == expected_errno);
+	CHECK(CPU_EQUAL(&before, &after));
+}
+#endif
 
 namespace
 {

@@ -19,3 +19,6 @@
 [submodule "vm/llvm-jit"]
 	path = vm/llvm-jit
 	url = https://github.com/eunomia-bpf/llvmbpf
+[submodule ".agents/sources/agent-skills"]
+	path = .agents/sources/agent-skills
+	url = https://github.com/eunomia-bpf/agent-skills.git

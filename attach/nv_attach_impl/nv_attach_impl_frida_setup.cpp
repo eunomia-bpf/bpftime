@@ -15,6 +15,7 @@
 #include <memory>
 #include <optional>
 #include <vector>
+#include <boost/core/demangle.hpp>
 #include "nv_attach_impl.hpp"
 #include <stdexcept>
 using namespace bpftime;
@@ -843,7 +844,91 @@ static cudaError_t mirror_cuda_memcpy_from_symbol(
 		if (auto name =
 			    impl->resolve_host_function_symbol((void *)symbol);
 		    name) {
-			resolved_var = impl->find_patched_global(*name);
+			// Host stubs are name-mangled; also probe the demangled name.
+			std::string demangled =
+				boost::core::demangle(name->c_str());
+			if (demangled.empty() || demangled == *name)
+				demangled.clear();
+			for (const auto &rec_uptr : impl->fatbin_records) {
+				auto *rec = rec_uptr.get();
+				if (rec == nullptr)
+					continue;
+				for (const auto &ptx : rec->ptxs) {
+					CUdeviceptr dptr;
+					size_t sz;
+					auto err = cuModuleGetGlobal(
+						&dptr, &sz, ptx->module_ptr,
+						name->c_str());
+					if (err != CUDA_SUCCESS && !demangled.empty()) {
+						err = cuModuleGetGlobal(
+							&dptr, &sz,
+							ptx->module_ptr,
+							demangled.c_str());
+					}
+					if (err != CUDA_SUCCESS)
+						continue;
+					if (offset >= sz) {
+						SPDLOG_WARN(
+							"mirror_cuda_memcpy_from_symbol: offset {} exceeds size {} for symbol {}",
+							offset, sz,
+							name->c_str());
+						return cudaErrorUnknown;
+					}
+					size_t writable = sz - offset;
+					size_t bytes_to_copy =
+						std::min(count, writable);
+					if (bytes_to_copy == 0)
+						return cudaErrorUnknown;
+					CUdeviceptr src = dptr + offset;
+					CUstream cu_stream =
+						reinterpret_cast<CUstream>(
+							stream);
+					CUresult status = CUDA_SUCCESS;
+
+					auto copy_device_ptr =
+						[](const void *ptr)
+						-> CUdeviceptr {
+						return static_cast<CUdeviceptr>(
+							reinterpret_cast<
+								uintptr_t>(
+								ptr));
+					};
+					switch (kind) {
+					case cudaMemcpyDeviceToHost:
+					case cudaMemcpyDefault:
+						status =
+							async ? cuMemcpyDtoHAsync(
+									dst,
+									src,
+									bytes_to_copy,
+									cu_stream) :
+								cuMemcpyDtoH(
+									dst,
+									src,
+									bytes_to_copy);
+						break;
+					case cudaMemcpyDeviceToDevice:
+						status =
+							async ? cuMemcpyDtoDAsync(
+									copy_device_ptr(
+										dst),
+									src,
+									bytes_to_copy,
+									cu_stream) :
+								cuMemcpyDtoD(
+									copy_device_ptr(
+										dst),
+									src,
+									bytes_to_copy);
+						break;
+					default:
+						return cudaErrorUnknown;
+					}
+					if (status != CUDA_SUCCESS)
+						return cudaErrorUnknown;
+					return cudaSuccess;
+				}
+			}
 		}
 	}
 	if (!resolved_var) {

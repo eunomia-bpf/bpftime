@@ -4,6 +4,7 @@
  * All rights reserved.
  */
 #include "bpftime.hpp"
+#include "base_attach_impl.hpp"
 #include "bpftime_config.hpp"
 #include "bpftime_helper_group.hpp"
 #include "bpftime_internal.h"
@@ -169,6 +170,9 @@ bpftime_prog::~bpftime_prog()
 
 int bpftime_prog::bpftime_prog_load(bool jit)
 {
+	signal_ready = false;
+	loaded_from_aot = false;
+	program_loaded = false;
 	int res = -1;
 
 	SPDLOG_DEBUG("Load insn cnt {}", insns.size());
@@ -202,25 +206,27 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 		// }
 	} else {
 		if (jit) {
-			// run with jit mode
-			jitted = true;
 			ebpf_jit_fn jit_fn = ebpf_compile(vm, &errmsg);
 			if (jit_fn == NULL) {
-				SPDLOG_ERROR("Failed to compile: {}", errmsg);
-				return -1;
+				SPDLOG_WARN("JIT compilation failed ({}), falling back to interpreter", errmsg);
+				jitted = false;
+			} else {
+				jitted = true;
+				fn = jit_fn;
 			}
-			fn = jit_fn;
 		} else {
-			// ignore for vm
 			jitted = false;
 		}
 	}
 
+	program_loaded = true;
 	return 0;
 }
 
 int bpftime_prog::bpftime_prog_unload()
 {
+	signal_ready = false;
+	program_loaded = false;
 	if (jitted) {
 		// ignore for jit
 		return 0;
@@ -232,6 +238,14 @@ int bpftime_prog::bpftime_prog_unload()
 int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 				    uint64_t *return_val) const
 {
+	if (attach::current_signal_callback) {
+		if (!signal_ready || !jitted || !return_val)
+			return -ENOTSUP;
+		// No VM dispatcher, lazy compilation, logging, dynamic TLS or
+		// shared-memory protection helpers may run from SIGTRAP.
+		*return_val = fn(memory, memory_size);
+		return 0;
+	}
 	if (is_cuda()) {
 		throw std::runtime_error("Unable to execute CUDA program");
 	}
@@ -264,11 +278,71 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 int bpftime_prog::bpftime_prog_register_raw_helper(
 	struct bpftime_helper_info info)
 {
-	return ebpf_register(vm, info.index, info.name.c_str(), info.fn);
+	int result = ebpf_register(vm, info.index, info.name.c_str(), info.fn);
+	if (result == 0) {
+		signal_ready = false;
+		signal_safe_helpers[info.index] = helper_is_async_signal_safe(info.index, info.fn);
+	}
+	return result;
+}
+
+int bpftime_prog::prepare_for_signal_execution()
+{
+	// A program can be linked to several live sites. Once prepared, adding
+	// another link must not mutate state read by an existing signal callback.
+	if (signal_ready)
+		return 0;
+	if (!program_loaded)
+		return -EINVAL;
+#if BPFTIME_ENABLE_MPK
+	// The MPK access transition has not been audited for signal callbacks.
+	return -ENOTSUP;
+#endif
+	if (is_cuda() || loaded_from_aot)
+		return -ENOTSUP;
+	const char *backend = ebpf_get_vm_name(vm);
+	if (strcmp(backend, "llvm") != 0 && strcmp(backend, "ubpf") != 0)
+		return -ENOTSUP;
+	for (size_t i = 0; i < insns.size(); ++i) {
+		const auto &inst = insns[i];
+		if (inst.code == 0x18) { // LDDW's second word is data.
+			++i;
+			continue;
+		}
+		if (inst.code == 0x8d) // Indirect CALLX cannot be audited here.
+			return -ENOTSUP;
+		if (inst.code != 0x85)
+			continue;
+		if (inst.src_reg == 1) {
+			// Only LLVM's compatibility layer distinguishes local calls
+			// from helper calls when loading bytecode.
+			if (strcmp(backend, "llvm") == 0)
+				continue;
+			return -ENOTSUP;
+		}
+		auto helper = signal_safe_helpers.find((unsigned)inst.imm);
+		if (inst.src_reg != 0 || helper == signal_safe_helpers.end() ||
+		    !helper->second) {
+			SPDLOG_ERROR("Trap attach rejected for {}: helper {} is not async-signal-safe",
+				     name, inst.imm);
+			return -ENOTSUP;
+		}
+	}
+	if (!jitted) {
+		auto compiled = ebpf_compile(vm, &errmsg);
+		if (!compiled)
+			return -ENOTSUP;
+		fn = compiled;
+		jitted = true;
+	}
+	signal_ready = true;
+	return 0;
 }
 
 int bpftime_prog::load_aot_object(const std::vector<uint8_t> &buf)
 {
+	signal_ready = false;
+	loaded_from_aot = true;
 	ebpf_jit_fn res = ebpf_load_aot_object(vm, buf.data(), buf.size());
 	if (res == nullptr) {
 		SPDLOG_ERROR("Failed to load aot object");

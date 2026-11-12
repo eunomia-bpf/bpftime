@@ -4,6 +4,9 @@
  * All rights reserved.
  */
 #include "bpf_attach_ctx.hpp"
+#if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
+#include "trap_uprobe_attach_impl.hpp"
+#endif
 #include "handler/map_handler.hpp"
 #include "linux/bpf.h"
 #include <algorithm>
@@ -202,31 +205,65 @@ uint64_t bpftime_ktime_get_boot_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 	return spec.tv_sec * (uint64_t)1000000000 + spec.tv_nsec;
 }
 
+// bpf_get_current_pid_tgid caches the identity so it does not pay a syscall on
+// every call. The cache cannot be function-local: a forked child inherits the
+// parent's cached values, and would report the parent's pid and tid. These live
+// at file scope so the fork handler can refresh them in the child.
+static pid_t bpftime_cached_tgid = getpid();
+#if __linux__
+static thread_local int bpftime_cached_tid = -1;
+#elif __APPLE__
+static thread_local uint64_t bpftime_cached_tid = UINT64_MAX;
+#endif
+
+static void bpftime_refresh_cached_identity_in_child()
+{
+	bpftime_cached_tgid = getpid();
+	// tid is meaningless in the child; the next helper call refills it.
+#if __linux__
+	bpftime_cached_tid = -1;
+#elif __APPLE__
+	bpftime_cached_tid = UINT64_MAX;
+#endif
+}
+
+static const int bpftime_identity_atfork_status = pthread_atfork(
+	nullptr, nullptr, bpftime_refresh_cached_identity_in_child);
+
 uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 				      uint64_t)
 {
-	static int tgid = getpid();
+	// If registering the fork handler failed, the cache is still the
+	// parent's after a fork, so read the identity directly. The probe
+	// access cache above falls back the same way.
+	if (bpftime_identity_atfork_status != 0) {
 #if __linux__
-	static thread_local int tid = -1;
-	if (tid == -1) {
-		tid = static_cast<int>(syscall(SYS_gettid));
+		return ((uint64_t)getpid() << 32) |
+		       static_cast<uint32_t>(syscall(SYS_gettid));
+#elif __APPLE__
+		uint64_t tid = 0;
+		pthread_threadid_np(NULL, &tid);
+		return ((uint64_t)getpid() << 32) | tid;
+#endif
+	}
+#if __linux__
+	if (bpftime_cached_tid == -1) {
+		bpftime_cached_tid = static_cast<int>(syscall(SYS_gettid));
 	}
 #elif __APPLE__
-	static thread_local uint64_t tid = UINT64_MAX; // cannot use int because
-						       // pthread_threadid_np
-						       // expects only uint64_t
-	if (tid == UINT64_MAX) {
-		pthread_threadid_np(NULL, &tid);
+	if (bpftime_cached_tid == UINT64_MAX) {
+		pthread_threadid_np(NULL, &bpftime_cached_tid);
 	}
 #endif
-	return ((uint64_t)tgid << 32) | tid;
+	return ((uint64_t)bpftime_cached_tgid << 32) | bpftime_cached_tid;
 }
 
 uint64_t bpf_get_current_uid_gid(uint64_t, uint64_t, uint64_t, uint64_t,
 				 uint64_t)
 {
-	static int gid = getgid();
-	return (((uint64_t)gid) << 32) | gid;
+	// Credentials can change after startup, so query them on every call.
+	return (static_cast<uint64_t>(getgid()) << 32) |
+	       static_cast<uint32_t>(getuid());
 }
 
 uint64_t bpftime_ktime_get_ns(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
@@ -239,23 +276,22 @@ uint64_t bpftime_ktime_get_ns(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
 				  uint64_t, uint64_t)
 {
-	static std::string filename_buf;
-
-	if (unlikely(filename_buf.empty())) {
-		char strbuf[PATH_MAX];
-
-		auto len = readlink("/proc/self/exe", strbuf,
-				    std::size(strbuf) - 1);
-		if (len == -1)
-			return 1;
-		strbuf[len] = 0;
-		auto str = std::string_view(strbuf);
-		auto last_slash = str.find_last_of('/');
-
-		auto filename = std::string(str.substr(last_slash + 1));
-		filename_buf = filename;
+	// This helper can run from an allocation callback (for example an
+	// uprobe on malloc/mmap) while libc already holds an allocator lock.
+	// A lazily initialized std::string takes the heap on its first long
+	// value, which re-enters the allocator and can self-deadlock. Resolve
+	// the executable basename into a stack buffer on every call instead.
+	char strbuf[PATH_MAX];
+	auto len = readlink("/proc/self/exe", strbuf, std::size(strbuf) - 1);
+	if (len == -1)
+		return 1;
+	strbuf[len] = 0;
+	const char *filename = strbuf;
+	for (decltype(len) index = 0; index < len; ++index) {
+		if (strbuf[index] == '/')
+			filename = strbuf + index + 1;
 	}
-	strncpy((char *)(uintptr_t)buf, filename_buf.c_str(), (size_t)size);
+	strncpy((char *)(uintptr_t)buf, filename, (size_t)size);
 	return 0;
 }
 
@@ -459,7 +495,8 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 	cpu_set_t mask, orig;
 	CPU_ZERO(&mask);
 	CPU_SET(current_cpu, &mask);
-	sched_getaffinity(0, sizeof(orig), &orig);
+	if (sched_getaffinity(0, sizeof(orig), &orig) < 0)
+		return (uint64_t)-1;
 	// Bind to the current cpu
 	if (sched_setaffinity(0, sizeof(mask), &mask) < 0) {
 		SPDLOG_ERROR("Failed to set cpu affinity: {}", errno);
@@ -470,12 +507,12 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 	// Check map type. userspace perf event array, or shared perf event
 	// array?
 	bpftime::bpf_map_type map_ty;
+	int ret = -1;
 	if (int err = bpftime_map_get_info(fd, nullptr, nullptr, &map_ty);
 	    err < 0) {
 		SPDLOG_ERROR("Unable to query map type of fd {}", fd);
-		return -1;
+		goto restore_affinity;
 	}
-	int ret;
 	if (map_ty == bpftime::bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY) {
 		const int32_t *val_ptr =
 			(int32_t *)(uintptr_t)bpftime::shm_holder
@@ -485,7 +522,7 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 			SPDLOG_ERROR("Invalid map fd for perf event output: {}",
 				     fd);
 			errno = EINVAL;
-			return (uint64_t)(-1);
+			goto restore_affinity;
 		}
 		int32_t perf_handler_fd = *val_ptr;
 		ret = bpftime_perf_event_output(perf_handler_fd,
@@ -505,7 +542,12 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 		ret = -1;
 	}
 
-	sched_setaffinity(0, sizeof(orig), &orig);
+restore_affinity:
+	// Cleanup must not overwrite an error from the output operation.
+	const int saved_errno = errno;
+	if (sched_setaffinity(0, sizeof(orig), &orig) < 0 && ret >= 0)
+		return (uint64_t)-1;
+	errno = saved_errno;
 	return (uint64_t)ret;
 }
 
@@ -619,6 +661,8 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 uint64_t bpftime_get_attach_cookie(uint64_t ctx, uint64_t, uint64_t, uint64_t,
 				   uint64_t)
 {
+	if (auto *signal_ctx = bpftime::attach::current_signal_callback)
+		return signal_ctx->cookie.value_or(0);
 	uint64_t cookie;
 	if (bpftime_get_current_thread_cookie(&cookie)) {
 		SPDLOG_DEBUG("Get cookie: {}", cookie);
@@ -631,6 +675,8 @@ uint64_t bpftime_get_attach_cookie(uint64_t ctx, uint64_t, uint64_t, uint64_t,
 
 uint64_t bpftime_get_func_ip(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 {
+	if (auto *ctx = bpftime::attach::current_signal_callback)
+		return ctx->function_ip;
 	return bpftime::attach::current_thread_attach_func_ip;
 }
 
@@ -790,6 +836,15 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 		SPDLOG_ERROR("bpftime_get_stack doesn't support buildid!");
 		return -ENOTSUP;
 	}
+	auto *buffer = reinterpret_cast<void *>(static_cast<uintptr_t>(buf));
+	if (size % sizeof(uint64_t) != 0) {
+		SPDLOG_ERROR(
+			"bpftime_get_stack buffer size must be a multiple of {} bytes",
+			sizeof(uint64_t));
+		if (size > 0)
+			memset(buffer, 0, size);
+		return -EINVAL;
+	}
 	const int ATTACH_UPROBE = 6;
 
 	auto &attach_ctx = get_global_attach_ctx();
@@ -812,25 +867,46 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 
 	auto frames_to_skip = flags & BPF_F_SKIP_FIELD_MASK;
 	SPDLOG_DEBUG("Skipping {} frames", frames_to_skip);
-	if (frames_to_skip >= result->size()) {
-		result->resize(0);
-	} else {
-		std::vector<uint64_t> new_data;
-		new_data.resize(result->size() - frames_to_skip);
-		std::copy(result->begin() + frames_to_skip, result->end(),
-			  new_data.begin());
-		*result = new_data;
+	if (frames_to_skip > result->size()) {
+		if (size > 0)
+			memset(buffer, 0, size);
+		return -EFAULT;
 	}
-	auto size_to_copy = std::min(result->size(), (uintptr_t)size);
+
+	auto frames_to_copy =
+		std::min(result->size() - frames_to_skip,
+			 static_cast<size_t>(size / sizeof(uint64_t)));
+	auto size_to_copy = frames_to_copy * sizeof(uint64_t);
 	SPDLOG_DEBUG("Copied {} bytes of stack", size_to_copy);
-	memcpy((void *)(uintptr_t)buf, result->data(), size_to_copy);
-	return 0;
+	if (size_to_copy > 0)
+		memcpy(buffer, result->data() + frames_to_skip, size_to_copy);
+	if (size > size_to_copy)
+		memset(static_cast<char *>(buffer) + size_to_copy, 0,
+		       size - size_to_copy);
+	return static_cast<int64_t>(size_to_copy);
 }
 
 } // extern "C"
 
 namespace bpftime
 {
+
+bool helper_is_async_signal_safe(unsigned index, void *fn)
+{
+	if ((index == 173 && fn == (void *)bpftime_get_func_ip) ||
+	    (index == 174 && fn == (void *)bpftime_get_attach_cookie) ||
+	    (index == 58 && fn == (void *)bpftime_override_return) ||
+	    (index == 187 && fn == (void *)bpftime_set_retval))
+		return true;
+#if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
+	using namespace attach::trap;
+	if ((index == 183 && fn == (void *)bpftime_trap_get_func_arg) ||
+	    (index == 184 && fn == (void *)bpftime_trap_get_func_ret) ||
+	    (index == 186 && fn == (void *)bpftime_trap_get_retval))
+		return true;
+#endif
+	return false;
+}
 
 // copied from kernel/include/uapi/linux/bpf.h
 enum bpf_func_id {
