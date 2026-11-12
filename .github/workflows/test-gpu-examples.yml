@@ -827,6 +827,13 @@ jobs:
             popd >/dev/null
           fi
           echo "Checking expected output: $EXPECTED"
+          # A non-zero bpftimetool exit code must fail the case even if the
+          # output happens to contain the expected string. TOOL_RC is only set
+          # on the run-on-cuda path; default to 0 elsewhere.
+          if [ "${TOOL_RC:-0}" -ne 0 ]; then
+            echo "bpftimetool run-on-cuda exited with code ${TOOL_RC}"; tail -n 200 tool.log || true
+            RESULT=1
+          fi
           # treat crashes as failure even if expected string appears
           if grep -Eiq "(core dumped|Segmentation fault|Aborted)" server.log client.log tool.log; then
             echo "Detected crash in logs"; tail -n 200 server.log || true; tail -n 200 client.log || true; tail -n 200 tool.log || true; RESULT=1
