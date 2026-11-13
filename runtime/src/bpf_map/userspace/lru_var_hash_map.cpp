@@ -25,11 +25,11 @@ lru_var_hash_map_impl::lru_var_hash_map_impl(
 	memory.get_segment_manager();
 }
 
-void *lru_var_hash_map_impl::elem_lookup(const void *key)
+void *lru_var_hash_map_impl::elem_lookup(const void *key, bool from_syscall)
 {
-	// A BPF_F_WRONLY map cannot be read, matching the kernel EPERM on
-	// lookup/get_next_key against a write-only map fd.
-	if (map_flags & BPF_F_WRONLY) {
+	// BPF_F_WRONLY only blocks fd-based syscall reads; BPF helpers keep
+	// full access (program-side access uses the separate *_PROG flags).
+	if (from_syscall && (map_flags & BPF_F_WRONLY)) {
 		errno = EPERM;
 		return nullptr;
 	}
@@ -48,12 +48,13 @@ void *lru_var_hash_map_impl::elem_lookup(const void *key)
 }
 
 long lru_var_hash_map_impl::elem_update(const void *key, const void *value,
-					uint64_t flags)
+					uint64_t flags, bool from_syscall)
 {
-	// A BPF_F_RDONLY map can never be modified, whether the element
-	// already exists or not. The kernel rejects every write to a
-	// read-only map with EPERM before any existence check.
-	if (map_flags & BPF_F_RDONLY) {
+	// A BPF_F_RDONLY map can never be modified through a syscall, whether
+	// the element already exists or not. The kernel rejects every write
+	// to a read-only map fd with EPERM before any existence check. BPF
+	// helpers (from_syscall == false) are unaffected.
+	if (from_syscall && (map_flags & BPF_F_RDONLY)) {
 		errno = EPERM;
 		return -1;
 	}
@@ -103,9 +104,9 @@ long lru_var_hash_map_impl::elem_update(const void *key, const void *value,
 	return 0;
 }
 
-long lru_var_hash_map_impl::elem_delete(const void *key)
+long lru_var_hash_map_impl::elem_delete(const void *key, bool from_syscall)
 {
-	if (map_flags & BPF_F_RDONLY) {
+	if (from_syscall && (map_flags & BPF_F_RDONLY)) {
 		errno = EPERM;
 		return -1;
 	}
@@ -120,9 +121,10 @@ long lru_var_hash_map_impl::elem_delete(const void *key)
 	return 0;
 }
 
-int lru_var_hash_map_impl::map_get_next_key(const void *key, void *next_key)
+int lru_var_hash_map_impl::map_get_next_key(const void *key, void *next_key,
+					    bool from_syscall)
 {
-	if (map_flags & BPF_F_WRONLY) {
+	if (from_syscall && (map_flags & BPF_F_WRONLY)) {
 		errno = EPERM;
 		return -1;
 	}
@@ -143,7 +145,7 @@ int lru_var_hash_map_impl::map_get_next_key(const void *key, void *next_key)
 	auto itr = map_impl.find(key_vec);
 	if (itr == map_impl.end()) {
 		// not found, should be refer to the first key
-		return map_get_next_key(nullptr, next_key);
+		return map_get_next_key(nullptr, next_key, from_syscall);
 	}
 	itr++;
 	if (itr == map_impl.end()) {

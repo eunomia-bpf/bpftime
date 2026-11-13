@@ -779,11 +779,13 @@ TEST_CASE("test_map_rdonly (kernel)", "[kernel]")
 	key = 1;
 	value = 1234;
 	/* Try to insert key=1 element. */
-	REQUIRE((map.elem_update(&key, &value, BPF_ANY) < 0 && errno == EPERM));
+	REQUIRE((map.elem_update(&key, &value, BPF_ANY, true) < 0 &&
+		 errno == EPERM));
 
 	/* Check that key=1 is not found. */
-	REQUIRE((map.elem_lookup(&key) == nullptr && errno == ENOENT));
-	REQUIRE((map.map_get_next_key(&key, &value) < 0 && errno == ENOENT));
+	REQUIRE((map.elem_lookup(&key, true) == nullptr && errno == ENOENT));
+	REQUIRE((map.map_get_next_key(&key, &value, true) < 0 &&
+		 errno == ENOENT));
 }
 
 TEST_CASE("test_map_wronly (kernel)", "[kernel]")
@@ -797,9 +799,10 @@ TEST_CASE("test_map_wronly (kernel)", "[kernel]")
 	key = 1;
 	value = 1234;
 	/* Insert key=1 element. */
-	REQUIRE(map.elem_update(&key, &value, BPF_ANY) == 0);
+	REQUIRE(map.elem_update(&key, &value, BPF_ANY, true) == 0);
 
 	/* Check that reading elements and keys from the map is not allowed. */
-	REQUIRE((map.elem_lookup(&key) == nullptr && errno == EPERM));
-	REQUIRE((map.map_get_next_key(&key, &value) < 0 && errno == EPERM));
+	REQUIRE((map.elem_lookup(&key, true) == nullptr && errno == EPERM));
+	REQUIRE((map.map_get_next_key(&key, &value, true) < 0 &&
+		 errno == EPERM));
 }
