@@ -67,7 +67,15 @@ class bpf_cpu_execution_guard {
 			});
 			return;
 		}
-		shm_holder.global_shared_memory.lock_bpf_cpu(cpu);
+		if (!shm_holder.global_shared_memory.try_lock_bpf_cpu(cpu)) {
+			const int cpu_for_log = cpu;
+			warn_throttled([cpu_for_log] {
+				SPDLOG_WARN(
+					"per-CPU lock for cpu {} unavailable; BPF runs without per-CPU serialization",
+					cpu_for_log);
+			});
+			return;
+		}
 		bpftime_set_current_bpf_cpu(cpu);
 		owns_lock = true;
 	}

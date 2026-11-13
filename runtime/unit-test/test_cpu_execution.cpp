@@ -1,6 +1,7 @@
 #include "bpftime_helper_group.hpp"
 #include "bpftime_prog.hpp"
 #include "bpftime_shm.hpp"
+#include "bpftime_shm_internal.hpp"
 #include "platform_utils.hpp"
 #include <atomic>
 #include <barrier>
@@ -98,4 +99,46 @@ TEST_CASE("BPF executions on one CPU are serialized", "[percpu][execution]")
 
 	REQUIRE(failures == 0);
 	REQUIRE(maximum_active_helpers == 1);
+}
+
+TEST_CASE("Per-CPU try-lock degrades instead of hanging or throwing",
+	  "[percpu][locking]")
+{
+	const std::string shm_name = "bpftime_cpu_lock_test_" +
+				     std::to_string(getpid());
+	REQUIRE(setenv("BPFTIME_GLOBAL_SHM_NAME", shm_name.c_str(), 1) == 0);
+	boost::interprocess::shared_memory_object::remove(shm_name.c_str());
+	bpftime_initialize_global_shm(shm_open_type::SHM_CREATE_ONLY);
+	struct cleanup {
+		const std::string &name;
+		~cleanup()
+		{
+			bpftime_destroy_global_shm();
+			boost::interprocess::shared_memory_object::remove(
+				name.c_str());
+			unsetenv("BPFTIME_GLOBAL_SHM_NAME");
+		}
+	} cleanup{ shm_name };
+
+	auto &shm = bpftime::shm_holder.global_shared_memory;
+	constexpr int cpu = 0;
+
+	// Uncontended acquisition succeeds and releases cleanly.
+	REQUIRE(shm.try_lock_bpf_cpu(cpu));
+	shm.unlock_bpf_cpu(cpu);
+
+	// Hold the slot on this thread; a concurrent bounded attempt must give
+	// up (return false) rather than block forever or throw into the host.
+	shm.lock_bpf_cpu(cpu);
+	std::atomic<bool> acquired{ true };
+	std::thread contender([&] {
+		acquired = shm.try_lock_bpf_cpu(cpu);
+	});
+	contender.join();
+	REQUIRE_FALSE(acquired.load());
+	shm.unlock_bpf_cpu(cpu);
+
+	// After release the bounded lock is obtainable again.
+	REQUIRE(shm.try_lock_bpf_cpu(cpu));
+	shm.unlock_bpf_cpu(cpu);
 }
