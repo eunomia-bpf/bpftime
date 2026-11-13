@@ -317,7 +317,10 @@ nv_attach_impl::nv_attach_impl()
 	hook_state.replacements_installed.store(false,
 						std::memory_order_release);
 
+	bool transaction_open = false;
+	try {
 	gum_interceptor_begin_transaction(interceptor);
+	transaction_open = true;
 
 	auto register_hook = [&](AttachedToFunction func, void *addr) {
 		if (addr == nullptr) {
@@ -465,6 +468,30 @@ nv_attach_impl::nv_attach_impl()
 		(gpointer)&cuda_runtime_function__cudaMemcpyFromSymbolAsync,
 		hook_state.orig_cuda_memcpy_from_symbol_async);
 	gum_interceptor_end_transaction(interceptor);
+	} catch (...) {
+		// A hook registration or replacement failed mid-transaction.
+		// Leaving the Frida transaction open makes the next transaction
+		// assert (SIGTRAP with a core dump, the host crash in issue
+		// #409). Close the transaction and detach every hook installed
+		// through this listener, then mark the instance inert and
+		// rethrow so the agent boundary fails open without terminating
+		// the host.
+		enabled.store(false, std::memory_order_release);
+		try {
+			if (transaction_open) {
+				gum_interceptor_end_transaction(interceptor);
+				gum_interceptor_begin_transaction(interceptor);
+				gum_interceptor_detach(
+					interceptor,
+					(GumInvocationListener *)listener);
+				gum_interceptor_end_transaction(interceptor);
+			}
+		} catch (...) {
+		}
+		g_object_unref(listener);
+		frida_listener = nullptr;
+		throw;
+	}
 
 	nv_attach_set_active_impl(this);
 	this->original_cuda_launch_kernel =
