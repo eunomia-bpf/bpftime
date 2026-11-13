@@ -45,8 +45,12 @@ class midfunction_int3_registry {
 	bool handles(void *addr) const;
 
     private:
-	midfunction_int3_registry() = default;
 	struct impl;
+	/* Takes ownership of nothing: `p` points at a function-local static
+	 * in instance() (see there); pointer-to-incomplete-impl is fine. */
+	explicit midfunction_int3_registry(impl *p) : p(p)
+	{
+	}
 	impl *p = nullptr;
 };
 
