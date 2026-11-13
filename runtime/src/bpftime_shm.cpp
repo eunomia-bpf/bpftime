@@ -462,6 +462,39 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 			break;
 		}
 
+		// A perpetually ready source must not starve signal delivery.
+		// The no-data branch below was previously the only place that
+		// consumed a blocked SIGINT/SIGTERM; under a high-frequency
+		// tracepoint the ready path (next_id > 0) is taken every
+		// iteration, so the signal stayed pending and was never
+		// delivered, leaving the process unresponsive to SIGINT/SIGTERM.
+		// Poll for a pending blocked signal here so it is honored
+		// regardless of event readiness. A zero timeout makes this a
+		// non-blocking consume, so it never stalls the ready path.
+		{
+			siginfo_t sig_info;
+			const timespec nonblock{ .tv_sec = 0, .tv_nsec = 0 };
+			if (int sig = sigtimedwait(&to_block, &sig_info,
+						   &nonblock);
+			    sig > 0) {
+				SPDLOG_DEBUG(
+					"epoll_wait interrupted by pending signal {}",
+					sig);
+				// Invoke the original signal handler
+				struct sigaction act;
+				sigaction(sig, nullptr, &act);
+				if ((act.sa_flags & SA_SIGINFO) &&
+				    act.sa_sigaction) {
+					act.sa_sigaction(sig, &sig_info,
+							 nullptr);
+				} else if (auto f = act.sa_handler) {
+					f(sig);
+				}
+				failed_with_intr = true;
+				break;
+			}
+		}
+
 		for (const auto &p : epoll_inst.files) {
 			if (std::holds_alternative<software_perf_event_weak_ptr>(
 				    p.file)) {
