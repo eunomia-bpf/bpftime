@@ -2,6 +2,7 @@
 #include "syscall_table.hpp"
 #include <cerrno>
 #include <string>
+#include <stdexcept>
 #include <syscall_trace_attach_private_data.hpp>
 using namespace bpftime::attach;
 
@@ -11,8 +12,12 @@ int syscall_trace_attach_private_data::initialize_from_string(
 	int tp_id;
 	try {
 		tp_id = std::stoi(std::string(sv));
-	} catch (const std::exception &) {
+	} catch (const std::invalid_argument &) {
 		SPDLOG_ERROR("Invalid tracepoint id: {}",
+			     std::string(sv));
+		return -EINVAL;
+	} catch (const std::out_of_range &) {
+		SPDLOG_ERROR("Tracepoint id out of range: {}",
 			     std::string(sv));
 		return -EINVAL;
 	}
