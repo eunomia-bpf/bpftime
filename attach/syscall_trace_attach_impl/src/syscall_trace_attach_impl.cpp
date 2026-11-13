@@ -15,6 +15,25 @@ namespace attach
 {
 std::optional<syscall_trace_attach_impl *> global_syscall_trace_attach_impl;
 
+// Dispatch depth of the current thread. A userspace program that loads and
+// attaches its own eBPF program issues the bpf()/tracepoint syscalls from the
+// same process whose syscalls are already being dispatched. Re-entering the
+// callback machinery from such a nested syscall recurses into half-initialized
+// attach state and terminates the host process (issue #165). A nested dispatch
+// therefore skips every callback and executes the original syscall only.
+static thread_local int syscall_dispatch_depth = 0;
+
+struct dispatch_depth_guard {
+	bool nested;
+	dispatch_depth_guard() : nested(syscall_dispatch_depth++ != 0)
+	{
+	}
+	~dispatch_depth_guard()
+	{
+		--syscall_dispatch_depth;
+	}
+};
+
 int64_t syscall_trace_attach_impl::dispatch_syscall(int64_t sys_nr,
 						    int64_t arg1, int64_t arg2,
 						    int64_t arg3, int64_t arg4,
@@ -25,6 +44,14 @@ int64_t syscall_trace_attach_impl::dispatch_syscall(int64_t sys_nr,
 	if (sys_nr == __NR_exit_group || sys_nr == __NR_exit)
 		return orig_syscall(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
 #endif
+	dispatch_depth_guard depth_guard;
+	if (depth_guard.nested) {
+		SPDLOG_DEBUG(
+			"Skipping reentrant dispatch of syscall {} on the same thread",
+			sys_nr);
+		return orig_syscall(sys_nr, arg1, arg2, arg3, arg4, arg5,
+				    arg6);
+	}
 	SPDLOG_DEBUG("Syscall callback {} {} {} {} {} {} {}", sys_nr, arg1,
 		     arg2, arg3, arg4, arg5, arg6);
 	// Indicate whether the return value is overridden
