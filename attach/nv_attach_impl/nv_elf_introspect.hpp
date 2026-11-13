@@ -29,6 +29,6 @@ find_section_in_memory(const loaded_module &mod, std::string_view section_name);
 std::vector<const __fatBinC_Wrapper_t *>
 scan_fatbin_wrappers(const void *section_addr, std::size_t section_size);
 
-std::vector<symbol_range> read_function_symbols(const loaded_module &mod);
+std::vector<symbol_range> read_symbols(const loaded_module &mod);
 
 } // namespace bpftime::attach::elf_introspect
