@@ -219,14 +219,12 @@ TEST_CASE("Reentrant syscall dispatch skips nested callbacks")
 	syscall_trace_attach_impl attacher;
 	attacher.set_original_syscall_function(_bpftime_counting_syscall);
 
+	// Global enter callback (sys_nr -1). Construct the private data
+	// directly so the test does not depend on the tracefs name table,
+	// which is unavailable in rootless/container CI environments.
 	syscall_trace_attach_private_data data;
-	for (auto &[k, v] : get_global_syscall_tracepoint_name_table()) {
-		if (v == GLOBAL_SYS_ENTER_NAME) {
-			REQUIRE(data.initialize_from_string(
-					std::to_string(k)) == 0);
-			break;
-		}
-	}
+	data.sys_nr = -1;
+	data.is_enter = true;
 
 	int outer_callbacks = 0;
 	int nested_ret = 0;
@@ -259,14 +257,11 @@ TEST_CASE("Dispatch depth resets between independent syscalls")
 	syscall_trace_attach_impl attacher;
 	attacher.set_original_syscall_function(_bpftime_dummy_syscall);
 
+	// Direct construction keeps the test independent of the tracefs
+	// name table (see the reentrancy case above).
 	syscall_trace_attach_private_data data;
-	for (auto &[k, v] : get_global_syscall_tracepoint_name_table()) {
-		if (v == GLOBAL_SYS_ENTER_NAME) {
-			REQUIRE(data.initialize_from_string(
-					std::to_string(k)) == 0);
-			break;
-		}
-	}
+	data.sys_nr = -1;
+	data.is_enter = true;
 
 	int callback_count = 0;
 	int id = attacher.create_attach_with_ebpf_callback(
