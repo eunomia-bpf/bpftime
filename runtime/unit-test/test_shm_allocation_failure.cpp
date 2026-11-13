@@ -183,7 +183,10 @@ bool wait_for_file(const std::string &path)
 }
 
 helper_result run_waiting_helper_with_live_pid(const std::string &shm_name,
-					       live_pid_set set_name)
+					       live_pid_set set_name,
+					       bool cleanup_last = false,
+					       bool remove_before_start = true,
+					       std::uint64_t *generation = nullptr)
 {
 	const std::string ready_file =
 		"/tmp/bpftime-shm-allocation-ready-" + std::to_string(getpid());
@@ -192,7 +195,8 @@ helper_result run_waiting_helper_with_live_pid(const std::string &shm_name,
 		std::to_string(getpid());
 	unlink(ready_file.c_str());
 	unlink(release_file.c_str());
-	boost::interprocess::shared_memory_object::remove(shm_name.c_str());
+	if (remove_before_start)
+		boost::interprocess::shared_memory_object::remove(shm_name.c_str());
 
 	int output_pipe[2];
 	REQUIRE(pipe(output_pipe) == 0);
@@ -226,6 +230,14 @@ helper_result run_waiting_helper_with_live_pid(const std::string &shm_name,
 
 	close(output_pipe[1]);
 	REQUIRE(wait_for_file(ready_file));
+	if (generation) {
+		boost::interprocess::managed_shared_memory segment(
+			boost::interprocess::open_only, shm_name.c_str());
+		auto *state = segment.find<bpftime::shm_cleanup_state>(
+			"bpftime_shm_cleanup_state_v1").first;
+		REQUIRE(state != nullptr);
+		*generation = state->generation;
+	}
 
 	env_var_guard shm_name_guard("BPFTIME_GLOBAL_SHM_NAME");
 	REQUIRE(setenv("BPFTIME_GLOBAL_SHM_NAME", shm_name.c_str(), 1) == 0);
@@ -267,6 +279,9 @@ helper_result run_waiting_helper_with_live_pid(const std::string &shm_name,
 	while (waitpid(pid, &status, 0) == -1) {
 		REQUIRE(errno == EINTR);
 	}
+	if (cleanup_last)
+		bpftime::shm_holder.global_shared_memory.leave_and_try_cleanup(
+			set_name == live_pid_set::syscall_server);
 	parent_shm.cleanup();
 	unlink(ready_file.c_str());
 	unlink(release_file.c_str());
@@ -495,9 +510,172 @@ TEST_CASE("Syscall server keeps shared memory while a peer server pid is alive",
 	REQUIRE(WIFEXITED(result.status));
 	REQUIRE(WEXITSTATUS(result.status) == 0);
 	REQUIRE(result.output.empty());
-	REQUIRE(
-		boost::interprocess::shared_memory_object::remove(
-			shm_name.c_str()));
+	REQUIRE(boost::interprocess::shared_memory_object::remove(
+		shm_name.c_str()));
+}
+
+TEST_CASE("Last participant cleans up after the creating server exits",
+	  "[allocation][syscall_server][cleanup]")
+{
+	for (auto role :
+	     { live_pid_set::alive_agent, live_pid_set::syscall_server }) {
+		const std::string name =
+			"bpftime-last-participant-" + std::to_string(getpid());
+		auto result =
+			run_waiting_helper_with_live_pid(name, role, true);
+		REQUIRE(WIFEXITED(result.status));
+		REQUIRE(WEXITSTATUS(result.status) == 0);
+		REQUIRE(result.output.empty());
+		REQUIRE_FALSE(boost::interprocess::shared_memory_object::remove(
+			name.c_str()));
+	}
+}
+
+TEST_CASE("Startup reclaims managed shared memory after a killed participant",
+	  "[allocation][syscall_server][cleanup]")
+{
+	const std::string name = "bpftime-shm-allocation-test-startup-ok-" +
+				 std::to_string(getpid());
+	boost::interprocess::shared_memory_object::remove(name.c_str());
+	int ready[2];
+	REQUIRE(pipe(ready) == 0);
+	pid_t child = fork();
+	REQUIRE(child >= 0);
+	if (child == 0) {
+		close(ready[0]);
+		try {
+			bpftime::bpftime_shm shm(
+				name.c_str(),
+				bpftime::shm_open_type::SHM_CREATE_ONLY);
+			shm.enable_automatic_cleanup();
+			if (!shm.add_pid_into_alive_syscall_server_set(
+				    getpid()))
+				_exit(125);
+			const char byte = 'r';
+			if (write(ready[1], &byte, 1) != 1)
+				_exit(126);
+			for (;;)
+				pause();
+		} catch (...) {
+			_exit(127);
+		}
+	}
+	close(ready[1]);
+	char byte = 0;
+	ssize_t count = read(ready[0], &byte, 1);
+	close(ready[0]);
+	REQUIRE(kill(child, SIGKILL) == 0);
+	int status;
+	REQUIRE(waitpid(child, &status, 0) == child);
+	REQUIRE(count == 1);
+	REQUIRE(WIFSIGNALED(status));
+	boost::interprocess::managed_shared_memory stale(
+		boost::interprocess::open_only, name.c_str());
+	auto *old_state = stale.find<bpftime::shm_cleanup_state>(
+		"bpftime_shm_cleanup_state_v1").first;
+	REQUIRE(old_state != nullptr);
+	const auto old_generation = old_state->generation;
+	std::uint64_t new_generation = 0;
+	auto result = run_waiting_helper_with_live_pid(
+		name, live_pid_set::alive_agent, true, false, &new_generation);
+	REQUIRE(WIFEXITED(result.status));
+	REQUIRE(WEXITSTATUS(result.status) == 0);
+	REQUIRE(result.output.empty());
+	REQUIRE(new_generation != old_generation);
+	REQUIRE_FALSE(boost::interprocess::shared_memory_object::remove(
+		name.c_str()));
+}
+
+TEST_CASE("Agent runtime destructor removes the last managed segment",
+	  "[allocation][syscall_server][cleanup]")
+{
+	const std::string name = "bpftime-agent-exit-" + std::to_string(getpid());
+	boost::interprocess::shared_memory_object::remove(name.c_str());
+	bpftime::bpftime_shm server(name.c_str(), bpftime::shm_open_type::SHM_CREATE_ONLY);
+	server.enable_automatic_cleanup();
+	REQUIRE(server.add_pid_into_alive_syscall_server_set(getpid()));
+	int ready[2], release[2];
+	REQUIRE(pipe(ready) == 0);
+	REQUIRE(pipe(release) == 0);
+	pid_t child = fork();
+	REQUIRE(child >= 0);
+	if (child == 0) {
+		close(ready[0]);
+		close(release[1]);
+		try {
+			setenv("BPFTIME_GLOBAL_SHM_NAME", name.c_str(), 1);
+			bpftime_destroy_global_shm();
+			bpftime_initialize_global_shm(bpftime::shm_open_type::SHM_OPEN_ONLY);
+			if (!bpftime::shm_holder.global_shared_memory.add_pid_into_alive_agent_set(getpid()))
+				_exit(125);
+			char byte = 'r';
+			if (write(ready[1], &byte, 1) != 1 || read(release[0], &byte, 1) != 1)
+				_exit(126);
+			std::exit(0);
+		} catch (...) { _exit(127); }
+	}
+	close(ready[1]);
+	close(release[0]);
+	char byte;
+	const auto count = read(ready[0], &byte, 1);
+	close(ready[0]);
+	server.leave_and_try_cleanup(true);
+	const auto released = write(release[1], "r", 1);
+	close(release[1]);
+	int status;
+	REQUIRE(waitpid(child, &status, 0) == child);
+	REQUIRE(count == 1);
+	REQUIRE(released == 1);
+	REQUIRE(WIFEXITED(status));
+	REQUIRE(WEXITSTATUS(status) == 0);
+	REQUIRE_FALSE(boost::interprocess::shared_memory_object::remove(name.c_str()));
+}
+
+TEST_CASE("Uncertain bookkeeping and replaced names preserve shared memory",
+	  "[allocation][syscall_server][cleanup]")
+{
+	const std::string name =
+		"bpftime-cleanup-conservative-" + std::to_string(getpid());
+	boost::interprocess::shared_memory_object::remove(name.c_str());
+	bpftime::bpftime_shm shm(name.c_str(),
+				 bpftime::shm_open_type::SHM_CREATE_ONLY);
+	shm.enable_automatic_cleanup();
+	SECTION("Registration failure disables automatic cleanup")
+	{
+		boost::interprocess::managed_shared_memory segment(
+			boost::interprocess::open_only, name.c_str());
+		auto *mutex = segment.find<boost::interprocess::interprocess_mutex>(
+			bpftime::DEFAULT_PID_SET_LOCK_NAME).first;
+		REQUIRE(mutex != nullptr);
+		mutex->lock();
+		bool registered = shm.add_pid_into_alive_agent_set(getpid());
+		mutex->unlock();
+		REQUIRE_FALSE(registered);
+		bpftime::shm_lifecycle_lock lock(name.c_str());
+		REQUIRE(lock.owns_lock());
+		REQUIRE_FALSE(shm.try_remove_unused_shm());
+	}
+	SECTION("An older mapping cannot unlink a replacement")
+	{
+		REQUIRE(boost::interprocess::shared_memory_object::remove(
+			name.c_str()));
+		bpftime::bpftime_shm replacement(
+			name.c_str(), bpftime::shm_open_type::SHM_CREATE_ONLY);
+		replacement.enable_automatic_cleanup();
+		bpftime::shm_lifecycle_lock lock(name.c_str());
+		REQUIRE(lock.owns_lock());
+		REQUIRE_FALSE(shm.try_remove_unused_shm());
+	}
+	SECTION("Lifecycle lock timeout preserves the segment")
+	{
+		bpftime::shm_lifecycle_lock lock(name.c_str());
+		REQUIRE(lock.owns_lock());
+		bpftime::shm_lifecycle_lock competing(name.c_str());
+		REQUIRE_FALSE(competing.owns_lock());
+		shm.leave_and_try_cleanup(true);
+	}
+	REQUIRE(boost::interprocess::shared_memory_object::remove(
+		name.c_str()));
 }
 
 TEST_CASE("Syscall server mock files do not leave tmp entries",
