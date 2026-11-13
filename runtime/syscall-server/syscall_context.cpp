@@ -545,11 +545,17 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 				attr->btf_value_type_id,
 				attr->map_extra,
 			});
-		SPDLOG_DEBUG(
-			"Created map {}, type={}, name={}, key_size={}, value_size={}",
-			id, attr->map_type, attr->map_name, attr->key_size,
-			attr->value_size);
-		return id;
+	SPDLOG_DEBUG(
+		"Created map {}, type={}, name={}, key_size={}, value_size={}",
+		id, attr->map_type, attr->map_name, attr->key_size,
+		attr->value_size);
+	// Internal failures (e.g. rejected map-in-map value_size) return a
+	// negative errno; translate to the syscall ABI: -1 + errno set.
+	if (id < 0) {
+		errno = -id;
+		return -1;
+	}
+	return id;
 	}
 	case BPF_MAP_LOOKUP_ELEM: {
 		SPDLOG_DEBUG("Looking up map {}, key={:x}", attr->map_fd,

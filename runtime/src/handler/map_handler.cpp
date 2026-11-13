@@ -867,7 +867,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 			SPDLOG_ERROR(
 				"Failed to create ringbuf map, max_entries must be a power of 2, current: {}",
 				max_entries);
-			return -1;
+			return -EINVAL;
 		}
 		map_impl_ptr = memory.construct<ringbuf_map_impl>(
 			boost::interprocess::anonymous_instance)(max_entries,
@@ -915,7 +915,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		if (key_size != 0) {
 			SPDLOG_ERROR("Bloom filter key_size must be 0, got {}",
 				     key_size);
-			return -1;
+			return -EINVAL;
 		}
 		// Extract nr_hashes from map_extra (lower 4 bits)
 		unsigned int nr_hashes =
@@ -985,6 +985,10 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	}
 #endif
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
+		// inner fd is stored as a uint32; reject mismatched value_size so
+		// the syscall memcpy path can never over-read/truncate (M13 follow-up).
+		if (value_size != sizeof(uint32_t))
+			return -EINVAL;
 		map_impl_ptr = memory.construct<array_map_of_maps_impl>(
 			boost::interprocess::anonymous_instance)(memory,
 								 max_entries);
@@ -992,6 +996,8 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS: {
+		if (value_size != sizeof(uint32_t))
+			return -EINVAL;
 		map_impl_ptr = memory.construct<hash_map_of_maps_impl>(
 			boost::interprocess::anonymous_instance)(
 			memory, key_size, max_entries,
@@ -1198,7 +1204,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		} else {
 			SPDLOG_ERROR("[map_init] Unsupported map type: {}",
 				     (int)type);
-			return -1;
+			return -EOPNOTSUPP;
 		}
 	}
 	return 0;
