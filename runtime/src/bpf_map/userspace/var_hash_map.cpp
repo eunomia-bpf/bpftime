@@ -3,7 +3,11 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include "linux/bpf.h"
+#else
+#include "bpf_flags.hpp"
+#endif
 #include "spdlog/spdlog.h"
 #include <bpf_map/userspace/var_hash_map.hpp>
 #include <algorithm>

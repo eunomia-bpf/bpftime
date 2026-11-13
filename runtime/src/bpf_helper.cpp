@@ -8,7 +8,11 @@
 #include "trap_uprobe_attach_impl.hpp"
 #endif
 #include "handler/map_handler.hpp"
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include "linux/bpf.h"
+#else
+#include "bpf_flags.hpp"
+#endif
 #include <algorithm>
 #include <stdexcept>
 #include <system_error>
@@ -54,7 +58,9 @@
 #include <chrono>
 #include <thread>
 
+#ifndef PATH_MAX
 #define PATH_MAX 4096
+#endif
 
 using namespace std;
 bpftime::bpf_attach_ctx &get_global_attach_ctx();

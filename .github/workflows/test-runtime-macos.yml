@@ -1,0 +1,48 @@
+# macOS runtime tests: basic runtime + Frida attach tests.
+# Skips Linux-only tests (syscall trace, kernel tailcall, MPK, coverage).
+name: Test runtime (macOS)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, main, "ci/**"]
+  pull_request:
+    branches: ["**"]
+
+concurrency:
+  group: test-runtime-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BPFTIME_VM_NAME: llvm
+
+jobs:
+  test-runtime:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          brew install cmake boost llvm
+
+      - name: Configure (macOS: no libbpf, LLVM JIT, unit tests)
+        run: |
+          cmake -DBPFTIME_BUILD_WITH_LIBBPF=OFF \
+            -DBPFTIME_LLVM_JIT=YES \
+            -DLLVM_DIR=$(brew --prefix llvm)/lib/cmake/llvm \
+            -DBPFTIME_UBPF_JIT=ON \
+            -DBPFTIME_ENABLE_UNIT_TESTING=YES \
+            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -B build .
+
+      - name: Build runtime tests
+        run: cmake --build build --config Debug --target bpftime_runtime_tests -j$(sysctl -n hw.ncpu)
+
+      - name: Run runtime tests
+        run: ./build/runtime/unit-test/bpftime_runtime_tests

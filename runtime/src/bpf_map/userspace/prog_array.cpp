@@ -10,6 +10,7 @@
 #include <asm/unistd.h>
 #elif __APPLE__
 #include "bpftime_epoll.h"
+#include "bpf_flags.hpp"
 #endif
 #include "bpftime_shm.hpp"
 #include <bpf_map/userspace/prog_array.hpp>

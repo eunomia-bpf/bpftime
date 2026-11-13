@@ -46,7 +46,6 @@ set(TEST_SOURCES
     attach_with_ebpf/test_helpers.cpp
     attach_with_ebpf/test_ufunc_register.cpp
 
-    tailcall/test_user_to_kernel_tailcall.cpp
     tailcall/test_user_to_user_tailcall.cpp
     tailcall/test_prog_array_thread_local.cpp
 
@@ -61,7 +60,9 @@ if(BPFTIME_ENABLE_FRIDA)
         attach_with_ebpf/test_attach_replace.cpp
     )
 endif()
-
+if(BPFTIME_BUILD_WITH_LIBBPF)
+    list(APPEND TEST_SOURCES tailcall/test_user_to_kernel_tailcall.cpp)
+endif()
 if(${BPFTIME_ENABLE_CUDA_ATTACH})
     list(APPEND TEST_SOURCES cuda/test_cuda_compile.cpp)
 endif()
