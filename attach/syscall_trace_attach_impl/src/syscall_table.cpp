@@ -104,6 +104,9 @@ syscall_tracepoint_table create_syscall_tracepoint_id_table()
 			      SCHED_PROCESS_EXIT_NAME);
 		return result;
 	}
+	// Returns -1 when the id file cannot be opened or parsed instead of
+	// throwing: a missing tracefs entry must degrade table construction,
+	// not propagate an exception out of the attach path.
 	const auto read_id = [&](std::filesystem::path tp_dir) -> int32_t {
 		const auto &id_file = tp_dir.append("id");
 		SPDLOG_TRACE("Reading tracepoint id from {}", id_file.string());
@@ -111,38 +114,50 @@ syscall_tracepoint_table create_syscall_tracepoint_id_table()
 		if (!id_ifs.is_open()) {
 			SPDLOG_ERROR("Unable to open & read {}",
 				     id_file.c_str());
-			throw std::runtime_error("Unable to open id file");
+			return -1;
 		}
-		int32_t id;
+		int32_t id = -1;
 		id_ifs >> id;
+		if (id_ifs.fail()) {
+			SPDLOG_ERROR("Unable to parse tracepoint id in {}",
+				     id_file.c_str());
+			return -1;
+		}
 		return id;
+	};
+	const auto add_entry = [&](int32_t id,
+				   const std::string &tp_name) {
+		if (id >= 0)
+			result[id] = tp_name;
 	};
 	for (const auto &entry :
 	     std::filesystem::directory_iterator(SYSCALL_TRACEPOINT_ROOT)) {
 		if (entry.is_directory()) {
 			auto curr_path = entry.path();
 			auto tp_name = curr_path.filename();
-			result[read_id(curr_path)] = tp_name;
+			add_entry(read_id(curr_path), tp_name);
 		}
 	}
-	result[read_id(std::filesystem::path(TRACEPOINT_ROOT)
-			       .append("raw_syscalls")
-			       .append("sys_enter"))] = GLOBAL_SYS_ENTER_NAME;
-	result[read_id(std::filesystem::path(TRACEPOINT_ROOT)
-			       .append("raw_syscalls")
-			       .append("sys_exit"))] = GLOBAL_SYS_EXIT_NAME;
-	result[read_id(std::filesystem::path(TRACEPOINT_ROOT)
-			       .append("sched")
-			       .append(SCHED_PROCESS_FORK_NAME))] =
-		SCHED_PROCESS_FORK_NAME;
-	result[read_id(std::filesystem::path(TRACEPOINT_ROOT)
-			       .append("sched")
-			       .append(SCHED_PROCESS_EXEC_NAME))] =
-		SCHED_PROCESS_EXEC_NAME;
-	result[read_id(std::filesystem::path(TRACEPOINT_ROOT)
-			       .append("sched")
-			       .append(SCHED_PROCESS_EXIT_NAME))] =
-		SCHED_PROCESS_EXIT_NAME;
+	add_entry(read_id(std::filesystem::path(TRACEPOINT_ROOT)
+				  .append("raw_syscalls")
+				  .append("sys_enter")),
+		  GLOBAL_SYS_ENTER_NAME);
+	add_entry(read_id(std::filesystem::path(TRACEPOINT_ROOT)
+				  .append("raw_syscalls")
+				  .append("sys_exit")),
+		  GLOBAL_SYS_EXIT_NAME);
+	add_entry(read_id(std::filesystem::path(TRACEPOINT_ROOT)
+				  .append("sched")
+				  .append(SCHED_PROCESS_FORK_NAME)),
+		  SCHED_PROCESS_FORK_NAME);
+	add_entry(read_id(std::filesystem::path(TRACEPOINT_ROOT)
+				  .append("sched")
+				  .append(SCHED_PROCESS_EXEC_NAME)),
+		  SCHED_PROCESS_EXEC_NAME);
+	add_entry(read_id(std::filesystem::path(TRACEPOINT_ROOT)
+				  .append("sched")
+				  .append(SCHED_PROCESS_EXIT_NAME)),
+		  SCHED_PROCESS_EXIT_NAME);
 
 	return result;
 }
