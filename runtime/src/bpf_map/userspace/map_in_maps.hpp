@@ -38,8 +38,10 @@ class array_map_of_maps_impl : public array_map_impl {
 	void *elem_lookup_userspace(const void *key)
 	{
 		auto *stored = static_cast<int *>(array_map_impl::elem_lookup(key));
-		// Preserve the ENOENT semantics of the helper path: an unset slot
-		// holds fd 0 and must not be reported as a successful lookup.
+		// ENOENT on a null/zero slot, matching kernel map-in-map semantics:
+		// a never-updated slot holds 0 and BPF_MAP_LOOKUP_ELEM returns
+		// ENOENT. Inner map fds come from BPF_MAP_CREATE via open_fake_fd,
+		// which never yields 0/1/2, so 0 unambiguously means "no inner map".
 		if (stored == nullptr || *stored == 0)
 			return nullptr;
 		return stored;
