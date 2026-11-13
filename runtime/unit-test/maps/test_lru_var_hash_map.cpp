@@ -33,7 +33,7 @@ TEST_CASE("Test basic lru map operations")
 	shm_initializer shm(SHM_NAME, true);
 	auto &mem = *shm.mem;
 	{
-		lru_var_hash_map_impl map(mem, 4, 4, 1000);
+		lru_var_hash_map_impl map(mem, 4, 4, 1000, 0);
 		for (int i = 0; i < 500; i++) {
 			int key = i;
 			int value = 500 + i;
@@ -73,7 +73,7 @@ TEST_CASE("Test basic lru map operations")
 		}
 	}
 	{
-		lru_var_hash_map_impl map(mem, 4, 4, 5);
+		lru_var_hash_map_impl map(mem, 4, 4, 5, 0);
 		// Test LRU operations
 		for (int i = 0; i < 5; i++) {
 			REQUIRE(map.elem_update(&i, &i, BPF_NOEXIST) == 0);

@@ -112,11 +112,12 @@ int bpftime_helper_map_get_next_key(int fd, const void *key, void *next_key)
 	}
 }
 
-const void *bpftime_map_lookup_elem(int fd, const void *key)
+const void *bpftime_map_lookup_elem_with_origin(int fd, const void *key,
+						bool from_syscall)
 {
 	try {
 		return shm_holder.global_shared_memory.bpf_map_lookup_elem(
-			fd, key, true);
+			fd, key, from_syscall);
 	} catch (std::exception &ex) {
 		SPDLOG_ERROR(
 			"Exception happened when performing map lookup elem: {}",
@@ -125,12 +126,18 @@ const void *bpftime_map_lookup_elem(int fd, const void *key)
 	}
 }
 
-long bpftime_map_update_elem(int fd, const void *key, const void *value,
-			     uint64_t flags)
+const void *bpftime_map_lookup_elem(int fd, const void *key)
+{
+	return bpftime_map_lookup_elem_with_origin(fd, key, true);
+}
+
+long bpftime_map_update_elem_with_origin(int fd, const void *key,
+					 const void *value, uint64_t flags,
+					 bool from_syscall)
 {
 	try {
 		return shm_holder.global_shared_memory.bpf_map_update_elem(
-			fd, key, value, flags, true);
+			fd, key, value, flags, from_syscall);
 	} catch (std::exception &ex) {
 		SPDLOG_ERROR(
 			"Exception happened when performing map update: {}",
@@ -139,17 +146,29 @@ long bpftime_map_update_elem(int fd, const void *key, const void *value,
 	}
 }
 
-long bpftime_map_delete_elem(int fd, const void *key)
+long bpftime_map_update_elem(int fd, const void *key, const void *value,
+			     uint64_t flags)
+{
+	return bpftime_map_update_elem_with_origin(fd, key, value, flags, true);
+}
+
+long bpftime_map_delete_elem_with_origin(int fd, const void *key,
+					 bool from_syscall)
 {
 	try {
-		return shm_holder.global_shared_memory.bpf_delete_elem(fd, key,
-								       true);
+		return shm_holder.global_shared_memory.bpf_delete_elem(
+			fd, key, from_syscall);
 	} catch (std::exception &ex) {
 		SPDLOG_ERROR(
 			"Exception happened when performing map delete elem: {}",
 			ex.what());
 		return -1;
 	}
+}
+
+long bpftime_map_delete_elem(int fd, const void *key)
+{
+	return bpftime_map_delete_elem_with_origin(fd, key, true);
 }
 
 long bpftime_map_lookup_and_delete_elem(int fd, void *value)

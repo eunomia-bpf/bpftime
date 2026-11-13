@@ -132,11 +132,24 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 			return impl->elem_lookup_userspace(key);
 		}
 	};
-
+	// Var-size/LRU hash backends enforce BPF_F_RDONLY/BPF_F_WRONLY only
+	// for fd-based syscall access; BPF helpers call with from_syscall=false.
+	const auto do_lookup_with_origin = [&](auto *impl) -> const void * {
+		if (impl->should_lock) {
+			bpftime_lock_guard guard(map_lock);
+			return impl->elem_lookup(key, from_syscall);
+		} else {
+			return impl->elem_lookup(key, from_syscall);
+		}
+	};
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
+#ifdef BPFTIME_USE_VAR_HASH_MAP
+		return do_lookup_with_origin(impl);
+#else
 		return do_lookup(impl);
+#endif
 	}
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
 		auto impl = static_cast<array_map_impl *>(map_impl_ptr.get());
@@ -184,7 +197,7 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
 		auto impl = static_cast<lru_var_hash_map_impl *>(
 			map_impl_ptr.get());
-		return do_lookup(impl);
+		return do_lookup_with_origin(impl);
 	}
 	case bpf_map_type::BPF_MAP_TYPE_LPM_TRIE: {
 		auto impl =
@@ -317,10 +330,26 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 			return impl->elem_update_userspace(key, value, flags);
 		}
 	};
+	// Var-size/LRU hash backends enforce BPF_F_RDONLY only for fd-based
+	// syscall access; BPF helpers call with from_syscall=false.
+	const auto do_update_with_origin = [&](auto *impl) -> long {
+		if (impl->should_lock) {
+			bpftime_lock_guard guard(map_lock);
+			return impl->elem_update(key, value, flags,
+						 from_syscall);
+		} else {
+			return impl->elem_update(key, value, flags,
+						 from_syscall);
+		}
+	};
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
+#ifdef BPFTIME_USE_VAR_HASH_MAP
+		return do_update_with_origin(impl);
+#else
 		return do_update(impl);
+#endif
 	}
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
 		auto impl = static_cast<array_map_impl *>(map_impl_ptr.get());
@@ -413,7 +442,7 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
 		auto impl = static_cast<lru_var_hash_map_impl *>(
 			map_impl_ptr.get());
-		return do_update(impl);
+		return do_update_with_origin(impl);
 	}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_GPU_HASH_MAP: {
@@ -482,10 +511,26 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 			return impl->map_get_next_key(key, next_key);
 		}
 	};
+	// Var-size/LRU hash backends enforce BPF_F_WRONLY only for fd-based
+	// syscall access; BPF helpers call with from_syscall=false.
+	const auto do_get_next_key_with_origin = [&](auto *impl) -> int {
+		if (impl->should_lock) {
+			bpftime_lock_guard guard(map_lock);
+			return impl->map_get_next_key(key, next_key,
+						      from_syscall);
+		} else {
+			return impl->map_get_next_key(key, next_key,
+						      from_syscall);
+		}
+	};
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
+#ifdef BPFTIME_USE_VAR_HASH_MAP
+		return do_get_next_key_with_origin(impl);
+#else
 		return do_get_next_key(impl);
+#endif
 	}
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
 		auto impl = static_cast<array_map_impl *>(map_impl_ptr.get());
@@ -568,7 +613,7 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
 		auto impl = static_cast<lru_var_hash_map_impl *>(
 			map_impl_ptr.get());
-		return do_get_next_key(impl);
+		return do_get_next_key_with_origin(impl);
 	}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_GPU_HASH_MAP: {
@@ -645,11 +690,25 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 			return impl->elem_delete_userspace(key);
 		}
 	};
+	// Var-size/LRU hash backends enforce BPF_F_RDONLY only for fd-based
+	// syscall access; BPF helpers call with from_syscall=false.
+	const auto do_delete_with_origin = [&](auto *impl) -> long {
+		if (impl->should_lock) {
+			bpftime_lock_guard guard(map_lock);
+			return impl->elem_delete(key, from_syscall);
+		} else {
+			return impl->elem_delete(key, from_syscall);
+		}
+	};
 
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
+#ifdef BPFTIME_USE_VAR_HASH_MAP
+		return do_delete_with_origin(impl);
+#else
 		return do_delete(impl);
+#endif
 	}
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
 		auto impl = static_cast<array_map_impl *>(map_impl_ptr.get());
@@ -742,7 +801,7 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
 		auto impl = static_cast<lru_var_hash_map_impl *>(
 			map_impl_ptr.get());
-		return do_delete(impl);
+		return do_delete_with_origin(impl);
 	}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_GPU_HASH_MAP: {
@@ -1008,7 +1067,8 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
 		map_impl_ptr = memory.construct<lru_var_hash_map_impl>(
 			boost::interprocess::anonymous_instance)(
-			memory, key_size, value_size, max_entries);
+			memory, key_size, value_size, max_entries,
+			static_cast<uint32_t>(flags));
 		init_refcnt();
 		return 0;
 	}
