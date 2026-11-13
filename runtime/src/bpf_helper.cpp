@@ -273,6 +273,18 @@ uint64_t bpftime_ktime_get_ns(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 	return ns.time_since_epoch().count();
 }
 
+// Copy a task name into the caller buffer with bpf_get_current_comm
+// semantics. strncpy alone leaves the destination without a terminator
+// when the name fills the whole buffer, so the last byte is forced to
+// NUL. A zero-sized buffer must not be touched at all.
+void bpftime_copy_comm(char *buf, size_t size, const char *comm)
+{
+	if (size == 0)
+		return;
+	strncpy(buf, comm, size);
+	buf[size - 1] = '\0';
+}
+
 uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
 				  uint64_t, uint64_t)
 {
@@ -291,7 +303,7 @@ uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
 		if (strbuf[index] == '/')
 			filename = strbuf + index + 1;
 	}
-	strncpy((char *)(uintptr_t)buf, filename, (size_t)size);
+	bpftime_copy_comm((char *)(uintptr_t)buf, (size_t)size, filename);
 	return 0;
 }
 

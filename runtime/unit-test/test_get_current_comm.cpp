@@ -5,6 +5,7 @@
  */
 #include "catch2/catch_test_macros.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -20,6 +21,9 @@
 extern "C" uint64_t bpftime_get_current_comm(uint64_t buf,
 					     uint64_t size, uint64_t,
 					     uint64_t, uint64_t);
+
+extern "C" void bpftime_copy_comm(char *buf, size_t size,
+				        const char *comm);
 
 namespace
 {
@@ -61,7 +65,7 @@ TEST_CASE("bpf_get_current_comm returns the executable basename",
 	REQUIRE(std::string(again) == std::string(comm));
 }
 
-TEST_CASE("bpf_get_current_comm honors the destination buffer size",
+TEST_CASE("bpf_get_current_comm always NUL-terminates the buffer",
 	  "[helpers][comm]")
 {
 	const auto expected = current_exe_basename();
@@ -69,7 +73,57 @@ TEST_CASE("bpf_get_current_comm honors the destination buffer size",
 	std::memset(comm, 0x5a, sizeof(comm));
 	REQUIRE(bpftime_get_current_comm(reinterpret_cast<uint64_t>(comm),
 				     sizeof(comm), 0, 0, 0) == 0);
-	REQUIRE(std::memcmp(comm, expected.data(), sizeof(comm)) == 0);
+	// Kernel semantics: the destination is always NUL-terminated,
+	// truncating the name to size - 1 bytes when it does not fit.
+	REQUIRE(comm[sizeof(comm) - 1] == '\0');
+	const size_t prefix_len =
+		std::min(sizeof(comm) - 1, expected.size());
+	REQUIRE(std::memcmp(comm, expected.data(), prefix_len) == 0);
+	REQUIRE(std::strlen(comm) == prefix_len);
+}
+
+TEST_CASE("bpftime_copy_comm matches kernel comm-copy semantics",
+	  "[helpers][comm]")
+{
+	// Short name: copied in full and terminated; strncpy zero-pads the
+	// remaining tail.
+	{
+		char buf[16];
+		std::memset(buf, 0x5a, sizeof(buf));
+		bpftime_copy_comm(buf, sizeof(buf), "short");
+		REQUIRE(std::string(buf) == "short");
+		REQUIRE(buf[5] == '\0');
+		REQUIRE(buf[6] == '\0');
+	}
+
+	// Long name: truncated to size - 1 bytes and force-terminated.
+	{
+		const char long_name[] =
+			"bpftime-runtime-comm-reentry-probe-0123456789abcdef";
+		char buf[8];
+		std::memset(buf, 0x5a, sizeof(buf));
+		bpftime_copy_comm(buf, sizeof(buf), long_name);
+		REQUIRE(std::memcmp(buf, long_name, sizeof(buf) - 1) == 0);
+		REQUIRE(buf[sizeof(buf) - 1] == '\0');
+		REQUIRE(std::strlen(buf) == sizeof(buf) - 1);
+	}
+
+	// size == 1: only the terminator fits.
+	{
+		char buf[1] = { static_cast<char>(0x5a) };
+		bpftime_copy_comm(buf, sizeof(buf), "name");
+		REQUIRE(buf[0] == '\0');
+	}
+
+	// size == 0: the destination must not be written.
+	{
+		char buf[4];
+		char sentinel[4];
+		std::memset(buf, 0x5a, sizeof(buf));
+		std::memset(sentinel, 0x5a, sizeof(sentinel));
+		bpftime_copy_comm(buf, 0, "name");
+		REQUIRE(std::memcmp(buf, sentinel, sizeof(buf)) == 0);
+	}
 }
 
 #if defined(__linux__)
