@@ -221,7 +221,15 @@ bool midfunction_int3_registry::try_register(void *addr,
 {
 	/* Only take over single-byte-NOP-led sites: after resuming at addr+1
 	 * the remaining bytes must still form valid, semantically identical
-	 * instructions (the SDT nop sled guarantees this). */
+	 * instructions (the SDT nop sled guarantees this).
+	 *
+	 * Scope: one-byte (0x90) sleds only. A multi-byte NOP sled
+	 * (0f 1f 44 00 00 ...) starts with 0f, fails this check, and falls
+	 * back to gum's function-entry attach - i.e. such sites keep the
+	 * mid-function bug (#787). sys/sdt.h on this toolchain emits
+	 * single-byte sleds, so SDT notes are covered. There is no runtime
+	 * warning on this path: ordinary function-entry uprobes take it
+	 * too. */
 	if (*(volatile uint8_t *)addr != 0x90)
 		return false;
 
