@@ -181,18 +181,17 @@ extern "C" int64_t _bpftime__syscall_dispatcher(int64_t sys_nr, int64_t arg1,
 extern "C" void
 _bpftime__setup_syscall_hooker_callback(syscall_hooker_func_t *hooker)
 {
-	// This exported entry may run inside the injected host process. Fail
-	// open instead of aborting (assert in debug builds) or throwing
-	// std::bad_optional_access (release builds): leave the original syscall
-	// hooker untouched so the host keeps running without syscall tracing.
+	// This exported entry may run inside the injected host process, before
+	// the bpftime logger/sink is initialized. Fail open instead of aborting
+	// (assert in debug builds) or throwing std::bad_optional_access
+	// (release builds), and return quietly: logging here would fall back to
+	// spdlog's default stdout sink and pollute the host's stdio. Leave the
+	// caller's hooker untouched so the host keeps running without syscall
+	// tracing.
 	if (hooker == nullptr) {
-		SPDLOG_ERROR("Null syscall hooker pointer, skip hooker setup");
 		return;
 	}
 	if (!global_syscall_trace_attach_impl.has_value()) {
-		SPDLOG_ERROR(
-			"Syscall trace attach impl is not initialized, skip "
-			"installing syscall hooker");
 		return;
 	}
 	auto impl = global_syscall_trace_attach_impl.value();
