@@ -1,5 +1,7 @@
 add_subdirectory(bpftimetool)
-add_subdirectory(cli)
+if(BPFTIME_ENABLE_FRIDA)
+  add_subdirectory(cli)
+endif()
 if(BPFTIME_LLVM_JIT AND BPFTIME_BUILD_WITH_LIBBPF)
   message(STATUS "Using llvm-jit")
   add_subdirectory(aot)
