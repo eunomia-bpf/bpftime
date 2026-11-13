@@ -52,7 +52,12 @@ static const int NR_syscalls = 512;
 static syscall_hooker_func_t call_hook = &call_orig_syscall;
 
 #if defined(__x86_64__)
-[[maybe_unused]] void __asm_holder()
+// `used` keeps this function in the object under -flto: LTO sees a body whose
+// only effect is to define assembler-level labels, drops the whole function as
+// unreferenced, and the labels go with it -- `syscall_addr` then stays an
+// undefined reference at link time (issue #83). `maybe_unused` alone only
+// silences the warning, it does not prevent the removal.
+[[maybe_unused, gnu::used]] void __asm_holder()
 {
 	__asm__(".globl syscall_hooker_asm\n\t"
 		"syscall_hooker_asm:\n\t"
@@ -145,9 +150,12 @@ static syscall_hooker_func_t call_hook = &call_orig_syscall;
 #error "Unsupported architecture"
 #endif
 
-extern "C" int64_t syscall_hooker_cxx(int64_t sys_nr, int64_t arg1,
-				      int64_t arg2, int64_t arg3, int64_t arg4,
-				      int64_t arg5, int64_t arg6)
+// Called from the trampoline's inline assembly, which LTO cannot see: without
+// `used` it is dropped as unreferenced and the trampoline's `call` becomes an
+// undefined reference (issue #83, same cause as __asm_holder above).
+extern "C" __attribute__((used)) int64_t
+syscall_hooker_cxx(int64_t sys_nr, int64_t arg1, int64_t arg2, int64_t arg3,
+		   int64_t arg4, int64_t arg5, int64_t arg6)
 {
 	return call_hook(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
 }
