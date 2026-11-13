@@ -588,8 +588,13 @@ jobs:
 
           # Execute victim program, using timeout command to limit running time to 5 seconds
           echo "Running victim program with 5 second timeout..."
+          # Without pipefail, $? below is tee's status (always 0), so a victim
+          # crash (e.g. SIGSEGV -> 139) would be recorded as success. Propagate
+          # the real timeout/victim exit code through the pipe.
+          set -o pipefail
           sudo -E timeout 5s $LD_PRELOAD_CMD ./example/malloc/victim | tee "$CLIENT_LOG"
           VICTIM_EXIT_CODE=$?
+          set +o pipefail
 
           # Check exit code, timeout command returns 124 when terminating program after timeout
           if [ $VICTIM_EXIT_CODE -eq 124 ]; then
