@@ -22,6 +22,17 @@ std::optional<syscall_trace_attach_impl *> global_syscall_trace_attach_impl;
 // callback machinery from such a nested syscall recurses into half-initialized
 // attach state and terminates the host process (issue #165). A nested dispatch
 // therefore skips every callback and executes the original syscall only.
+//
+// initial-exec TLS is required (the same model the trap uprobe backend uses):
+// the default global-dynamic model resolves the variable through
+// __tls_get_addr on first access, and that resolver can call malloc. When
+// malloc itself is probed, the first touch from a new thread re-enters the
+// probe while TLS is being initialized and crashes. initial-exec addresses the
+// variable at a fixed thread-pointer offset with no runtime allocation, so
+// probing malloc stays safe.
+#if defined(__linux__)
+__attribute__((tls_model("initial-exec")))
+#endif
 static thread_local int syscall_dispatch_depth = 0;
 
 #ifdef __linux__
