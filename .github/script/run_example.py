@@ -1,3 +1,4 @@
+import re
 import sys
 import asyncio
 import typing
@@ -8,6 +9,24 @@ SERVER_TIMEOUT = 30
 AGENT_TIMEOUT = 30
 SERVER_START_SIGNAL = "bpftime-syscall-server started"
 CLEANUP_TIMEOUT = 10
+
+
+def _expected_match(expected: str, line: str) -> bool:
+    """Whether ``line`` satisfies ``expected``.
+
+    The example matrix in the workflow passes plain substrings, but a few
+    entries are written as regular expressions. Try the substring test
+    first, then the pattern, and fall back to the substring result when the
+    pattern does not compile: strings such as ``|*`` or ``mount(`` occur in
+    the matrix and are not valid regular expressions, so letting the
+    exception escape would abort the run for a plain-match entry.
+    """
+    if expected in line:
+        return True
+    try:
+        return re.match(expected, line.strip()) is not None
+    except re.error:
+        return False
 
 
 async def handle_stdout(
@@ -27,14 +46,14 @@ async def handle_stdout(
         for item in pending:
             item.cancel()
         if t2 in done:
-            s = t2.result().decode()
-            print(f"{title}:", s, end="")
+            stdout_raw = t2.result().decode()
+            print(f"{title}:", stdout_raw, end="")
             for callback in callback_all:
                 evt, sig = callback
-                if sig in s:
+                if _expected_match(sig, stdout_raw):
                     evt.set()
                     print("Callback triggered")
-            if check_error and "[error]" in s:
+            if check_error and "[error]" in stdout_raw:
                 assert False, "Error occurred in agent!"
         if t1 in done:
             break
@@ -67,6 +86,17 @@ async def terminate_process(proc: asyncio.subprocess.Process, name: str):
 
 
 async def main():
+    if len(sys.argv) < 6:
+        print(
+            "Usage: python script.py " \
+            "<executable :str>" \
+            "<victim :str> "\
+            "<expected_str :str (regexp also works)> "\
+            "<bpftime_cli :str> "\
+            "<is_a_syscall :Union[0, 1]>"
+        )
+        return
+
     (
         executable,
         victim,
@@ -103,7 +133,6 @@ async def main():
         )
 
         await asyncio.wait_for(server_started_signal.wait(), SERVER_TIMEOUT)
-        await asyncio.sleep(10)
         print("Server started!")
 
         # Start the agent
