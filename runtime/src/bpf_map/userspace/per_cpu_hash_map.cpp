@@ -30,7 +30,8 @@ per_cpu_hash_map_impl::per_cpu_hash_map_impl(
 	uint32_t value_size, uint32_t max_entries, int ncpu)
 	: impl(memory.get_segment_manager()), key_size(key_size),
 	  value_size(value_size), ncpu(ncpu), _max_entries(max_entries),
-	  value_template(value_size * ncpu, memory.get_segment_manager()),
+	  value_template(size_t(value_size) * ncpu,
+			 memory.get_segment_manager()),
 	  key_templates(memory.get_segment_manager()),
 	  single_value_templates(memory.get_segment_manager())
 {

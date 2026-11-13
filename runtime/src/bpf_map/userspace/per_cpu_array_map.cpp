@@ -20,7 +20,7 @@ per_cpu_array_map_impl::per_cpu_array_map_impl(
 	: data(memory.get_segment_manager()), ncpu(ncpu),
 	  value_size(value_size), max_ent(max_entries)
 {
-	data.resize(max_entries * ncpu * value_size);
+	data.resize(size_t(max_entries) * ncpu * value_size);
 }
 
 per_cpu_array_map_impl::per_cpu_array_map_impl(

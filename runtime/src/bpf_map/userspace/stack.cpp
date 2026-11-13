@@ -22,7 +22,7 @@ stack_map_impl::stack_map_impl(
 			"Stack map value_size or max_entries cannot be zero");
 	}
 
-	data.reserve(max_entries * _value_size);
+	data.reserve(size_t(max_entries) * _value_size);
 
 	SPDLOG_DEBUG("Stack map constructed: value_size={}, max_entries={}",
 		     _value_size, _max_entries);

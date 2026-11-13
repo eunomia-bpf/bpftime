@@ -19,7 +19,8 @@ void *array_map_impl::get_raw_data() const
 array_map_impl::array_map_impl(
 	boost::interprocess::managed_shared_memory &memory, uint32_t value_size,
 	uint32_t max_entries)
-	: data(value_size * max_entries, memory.get_segment_manager())
+	: data(size_t(value_size) * max_entries,
+		  memory.get_segment_manager())
 {
 	this->_value_size = value_size;
 	this->_max_entries = max_entries;

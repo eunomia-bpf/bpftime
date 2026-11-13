@@ -23,7 +23,7 @@ queue_map_impl::queue_map_impl(
 			"Queue map value_size or max_entries cannot be zero");
 	}
 
-	data.resize(max_entries * _value_size);
+	data.resize(size_t(max_entries) * _value_size);
 
 	SPDLOG_DEBUG("Queue map constructed: value_size={}, max_entries={}",
 		     _value_size, _max_entries);
