@@ -960,8 +960,10 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 		return -EFAULT;
 	}
 
+	// Both operands must be the same type: on arm64 Darwin uint64_t is
+	// unsigned long long while size_t is unsigned long, which libc++ rejects.
 	auto frames_to_copy =
-		std::min(result->size() - frames_to_skip,
+		std::min(static_cast<size_t>(result->size() - frames_to_skip),
 			 static_cast<size_t>(size / sizeof(uint64_t)));
 	auto size_to_copy = frames_to_copy * sizeof(uint64_t);
 	SPDLOG_DEBUG("Copied {} bytes of stack", size_to_copy);
