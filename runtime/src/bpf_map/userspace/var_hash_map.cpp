@@ -57,6 +57,13 @@ void *var_size_hash_map_impl::elem_lookup(const void *key)
 long var_size_hash_map_impl::elem_update(const void *key, const void *value,
 					 uint64_t flags)
 {
+	// A BPF_F_RDONLY map can never be modified, whether the element
+	// already exists or not. The kernel rejects every write to a
+	// read-only map with EPERM before any existence check.
+	if (this->flags & BPF_F_RDONLY) {
+		errno = EPERM;
+		return -1;
+	}
 	// Check flags
 	if (!is_good_update_flag(flags)) {
 		errno = EINVAL;
@@ -79,16 +86,16 @@ long var_size_hash_map_impl::elem_update(const void *key, const void *value,
 		errno = E2BIG;
 		return -1;
 	}
-	if (element_exists == false && (this->flags & BPF_F_RDONLY)) {
-		errno = EPERM;
-		return -1;
-	}
 	map_impl.insert_or_assign(key_vec, value_vec);
 	return 0;
 }
 
 long var_size_hash_map_impl::elem_delete(const void *key)
 {
+	if (flags & BPF_F_RDONLY) {
+		errno = EPERM;
+		return -1;
+	}
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
 	auto itr = map_impl.find(key_vec);
 	if (itr == map_impl.end()) {
@@ -100,6 +107,10 @@ long var_size_hash_map_impl::elem_delete(const void *key)
 }
 int var_size_hash_map_impl::lookup_and_delete(const void *key, void *value_out)
 {
+	if (flags & BPF_F_RDONLY) {
+		errno = EPERM;
+		return -1;
+	}
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
 	auto itr = map_impl.find(key_vec);
 	if (itr == map_impl.end()) {

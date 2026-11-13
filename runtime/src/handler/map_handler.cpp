@@ -1008,7 +1008,8 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
 		map_impl_ptr = memory.construct<lru_var_hash_map_impl>(
 			boost::interprocess::anonymous_instance)(
-			memory, key_size, value_size, max_entries);
+			memory, key_size, value_size, max_entries,
+			static_cast<uint32_t>(flags));
 		init_refcnt();
 		return 0;
 	}

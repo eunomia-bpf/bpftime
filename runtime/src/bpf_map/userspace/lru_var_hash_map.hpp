@@ -58,6 +58,7 @@ class lru_var_hash_map_impl {
 	size_t key_size;
 	size_t value_size;
 	size_t max_entries;
+	uint32_t map_flags;
 	bytes_vec key_vec;
 	bytes_vec value_vec;
 
@@ -77,7 +78,7 @@ class lru_var_hash_map_impl {
 	const static bool should_lock = true;
 	lru_var_hash_map_impl(boost::interprocess::managed_shared_memory &memory,
 			      size_t key_size, size_t value_size,
-			      size_t max_entries);
+			      size_t max_entries, uint32_t map_flags);
 	void *elem_lookup(const void *key);
 
 	long elem_update(const void *key, const void *value, uint64_t flags);

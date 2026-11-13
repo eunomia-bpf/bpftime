@@ -44,7 +44,8 @@ TEST_CASE("LRU Hash Map Basic Operations", "[lru_hash][basic]")
 	try {
 		lru_map = shm.construct<bpftime::lru_var_hash_map_impl>(
 			"LRUHashMapBasicInstance")(
-			shm, sizeof(uint32_t), sizeof(uint64_t), map_capacity);
+			shm, sizeof(uint32_t), sizeof(uint64_t), map_capacity,
+			0);
 		REQUIRE(lru_map != nullptr);
 	} catch (const std::exception &ex) {
 		FAIL("Failed to construct LRU Hash Map: " << ex.what());
@@ -154,7 +155,7 @@ TEST_CASE("LRU Hash Map Update Flags", "[lru_hash][flags]")
 	try {
 		lru_map = shm.construct<bpftime::lru_var_hash_map_impl>(
 			"LRUHashMapFlagsInstance")(shm, sizeof(uint32_t),
-						   sizeof(uint64_t), 10);
+						   sizeof(uint64_t), 10, 0);
 		REQUIRE(lru_map != nullptr);
 	} catch (const std::exception &ex) {
 		FAIL("Failed to construct LRU Hash Map: " << ex.what());
@@ -238,7 +239,7 @@ TEST_CASE("LRU Hash Map Capacity Limits", "[lru_hash][capacity]")
 		lru_map = shm.construct<bpftime::lru_var_hash_map_impl>(
 			"LRUHashMapCapacityInstance")(shm, sizeof(uint32_t),
 						      sizeof(uint64_t),
-						      small_capacity);
+						      small_capacity, 0);
 		REQUIRE(lru_map != nullptr);
 	} catch (const std::exception &ex) {
 		FAIL("Failed to construct LRU Hash Map: " << ex.what());
@@ -292,7 +293,8 @@ TEST_CASE("LRU Hash Map Iteration", "[lru_hash][iterator]")
 	try {
 		lru_map = shm.construct<bpftime::lru_var_hash_map_impl>(
 			"LRUHashMapIterInstance")(
-			shm, sizeof(uint32_t), sizeof(uint64_t), map_capacity);
+			shm, sizeof(uint32_t), sizeof(uint64_t), map_capacity,
+			0);
 		REQUIRE(lru_map != nullptr);
 	} catch (const std::exception &ex) {
 		FAIL("Failed to construct LRU Hash Map: " << ex.what());

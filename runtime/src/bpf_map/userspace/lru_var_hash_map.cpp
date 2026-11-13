@@ -12,9 +12,10 @@ static bool is_good_update_flag(uint64_t flags)
 
 lru_var_hash_map_impl::lru_var_hash_map_impl(
 	boost::interprocess::managed_shared_memory &memory, size_t key_size,
-	size_t value_size, size_t max_entries)
+	size_t value_size, size_t max_entries, uint32_t map_flags)
 	: map_impl(max_entries, memory.get_segment_manager()),
 	  key_size(key_size), value_size(value_size), max_entries(max_entries),
+	  map_flags(map_flags),
 	  key_vec(key_size, memory.get_segment_manager()),
 	  value_vec(value_size, memory.get_segment_manager()),
 	  memory_allocator(memory.get_allocator<void>()),
@@ -26,6 +27,12 @@ lru_var_hash_map_impl::lru_var_hash_map_impl(
 
 void *lru_var_hash_map_impl::elem_lookup(const void *key)
 {
+	// A BPF_F_WRONLY map cannot be read, matching the kernel EPERM on
+	// lookup/get_next_key against a write-only map fd.
+	if (map_flags & BPF_F_WRONLY) {
+		errno = EPERM;
+		return nullptr;
+	}
 	SPDLOG_TRACE("Peform elem lookup of lru var hash map");
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
 	if (auto itr = map_impl.find(key_vec); itr != map_impl.end()) {
@@ -43,6 +50,13 @@ void *lru_var_hash_map_impl::elem_lookup(const void *key)
 long lru_var_hash_map_impl::elem_update(const void *key, const void *value,
 					uint64_t flags)
 {
+	// A BPF_F_RDONLY map can never be modified, whether the element
+	// already exists or not. The kernel rejects every write to a
+	// read-only map with EPERM before any existence check.
+	if (map_flags & BPF_F_RDONLY) {
+		errno = EPERM;
+		return -1;
+	}
 	SPDLOG_DEBUG("Running lru hash update: key {:x}, value {:x}, flags {}",
 		     (uintptr_t)key, (uintptr_t)value, flags);
 	// Check flags
@@ -91,6 +105,10 @@ long lru_var_hash_map_impl::elem_update(const void *key, const void *value,
 
 long lru_var_hash_map_impl::elem_delete(const void *key)
 {
+	if (map_flags & BPF_F_RDONLY) {
+		errno = EPERM;
+		return -1;
+	}
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
 	auto itr = map_impl.find(key_vec);
 	if (itr == map_impl.end()) {
@@ -104,6 +122,10 @@ long lru_var_hash_map_impl::elem_delete(const void *key)
 
 int lru_var_hash_map_impl::map_get_next_key(const void *key, void *next_key)
 {
+	if (map_flags & BPF_F_WRONLY) {
+		errno = EPERM;
+		return -1;
+	}
 	if (key == nullptr) {
 		// nullptr means the first key
 		auto itr = map_impl.begin();
