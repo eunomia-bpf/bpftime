@@ -1,5 +1,7 @@
 
+#include "bpftime_config.hpp"
 #include "bpftime_shm.hpp"
+#include "bpftime_shm_internal.hpp"
 #include "request_filter.h"
 #include "spdlog/spdlog.h"
 #include <bpftime_prog.hpp>
@@ -41,7 +43,9 @@ int main(int argc, const char **argv)
 		return 1;
 	}
 	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
-
+	bpftime::runtime_config cfg;
+	cfg.set_vm_name("llvm");
+	shm_holder.global_shared_memory.set_runtime_config(std::move(cfg));
 	signal(SIGINT, sig_handler);
 	signal(SIGTERM, sig_handler);
 
