@@ -9,6 +9,7 @@
 #include "bpftime_shm.hpp"
 #include "bpftime_shm_internal.hpp"
 #include "handler/link_handler.hpp"
+#include "user/bpf_prog_insns.hpp"
 #include "user/bpftime_driver.hpp"
 #if !defined(__x86_64__) && defined(_M_X64)
 #error Only supports x86_64
@@ -45,4 +46,34 @@ TEST_CASE("Daemon driver preserves perf-link cookies")
 		}
 	}
 	REQUIRE(found);
+}
+
+TEST_CASE("Daemon rejects instruction counts beyond the captured buffer")
+{
+	bpf_insn_data captured = {};
+	captured.code_len = BPF_COMPLEXITY_LIMIT_INSNS + 1;
+	std::vector<ebpf_inst> insns(1);
+
+	const int result = bpftime::detail::copy_captured_bpf_prog_insns(
+		insns, captured);
+	REQUIRE(result == -E2BIG);
+	REQUIRE(insns.empty());
+}
+
+TEST_CASE("Daemon accepts the exact captured instruction capacity")
+{
+	bpf_insn_data captured = {};
+	captured.code_len = BPF_COMPLEXITY_LIMIT_INSNS;
+	auto *captured_insns = reinterpret_cast<ebpf_inst *>(captured.code);
+	captured_insns[0].code = EBPF_OP_MOV64_IMM;
+	captured_insns[0].imm = 7;
+	captured_insns[BPF_COMPLEXITY_LIMIT_INSNS - 1].code = EBPF_OP_EXIT;
+	std::vector<ebpf_inst> insns;
+
+	REQUIRE(bpftime::detail::copy_captured_bpf_prog_insns(insns,
+							     captured) == 0);
+	REQUIRE(insns.size() == BPF_COMPLEXITY_LIMIT_INSNS);
+	REQUIRE(insns.front().code == EBPF_OP_MOV64_IMM);
+	REQUIRE(insns.front().imm == 7);
+	REQUIRE(insns.back().code == EBPF_OP_EXIT);
 }

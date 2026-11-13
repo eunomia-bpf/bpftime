@@ -1,4 +1,4 @@
-#include <cerrno>
+#include "arguments.hpp"
 #include <cstdlib>
 #include <iostream>
 #include <cstdio>
@@ -135,62 +135,37 @@ int bpftime_run_ebpf_program(int id, const std::string &data_in_file,
 	return 0;
 }
 
-inline void check_run_type(const std::string &run_type)
-{
-	if (run_type != "JIT" && run_type != "AOT" && run_type != "INTERPRET") {
-		cerr << "Invalid run type " << run_type << endl;
-		cerr << "Valid run types are JIT, AOT, INTERPRET" << endl;
-		exit(1);
-	}
-}
-
 // Main program
 int main(int argc, char *argv[])
 {
-	if (argc == 1) {
+	// Resolve the log destination before anything else logs: until this
+	// runs, SPDLOG_* goes to spdlog's default logger, which writes to
+	// stdout regardless of BPFTIME_LOG_OUTPUT.
+	const char *logger_target = getenv("BPFTIME_LOG_OUTPUT");
+	bpftime::bpftime_set_logger(logger_target == nullptr ?
+					    DEFAULT_LOGGER_OUTPUT_PATH :
+					    logger_target);
+	spdlog::cfg::load_env_levels();
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
-		cerr << "Usage: " << argv[0]
-		     << " [load|import|export|remove|run|run-on-cuda] ..."
-		     << endl
-		     << "Command-line tool to inspect and manage userspace eBPF objects"
-		     << endl;
-
+	tool_arguments args(argv[0], true);
 #else
-		cerr << "Usage: " << argv[0]
-		     << " [load|import|export|remove|run] ..." << endl
-		     << "Command-line tool to inspect and manage userspace eBPF objects"
-		     << endl;
-
+	tool_arguments args(argv[0]);
 #endif
+	try {
+		args.parse(argc, argv);
+	} catch (const std::exception &err) {
+		cerr << "Error: " << err.what() << endl << args.program;
 		return 1;
 	}
-
-	spdlog::cfg::load_env_levels();
-
-	auto cmd = std::string(argv[1]);
-	if (cmd == "load") {
-		if (argc != 3) {
-			cerr << "Usage: " << argv[0] << " load <fd> <JSON>"
-			     << endl
-			     << "Load a JSON file containing eBPF objects into the global shared memory"
-			     << endl;
-			return 1;
-		}
+	if (args.program.is_subcommand_used(args.load)) {
 		bpftime_initialize_global_shm(
 			shm_open_type::SHM_CREATE_OR_OPEN);
-		int fd = atoi(argv[2]);
-		auto json_str = std::string(argv[3]);
+		int fd = args.load.get<int>("fd");
+		auto json_str = args.load.get<std::string>("JSON");
 		return bpftime_import_shm_handler_from_json(fd,
 							    json_str.c_str());
-	} else if (cmd == "export") {
-		if (argc != 3) {
-			cerr << "Usage: " << argv[0] << " export <filename>"
-			     << endl
-			     << "Export the global shared memory to a JSON file"
-			     << endl;
-			return 1;
-		}
-		auto filename = std::string(argv[2]);
+	} else if (args.program.is_subcommand_used(args.export_cmd)) {
+		auto filename = args.export_cmd.get<std::string>("filename");
 
 		// Check if output file is the current shared memory device
 		std::string shm_name = bpftime::get_global_shm_name();
@@ -220,92 +195,27 @@ int main(int argc, char *argv[])
 			}
 			return 1;
 		}
-	} else if (cmd == "import") {
-		if (argc != 3) {
-			cerr << "Usage: " << argv[0] << " import <filename>"
-			     << endl
-			     << "Import a JSON file containing eBPF objects into the global shared memory"
-			     << endl;
-			return 1;
-		}
+	} else if (args.program.is_subcommand_used(args.import_cmd)) {
 		bpftime_initialize_global_shm(
 			shm_open_type::SHM_CREATE_OR_OPEN);
 		auto runtime_config = bpftime::construct_runtime_config_from_env();
 		bpftime_set_runtime_config(std::move(runtime_config));
-		auto filename = std::string(argv[2]);
+		auto filename = args.import_cmd.get<std::string>("filename");
 		return bpftime_import_global_shm_from_json(filename.c_str());
-	} else if (cmd == "remove") {
-		if (argc != 2) {
-			cerr << "Usage: " << argv[0] << " remove" << endl
-			     << "Remove the global shared memory system wide"
-			     << endl;
-			return 1;
-		}
+	} else if (args.program.is_subcommand_used(args.remove)) {
 		bpftime_remove_global_shm();
 		return 0;
-	} else if (cmd == "run") {
-		if (argc < 4 || argc > 8) {
-			cerr << "Usage: " << argv[0]
-			     << " run <id> <data_in_file> [repeat N] [type RUN_TYPE]"
-			     << endl
-			     << "Run an eBPF program from id with data in from data_in_file"
-			     << endl
-			     << "RUN_TYPE := AOT | JIT | INTERPRET" << endl;
-			return 1;
-		}
-		int id = atoi(argv[2]);
-		auto data_in_file = std::string(argv[3]);
-		int repeat_N = 1;
-		std::string run_type = "JIT";
-		if (argc > 5) {
-			if (strcmp(argv[4], "repeat") == 0) {
-				repeat_N = atoi(argv[5]);
-			} else if (strcmp(argv[4], "type") == 0) {
-				run_type = std::string(argv[5]);
-			} else {
-				cerr << "Invalid subcommand " << argv[4]
-				     << endl;
-				return 1;
-			}
-			if (argc > 7) {
-				if (strcmp(argv[6], "type") == 0) {
-					run_type = std::string(argv[7]);
-				} else {
-					cerr << "Invalid subcommand " << argv[6]
-					     << endl;
-					return 1;
-				}
-			}
-		}
-		check_run_type(run_type);
-		return bpftime_run_ebpf_program(id, data_in_file, repeat_N,
-						run_type);
+	} else if (args.program.is_subcommand_used(args.run)) {
+		return bpftime_run_ebpf_program(
+			args.run.get<int>("id"), args.run.get<std::string>("data_file"),
+			args.run.present<int>("--repeat").value_or(1),
+			args.run.present<std::string>("--type").value_or("JIT"));
 	}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
-    else if (cmd == "run-on-cuda") {
-        if (argc != 3 && argc != 4 && argc != 10) {
-            cerr << "Usage: " << argv[0]
-                 << " run-on-cuda [program name] [run count (optional, defaults to 1)]"
-                 << " [gridX gridY gridZ blockX blockY blockZ] (optional)"
-                 << endl;
-            return 1;
-        }
-        int run_count = 1;
-        if (argc >= 4) {
-            run_count = atoi(argv[3]);
-        }
-        int gridX = 1, gridY = 1, gridZ = 1;
-        int blockX = 1, blockY = 1, blockZ = 1;
-        bool has_dims = false;
-        if (argc == 10) {
-            has_dims = true;
-            gridX = atoi(argv[4]);
-            gridY = atoi(argv[5]);
-            gridZ = atoi(argv[6]);
-            blockX = atoi(argv[7]);
-            blockY = atoi(argv[8]);
-            blockZ = atoi(argv[9]);
-        }
+	else if (args.program.is_subcommand_used(args.cuda)) {
+		auto program_name = args.cuda.get<std::string>("program");
+		int run_count = args.cuda.present<int>("count").value_or(1);
+		auto dims = args.cuda.get<std::vector<int>>("dimensions");
 		try {
 			bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
 			auto &runtime_config = bpftime_get_runtime_config();
@@ -335,17 +245,17 @@ int main(int argc, char *argv[])
 			ctx.init_attach_ctx_from_handlers(runtime_config);
 			if (auto impl = ctx.find_nv_attach_impl(); impl) {
 				const int id = (*impl)->find_attach_entry_by_program_name(
-					argv[2]);
+					program_name.c_str());
 				if (id == -1) {
 					SPDLOG_ERROR("Unable to find program: {}",
-						     argv[2]);
+						     program_name.c_str());
 					return 1;
 				}
 				int err = 0;
-				if (has_dims) {
+				if (!dims.empty()) {
 					err = (*impl)->run_attach_entry_on_gpu(
-						id, run_count, gridX, gridY, gridZ,
-						blockX, blockY, blockZ);
+						id, run_count, dims[0], dims[1], dims[2],
+						dims[3], dims[4], dims[5]);
 				} else {
 					err = (*impl)->run_attach_entry_on_gpu(
 						id, run_count);
@@ -372,10 +282,6 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 	}
-	#endif
-	else {
-		cerr << "Invalid subcommand " << cmd << endl;
-		return 1;
-	}
+#endif
 	return EXIT_SUCCESS;
 }

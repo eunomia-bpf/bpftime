@@ -52,3 +52,5 @@ jobs:
         python-version: '3.8'
     - name: build
       run: make build-vm
+    - name: test
+      run: ctest --test-dir vm/build --output-on-failure

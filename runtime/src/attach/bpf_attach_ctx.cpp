@@ -5,6 +5,9 @@
  */
 #include "attach_private_data.hpp"
 #include "base_attach_impl.hpp"
+#if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
+#include "trap_uprobe_attach_impl.hpp"
+#endif
 #include "bpftime_shm.hpp"
 
 #include "handler/link_handler.hpp"
@@ -37,7 +40,7 @@ extern "C" uint64_t bpftime_set_retval(uint64_t value);
 namespace bpftime
 {
 
-static int load_prog_and_helpers(bpftime_prog *prog, const runtime_config &config)
+int load_prog_and_helpers(bpftime_prog *prog, const runtime_config &config)
 {
 #if defined(__linux__)
 	if (config.enable_kernel_helper_group) {
@@ -182,6 +185,13 @@ bpf_attach_ctx::bpf_attach_ctx()
 			"CUDA shared communication memory not available; CUDA attach will be disabled for this process");
 	}
 #endif
+}
+
+bpftime_prog *bpf_attach_ctx::find_instantiated_prog(int handler_id) const
+{
+	auto program = instantiated_progs.find(handler_id);
+	return program == instantiated_progs.end() ? nullptr :
+						    program->second.get();
 }
 
 int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
@@ -378,9 +388,18 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 		}
 #endif
 		auto cookie = handler.attach_cookie;
+#if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
+		if (dynamic_cast<attach::trap::trap_attach_impl *>(attach_impl)) {
+			if (int err = prog->prepare_for_signal_execution(); err < 0)
+				return err;
+		}
+#endif
 		attach_id = attach_impl->create_attach_with_ebpf_callback(
 			[=](void *mem, size_t mem_size, uint64_t *ret) -> int {
-				current_thread_bpf_cookie = cookie;
+				if (auto *ctx = attach::current_signal_callback)
+					ctx->cookie = cookie;
+				else
+					current_thread_bpf_cookie = cookie;
 				int err = prog->bpftime_prog_exec(
 					(void *)mem, mem_size, ret);
 				return err;

@@ -6,20 +6,25 @@
 #include "bpftime_config.hpp"
 #include "bpftime_helper_group.hpp"
 #include "bpftime_shm_internal.hpp"
+#include <boost/interprocess/exceptions.hpp>
+#include <boost/interprocess/shared_memory_object.hpp>
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 #include "cuda.h"
 #endif
 #include "syscall_context.hpp"
+#include <cerrno>
+#include <cstdlib>
+#include <exception>
 #include <fcntl.h>
 #include <filesystem>
 #include <memory>
 #include <mutex>
-#include <spdlog/cfg/env.h>
+#include <signal.h>
 #include <spdlog/spdlog.h>
-#include "bpftime_logger.hpp"
 #include <bpftime_shm.hpp>
 #include <string>
 #include <system_error>
+#include <unistd.h>
 #ifdef ENABLE_BPFTIME_VERIFIER
 #include <bpftime-verifier.hpp>
 #include <iomanip>
@@ -28,6 +33,10 @@
 namespace bpftime
 {
 static std::once_flag g_startup_once;
+static std::exception_ptr g_startup_exception;
+static std::string g_syscall_server_shm_name;
+static pid_t g_syscall_server_shm_owner_pid = -1;
+static bool g_syscall_server_owns_shm = false;
 using namespace bpftime;
 // Why not use string_view? because parse_uint_from_file requires a c-string
 static const std::string UPROBE_TYPE_FILE_NAME =
@@ -39,68 +48,183 @@ static const std::string KPROBE_TYPE_FILE_NAME =
 static const std::string KRETPROBE_BIT_FILE_NAME =
 	"/sys/bus/event_source/devices/kprobe/format/retprobe";
 
+static bool pid_is_alive(int pid)
+{
+	return kill(pid, 0) == 0 || errno == EPERM;
+}
+
+static void remove_syscall_server_global_shm() noexcept
+{
+	if (g_syscall_server_shm_name.empty()) {
+		return;
+	}
+	if (getpid() != g_syscall_server_shm_owner_pid) {
+		try {
+			shm_holder.global_shared_memory
+				.remove_pid_from_alive_syscall_server_set(
+					getpid());
+		} catch (...) {
+		}
+		return;
+	}
+	if (!g_syscall_server_owns_shm) {
+		try {
+			shm_holder.global_shared_memory
+				.remove_pid_from_alive_syscall_server_set(
+					getpid());
+		} catch (...) {
+		}
+		return;
+	}
+	shm_lifecycle_lock lifecycle_lock(g_syscall_server_shm_name.c_str());
+	try {
+		shm_holder.global_shared_memory
+			.remove_pid_from_alive_syscall_server_set(getpid());
+
+		bool has_alive_server = false;
+		bool server_snapshot_ok =
+			shm_holder.global_shared_memory
+				.iterate_all_pids_in_alive_syscall_server_set(
+					[&](int pid) {
+						if (has_alive_server) {
+							return;
+						}
+						if (pid_is_alive(pid)) {
+							has_alive_server = true;
+						}
+					});
+		if (!server_snapshot_ok) {
+			return;
+		}
+		if (has_alive_server) {
+			return;
+		}
+
+		bool has_alive_agent = false;
+		bool agent_snapshot_ok =
+			shm_holder.global_shared_memory
+				.iterate_all_pids_in_alive_agent_set([&](int pid) {
+					if (has_alive_agent) {
+						return;
+					}
+					if (pid_is_alive(pid)) {
+						has_alive_agent = true;
+					}
+				});
+		if (!agent_snapshot_ok) {
+			return;
+		}
+		if (has_alive_agent) {
+			return;
+		}
+		boost::interprocess::shared_memory_object::remove(
+			g_syscall_server_shm_name.c_str());
+	} catch (...) {
+	}
+}
+
+static bool initialize_global_shm_with_ownership()
+{
+	try {
+		bpftime_initialize_global_shm(shm_open_type::SHM_CREATE_ONLY);
+		return true;
+	} catch (const boost::interprocess::interprocess_exception &error) {
+		if (error.get_error_code() !=
+		    boost::interprocess::already_exists_error) {
+			boost::interprocess::shared_memory_object::remove(
+				g_syscall_server_shm_name.c_str());
+			throw;
+		}
+	} catch (...) {
+		boost::interprocess::shared_memory_object::remove(
+			g_syscall_server_shm_name.c_str());
+		throw;
+	}
+	bpftime_initialize_global_shm(shm_open_type::SHM_CREATE_OR_OPEN);
+	return false;
+}
+
 void start_up(syscall_context &ctx)
 {
 	std::call_once(g_startup_once, [&ctx]() {
-		SPDLOG_INFO("Starting syscall server..");
-		auto runtime_config = construct_runtime_config_from_env();
-		bpftime_set_logger(
-			std::string(runtime_config.get_logger_output_path()));
-		SPDLOG_INFO("Initialize syscall server");
+		try {
+			SPDLOG_INFO("Starting syscall server..");
+			auto runtime_config = construct_runtime_config_from_env();
+			SPDLOG_INFO("Initialize syscall server");
 
-		bpftime_initialize_global_shm(
-			shm_open_type::SHM_CREATE_OR_OPEN);
+			g_syscall_server_shm_name = get_global_shm_name();
+			g_syscall_server_shm_owner_pid = getpid();
+			shm_lifecycle_lock lifecycle_lock(
+				g_syscall_server_shm_name.c_str());
+			g_syscall_server_owns_shm =
+				initialize_global_shm_with_ownership();
+			std::atexit(remove_syscall_server_global_shm);
+			if (!shm_holder.global_shared_memory
+				     .add_pid_into_alive_syscall_server_set(
+					     getpid())) {
+				SPDLOG_WARN(
+					"Unable to record alive syscall-server pid; disabling automatic shm removal");
+				g_syscall_server_owns_shm = false;
+			}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
-		ctx.initialize_cuda();
+			ctx.initialize_cuda();
 #endif
-		shm_holder.global_shared_memory.begin_new_session();
-		shm_holder.global_shared_memory.set_mock_setter([&](bool flg) {
-			ctx.enable_mock_after_initialized.store(
-				flg, std::memory_order_relaxed);
-			SPDLOG_INFO(
-				"syscall server: Set enable_mock_after_initialized to {}",
-				flg);
-		});
+			shm_holder.global_shared_memory.begin_new_session();
+			shm_holder.global_shared_memory.set_mock_setter(
+				[&](bool flg) {
+					ctx.enable_mock_after_initialized.store(
+						flg, std::memory_order_relaxed);
+					SPDLOG_INFO(
+						"syscall server: Set enable_mock_after_initialized to {}",
+						flg);
+				});
 #ifdef ENABLE_BPFTIME_VERIFIER
-		std::vector<int32_t> helper_ids;
-		std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype>
-			non_kernel_helpers;
-		if (runtime_config.enable_kernel_helper_group) {
-			for (auto x :
-			     bpftime_helper_group::get_kernel_utils_helper_group()
-				     .get_helper_ids()) {
-				helper_ids.push_back(x);
+			std::vector<int32_t> helper_ids;
+			std::map<int32_t,
+				 bpftime::verifier::BpftimeHelperProrotype>
+				non_kernel_helpers;
+			if (runtime_config.enable_kernel_helper_group) {
+				for (auto x : bpftime_helper_group::
+					     get_kernel_utils_helper_group()
+						     .get_helper_ids()) {
+					helper_ids.push_back(x);
+				}
 			}
-		}
-		if (runtime_config.enable_shm_maps_helper_group) {
-			for (auto x :
-			     bpftime_helper_group::get_shm_maps_helper_group()
-				     .get_helper_ids()) {
-				helper_ids.push_back(x);
+			if (runtime_config.enable_shm_maps_helper_group) {
+				for (auto x : bpftime_helper_group::
+					     get_shm_maps_helper_group()
+						     .get_helper_ids()) {
+					helper_ids.push_back(x);
+				}
 			}
-		}
-		if (runtime_config.enable_ufunc_helper_group) {
-			for (auto x :
-			     bpftime_helper_group::get_shm_maps_helper_group()
-				     .get_helper_ids()) {
-				helper_ids.push_back(x);
+			if (runtime_config.enable_ufunc_helper_group) {
+				for (auto x : bpftime_helper_group::
+					     get_shm_maps_helper_group()
+						     .get_helper_ids()) {
+					helper_ids.push_back(x);
+				}
+				// non_kernel_helpers =
+				for (const auto &[k, v] :
+				     get_ufunc_helper_protos()) {
+					non_kernel_helpers[k] = v;
+				}
 			}
-			// non_kernel_helpers =
-			for (const auto &[k, v] : get_ufunc_helper_protos()) {
-				non_kernel_helpers[k] = v;
-			}
-		}
-		verifier::set_available_helpers(helper_ids);
-		SPDLOG_INFO("Enabling {} helpers", helper_ids.size());
-		verifier::set_non_kernel_helpers(non_kernel_helpers);
+			verifier::set_available_helpers(helper_ids);
+			SPDLOG_INFO("Enabling {} helpers", helper_ids.size());
+			verifier::set_non_kernel_helpers(non_kernel_helpers);
 #endif
-		bpftime_set_runtime_config(std::move(runtime_config));
-		// Set a variable to indicate the program that it's controlled
-		// by bpftime
-		setenv("BPFTIME_USED", "1", 0);
-		SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
-		SPDLOG_INFO("bpftime-syscall-server started");
+			bpftime_set_runtime_config(std::move(runtime_config));
+			// Set a variable to indicate the program that it's
+			// controlled by bpftime
+			setenv("BPFTIME_USED", "1", 0);
+			SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
+			SPDLOG_INFO("bpftime-syscall-server started");
+		} catch (...) {
+			g_startup_exception = std::current_exception();
+		}
 	});
+	if (g_startup_exception)
+		std::rethrow_exception(g_startup_exception);
 }
 
 /*
