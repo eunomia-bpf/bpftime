@@ -678,11 +678,14 @@ int bpftime_shm::open_fake_fd()
 	while (fd <= 2 && fd >= 0 && --cnt > 0) {
 		fd = dup(fd);
 	}
-	if (fd >= 0 && (std::size_t)fd >= manager->size()) {
+	if (fd < 0) {
+		// open/dup failed; errno is already set by libc.
+		return -errno;
+	}
+	if ((std::size_t)fd >= manager->size()) {
 		SPDLOG_ERROR("open_fake_fd: fd {} exceeds handler pool size {}", fd, manager->size());
 		close(fd);
-		errno = ENOSPC;
-		return -1;
+		return -ENOSPC;
 	}
 	return fd;
 }
@@ -1048,9 +1051,13 @@ int bpftime_shm::translate_shared_map_type_to_kernel_map_type(int type)
 int bpftime_shm::add_bpf_map(int fd, const char *name,
 			     bpftime::bpf_map_attr attr)
 {
+	bool fd_self_allocated = false;
 	if (fd < 0) {
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
+		fd_self_allocated = true;
+		if (fd < 0)
+			return fd;
 	}
 	if (!manager) {
 		return -1;
@@ -1072,8 +1079,14 @@ int bpftime_shm::add_bpf_map(int fd, const char *name,
 			"Creating map handler at {}, which must destroy the existing handler");
 		manager->clear_id_at(fd, segment);
 	}
-	return manager->set_handler(
+	int rc = manager->set_handler(
 		fd, bpftime::bpf_map_handler(fd, name, segment, attr), segment);
+	if (rc < 0 && fd_self_allocated) {
+		// set_handler already rolled back the handler slot; close the OS
+		// fd allocated in this call so failed creates do not leak fds.
+		close(fd);
+	}
+	return rc;
 }
 
 int bpftime_shm::dup_bpf_map(int oldfd, int newfd)
