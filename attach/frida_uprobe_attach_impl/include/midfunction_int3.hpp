@@ -56,12 +56,23 @@ class midfunction_int3_registry {
 
 #else /* !x86_64 */
 
-/* Stub so the call sites compile everywhere; never takes over. */
+#include <spdlog/spdlog.h>
+
+/* Stub so the call sites compile and link everywhere; never takes over.
+ * instance() must be defined inline here: the .cpp defines it only
+ * inside the x86_64 guard, while the call site builds on all arches -
+ * a declaration-only stub would not link. */
 class midfunction_int3_registry {
     public:
-	static midfunction_int3_registry &instance();
+	static midfunction_int3_registry &instance()
+	{
+		static midfunction_int3_registry r;
+		return r;
+	}
 	bool try_register(void *, void *)
 	{
+		SPDLOG_DEBUG(
+			"midfunction int3 backend not implemented on this architecture; staying on function-entry attach");
 		return false;
 	}
 	void unregister(void *, void *)
@@ -71,6 +82,9 @@ class midfunction_int3_registry {
 	{
 		return false;
 	}
+
+    private:
+	midfunction_int3_registry() = default;
 };
 
 #endif
