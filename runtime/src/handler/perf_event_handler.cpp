@@ -21,7 +21,7 @@
 #include <cerrno>
 #include <exception>
 #include <limits>
-#include <unordered_map>
+#include <type_traits>
 #include <variant>
 #if __linux__
 #include <sys/syscall.h>
@@ -134,16 +134,70 @@ struct software_perf_event_shard_cache_entry {
 	uint64_t buffer_generation;
 	uint64_t shard_generation;
 	software_perf_event_shard *shard;
+	const software_perf_event_data *owner;
 };
 
-constexpr size_t max_software_perf_event_shard_cache_entries = 64;
+// Six entries keep the per-thread initial-exec footprint at 240 bytes. A
+// larger table exhausted the static TLS surplus when this runtime is
+// dlopen()ed after startup: the Nginx attach example failed with
+// "cannot allocate memory in static TLS block". The cache stays
+// allocation-free; exceeding the capacity reuses the bounded eviction path.
+constexpr size_t max_software_perf_event_shard_cache_entries = 6;
+static_assert(
+	sizeof(software_perf_event_shard_cache_entry) *
+			max_software_perf_event_shard_cache_entries <=
+		256,
+	"initial-exec shard cache must fit the late-dlopen static TLS budget");
 constexpr uint64_t software_perf_event_reclaim_drain_interval = 64;
 constexpr size_t software_perf_event_reclaim_shard_threshold = 64;
 
-thread_local std::unordered_map<const software_perf_event_data *,
-				software_perf_event_shard_cache_entry>
-	software_perf_event_shard_cache;
+// Output can be called while libc holds a malloc arena lock. Keep this cache
+// trivial: a TLS container's destructor registration itself calls calloc.
+static_assert(
+	std::is_trivially_destructible_v<
+		software_perf_event_shard_cache_entry>);
+thread_local software_perf_event_shard_cache_entry
+	software_perf_event_shard_cache[
+		max_software_perf_event_shard_cache_entries]
+#if defined(__linux__)
+	__attribute__((tls_model("initial-exec")))
+#endif
+	= {};
+thread_local size_t next_victim_slot
+#if defined(__linux__)
+	__attribute__((tls_model("initial-exec")))
+#endif
+	= 0;
+
+void cache_software_perf_event_shard(
+	software_perf_event_shard_cache_entry value)
+{
+	for (auto &entry : software_perf_event_shard_cache) {
+		if (entry.owner == nullptr || entry.owner == value.owner) {
+			entry = value;
+			return;
+		}
+	}
+	// Every slot holds a different owner. Replace one slot round-robin rather
+	// than clearing the table: with more live events than slots, clearing all
+	// of them evicts every entry on each miss and sends the whole rotation back
+	// to the shard lock.
+	software_perf_event_shard_cache[next_victim_slot++ %
+					 max_software_perf_event_shard_cache_entries] =
+		value;
+}
 } // namespace
+
+#if defined(BPFTIME_UNIT_TESTING)
+size_t cached_software_perf_event_shard_count()
+{
+	size_t cached = 0;
+	for (const auto &entry : software_perf_event_shard_cache)
+		if (entry.owner != nullptr)
+			++cached;
+	return cached;
+}
+#endif
 
 bpf_perf_event_handler::bpf_perf_event_handler(
 	int type, const char *attach_arg,
@@ -494,20 +548,21 @@ software_perf_event_shard &software_perf_event_data::get_current_thread_shard()
 	const int64_t tid = current_thread_id();
 	uint64_t current_buffer_generation =
 		READ_ONCE_U64(producer_buffer_generation);
-	if (auto itr = software_perf_event_shard_cache.find(this);
-	    itr != software_perf_event_shard_cache.end()) {
-		auto &entry = itr->second;
+	for (auto &entry : software_perf_event_shard_cache) {
+		if (entry.owner != this)
+			continue;
 		if (entry.event_generation != event_generation ||
 		    entry.buffer_generation != current_buffer_generation) {
-			software_perf_event_shard_cache.erase(itr);
+			entry.owner = nullptr;
 		} else if (entry.shard->pid == pid && entry.shard->tid == tid &&
 			   entry.shard->generation == entry.shard_generation &&
 			   entry.shard->buffer_generation ==
 				   current_buffer_generation) {
 			return *entry.shard;
 		} else {
-			software_perf_event_shard_cache.erase(itr);
+			entry.owner = nullptr;
 		}
+		break;
 	}
 
 	spin_lock_guard guard(shard_lock);
@@ -519,14 +574,10 @@ software_perf_event_shard &software_perf_event_data::get_current_thread_shard()
 	for (auto &shard : producer_shards) {
 		if (shard.pid == pid && shard.tid == tid &&
 		    shard.buffer_generation == current_buffer_generation) {
-			if (software_perf_event_shard_cache.size() >=
-			    max_software_perf_event_shard_cache_entries) {
-				software_perf_event_shard_cache.clear();
-			}
-			software_perf_event_shard_cache[this] = {
+			cache_software_perf_event_shard({
 				event_generation, current_buffer_generation,
-				shard.generation, &shard
-			};
+				shard.generation, &shard, this
+			});
 			return shard;
 		}
 	}
@@ -537,13 +588,9 @@ software_perf_event_shard &software_perf_event_data::get_current_thread_shard()
 				     manager,
 				     consumer_buffer.mmap_buffer.size());
 	auto &shard = producer_shards.back();
-	if (software_perf_event_shard_cache.size() >=
-	    max_software_perf_event_shard_cache_entries) {
-		software_perf_event_shard_cache.clear();
-	}
-	software_perf_event_shard_cache[this] = { event_generation,
+	cache_software_perf_event_shard({ event_generation,
 						  current_buffer_generation,
-						  shard.generation, &shard };
+						  shard.generation, &shard, this });
 	return shard;
 }
 
