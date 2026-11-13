@@ -27,11 +27,11 @@ namespace
 {
 
 struct shm_initializer {
-	std::unique_ptr<shm_remove> remover;
+	std::unique_ptr<::shm_remove> remover;
 	std::unique_ptr<managed_shared_memory> mem;
 	shm_initializer(const char *memory_name, size_t memory_size = 20 << 20)
 	{
-		remover = std::make_unique<shm_remove>(memory_name);
+		remover = std::make_unique<::shm_remove>(memory_name);
 		mem = std::make_unique<managed_shared_memory>(
 		    create_only, memory_name, memory_size);
 	}
@@ -229,7 +229,7 @@ TEST_CASE("LRU hash map flags distinguish helper and syscall access",
 	  "[map_flags]")
 {
 	static const char *shm_name = "_LRU_HASH_MAP_HANDLER_FLAGS_TEST";
-	struct shm_remove remover(shm_name);
+	::shm_remove remover(shm_name);
 	managed_shared_memory segment(create_only, shm_name, 8 << 20);
 	auto *manager = segment.construct<handler_manager>(
 		"_lru_flags_handler_manager")(segment, MIN_MAX_FD_COUNT);
