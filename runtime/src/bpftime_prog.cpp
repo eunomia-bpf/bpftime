@@ -104,6 +104,7 @@ std::optional<std::vector<char>> compile_ptx_to_elf(const std::string &ptx_code,
 #endif
 thread_local std::optional<uint64_t> current_thread_bpf_cookie;
 thread_local std::optional<uint64_t> current_thread_tail_call_ret;
+thread_local std::optional<size_t> current_thread_exec_ctx_size;
 
 bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 			   const char *name)
@@ -246,6 +247,22 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 		*return_val = fn(memory, memory_size);
 		return 0;
 	}
+	// Publish the caller-provided context size so helpers that copy the
+	// context (e.g. bpftime_tail_call) never read past it. Tail calls run
+	// nested exec calls, so save and restore the outer value to keep the
+	// depth correct.
+	struct exec_ctx_size_guard {
+		std::optional<size_t> saved_size;
+		explicit exec_ctx_size_guard(size_t size)
+			: saved_size(current_thread_exec_ctx_size)
+		{
+			current_thread_exec_ctx_size = size;
+		}
+		~exec_ctx_size_guard()
+		{
+			current_thread_exec_ctx_size = saved_size;
+		}
+	} exec_ctx_size_guard(memory_size);
 	if (is_cuda()) {
 		throw std::runtime_error("Unable to execute CUDA program");
 	}

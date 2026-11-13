@@ -8,6 +8,7 @@
 
 #include "bpftime_config.hpp"
 #include <ebpf-vm.h>
+#include <cstddef>
 #include <optional>
 #include <vector>
 #include <string>
@@ -17,6 +18,12 @@ namespace bpftime
 
 extern thread_local std::optional<uint64_t> current_thread_bpf_cookie;
 extern thread_local std::optional<uint64_t> current_thread_tail_call_ret;
+// Size of the context memory passed to the innermost
+// bpftime_prog::bpftime_prog_exec call running on this thread. It lets
+// helpers (e.g. tail calls) bound context copies to the real caller context.
+// Unset while no program is executing; nested exec calls restore the outer
+// value on return.
+extern thread_local std::optional<size_t> current_thread_exec_ctx_size;
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 std::optional<std::vector<char>> compile_ptx_to_elf(const std::string &ptx_code,
 						    const char *cpu_target);

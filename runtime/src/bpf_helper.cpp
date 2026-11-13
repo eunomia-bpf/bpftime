@@ -40,6 +40,7 @@
 #include <stdarg.h>
 #include <cstring>
 #include <cstdlib>
+#include <mutex>
 #include <time.h>
 #include <unistd.h>
 #include <ctime>
@@ -638,6 +639,42 @@ restore_affinity:
 	return (uint64_t)ret;
 }
 
+// Tail-call targets always receive a 64-byte context buffer. Copy only the
+// bytes the caller actually provided (the size is published per thread by
+// bpftime_prog::bpftime_prog_exec) and zero-fill the rest, so a small caller
+// context is never over-read.
+static void bpftime_prepare_tail_call_context(char (&context)[64],
+					      uint64_t ctx)
+{
+	constexpr size_t tail_call_context_size = 64;
+	size_t copy_size = tail_call_context_size;
+	if (bpftime::current_thread_exec_ctx_size.has_value()) {
+		copy_size = std::min(*bpftime::current_thread_exec_ctx_size,
+				     tail_call_context_size);
+	} else if (ctx != 0) {
+		// Defensive fallback for invocations outside
+		// bpftime_prog_exec: the real context size is unknown, so keep
+		// the historical 64-byte copy (still capped to the
+		// destination buffer) and warn once.
+		static std::once_flag tail_call_ctx_size_warn_once;
+		std::call_once(tail_call_ctx_size_warn_once, [] {
+			SPDLOG_WARN(
+				"tail_call: exec context size is unavailable; copying the full 64-byte tail-call context");
+		});
+	}
+	if (ctx != 0) {
+		memcpy(context,
+		       reinterpret_cast<const void *>((uintptr_t)ctx),
+		       copy_size);
+	} else {
+		copy_size = 0;
+	}
+	if (copy_size < tail_call_context_size) {
+		memset(context + copy_size, 0,
+		       tail_call_context_size - copy_size);
+	}
+}
+
 uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 {
 	int fd = (int)prog_array;
@@ -697,12 +734,7 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 		}
 
 		char context[64];
-		if (ctx) {
-			memcpy(context, (const void *)(uintptr_t)ctx,
-			       sizeof(context));
-		} else {
-			memset(context, 0, sizeof(context));
-		}
+		bpftime_prepare_tail_call_context(context, ctx);
 		uint64_t retval = 0;
 		int err = prog->bpftime_prog_exec(context, sizeof(context),
 						  &retval);
@@ -718,11 +750,7 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 
 #if __linux__ && defined(BPFTIME_BUILD_WITH_LIBBPF)
 	char context[64];
-	if (ctx) {
-		memcpy(context, (const void *)(uintptr_t)ctx, 64);
-	} else {
-		memset(context, 0, sizeof(context));
-	}
+	bpftime_prepare_tail_call_context(context, ctx);
 	LIBBPF_OPTS(bpf_test_run_opts, run_opts, .ctx_in = context,
 		    // .ctx_out = context_out,
 		    .ctx_size_in = sizeof(context),
