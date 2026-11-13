@@ -203,3 +203,66 @@ The runtime uses CMake with several build options:
    - Use system tracing tools on agent library
    - Monitor syscall interception
    - Profile map operations
+
+## Host memory access safety (probe read/write backends)
+
+All BPF helpers that dereference a host-supplied pointer converge on a single
+choke point, `bpftime_probe_read` / `bpftime_probe_write` in
+`runtime/src/bpf_helper.cpp`. Unlike kernel eBPF, the userspace runtime has no
+hardware `copy_from_user_nofault` boundary: the target address is directly
+addressable, so an invalid pointer raises a regular `SIGSEGV` in the host
+process. The backend selected at this choke point is therefore a host-safety
+boundary, not an implementation detail.
+
+### Backends
+
+| Backend | Build selection | Fault behavior | Cost class |
+| --- | --- | --- | --- |
+| Unprotected `memcpy` | `ENABLE_PROBE_READ_CHECK=OFF` / `ENABLE_PROBE_WRITE_CHECK=OFF` | Host `SIGSEGV` on any invalid pointer | Plain memory copy, no syscalls |
+| No-fault syscall copy | `ENABLE_PROBE_READ_CHECK=ON` (default), write check likewise ON | `-EFAULT`, host survives | One `process_vm_readv`/`process_vm_writev` per call |
+
+A scoped signal-recovery backend (SIGSEGV caught only inside a protected-copy
+window, returning `-EFAULT` via `siglongjmp`) and a bounded stack snapshot
+backend (one fault-safe capture per BPF event with integer-bounds replay) are
+under review. Both must satisfy the semantics below before becoming selectable.
+
+### Required semantics for every safe backend
+
+1. Invalid, unmapped, stale-mapped, and non-canonical addresses return
+   `-EFAULT`; the host process and its other threads continue.
+2. Host signal dispositions are preserved. A signal-recovery backend may
+   install a handler only while a thread is inside a protected-copy window
+   marked in thread-local state; any fault outside the window is delivered to
+   the previous handler instead of being swallowed. A helper must never leave
+   a process-wide handler installed after returning.
+3. Small-stack environments (coroutines/fibers using small alternate stacks)
+   require an explicit `sigaltstack` so the signal frame can be delivered;
+   otherwise the kernel kills the thread before the handler runs.
+4. Write-side checks follow the same rules via `process_vm_writev`; an
+   unchecked write path is the same explicit opt-in category as unchecked
+   reads.
+5. When capture or initialization fails, the helper degrades to the
+   compile-time safe backend or returns `-EFAULT`; it never falls back to
+   unchecked `memcpy`.
+
+### Selection and default policy
+
+- Shipping builds keep a safe backend by default. The unchecked `memcpy`
+  backend is reserved for benchmark configurations and must be a deliberate
+  configure-time choice.
+- The no-fault syscall backend is the conservative default: it takes no
+  dependency on Frida and does not alter process signal handling.
+- Frame-pointer-only pre-checks (PC LPM trie and frame-pointer walks) are an
+  optimization, not a safety mechanism: they do not validate stack or
+  frame-pointer addresses, including stale frames left by coroutine stack
+  switches. Safety must come from the copy backend.
+
+### Test surface
+
+- `runtime/unit-test/test_probe.cpp`: valid, unmapped, and stale pointers;
+  cross-thread `SIGSEGV` delivery; handler replacement and default handler.
+- `runtime/unit-test/test_shm_allocation_failure.cpp`: host exit status and
+  default stdio silence under allocation failure.
+- Signal-recovery backends additionally cover repeated recovery,
+  non-canonical addresses, signal-mask restoration, initialization fallback,
+  and unrelated `SIGSEGV` retaining fatal default behavior.
