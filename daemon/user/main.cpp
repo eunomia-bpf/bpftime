@@ -35,6 +35,7 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 {
 	static int pos_args;
 	long int pid, uid;
+	char *end = nullptr;
 	uint64_t addr;
 	switch (key) {
 	case 'v':
@@ -54,8 +55,9 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 		break;
 	case 'u':
 		errno = 0;
-		uid = strtol(arg, NULL, 10);
-		if (errno || uid < 0 || uid >= UINT32_MAX) {
+		uid = strtol(arg, &end, 10);
+		if (errno || end == arg || *end != '\0' || uid < 0 ||
+		    uid >= UINT32_MAX) {
 			SPDLOG_ERROR("Invalid UID: {}", arg);
 			argp_usage(state);
 		}
