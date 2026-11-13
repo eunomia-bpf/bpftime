@@ -639,36 +639,47 @@ restore_affinity:
 	return (uint64_t)ret;
 }
 
-// Tail-call targets always receive a 64-byte context buffer. Copy only the
-// bytes the caller actually provided (the size is published per thread by
-// bpftime_prog::bpftime_prog_exec) and zero-fill the rest, so a small caller
-// context is never over-read.
+// Tail-call targets always receive a 64-byte context buffer.
+//
+// The helper's ctx may be either the host-owned buffer passed to
+// bpftime_prog::bpftime_prog_exec (whose real size is published per
+// thread), or a replacement context the running BPF program built on its
+// own stack and passed as r1. The BPF ABI carries no size for the latter,
+// so only the host entry context is bounded; replacement contexts keep the
+// historical full 64-byte copy.
 static void bpftime_prepare_tail_call_context(char (&context)[64],
 					      uint64_t ctx)
 {
 	constexpr size_t tail_call_context_size = 64;
+	if (ctx == 0) {
+		memset(context, 0, tail_call_context_size);
+		return;
+	}
+	const void *ctx_ptr =
+		reinterpret_cast<const void *>((uintptr_t)ctx);
 	size_t copy_size = tail_call_context_size;
-	if (bpftime::current_thread_exec_ctx_size.has_value()) {
-		copy_size = std::min(*bpftime::current_thread_exec_ctx_size,
-				     tail_call_context_size);
-	} else if (ctx != 0) {
-		// Defensive fallback for invocations outside
-		// bpftime_prog_exec: the real context size is unknown, so keep
-		// the historical 64-byte copy (still capped to the
-		// destination buffer) and warn once.
-		static std::once_flag tail_call_ctx_size_warn_once;
-		std::call_once(tail_call_ctx_size_warn_once, [] {
+	if (bpftime::current_thread_exec_ctx.has_value()) {
+		const auto &entry = *bpftime::current_thread_exec_ctx;
+		if (entry.ptr == ctx_ptr) {
+			// Host-owned entry context: only the published bytes
+			// are known valid, so never read past them and
+			// zero-fill the remainder of the target buffer.
+			copy_size = std::min(entry.size,
+					     tail_call_context_size);
+		}
+		// A different pointer is a program-owned replacement
+		// context; copy all 64 bytes as the ABI historically does.
+	} else {
+		// Helper reached without any published exec context: the
+		// real size is unknown, so keep the historical 64-byte copy
+		// (still capped to the destination buffer) and warn once.
+		static std::once_flag tail_call_ctx_info_warn_once;
+		std::call_once(tail_call_ctx_info_warn_once, [] {
 			SPDLOG_WARN(
-				"tail_call: exec context size is unavailable; copying the full 64-byte tail-call context");
+				"tail_call: exec context info is unavailable; copying the full 64-byte tail-call context");
 		});
 	}
-	if (ctx != 0) {
-		memcpy(context,
-		       reinterpret_cast<const void *>((uintptr_t)ctx),
-		       copy_size);
-	} else {
-		copy_size = 0;
-	}
+	memcpy(context, ctx_ptr, copy_size);
 	if (copy_size < tail_call_context_size) {
 		memset(context + copy_size, 0,
 		       tail_call_context_size - copy_size);

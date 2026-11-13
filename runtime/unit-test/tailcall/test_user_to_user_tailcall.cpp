@@ -78,10 +78,11 @@ TEST_CASE("Test tail calling from userspace to userspace")
 	bpftime_initialize_global_shm(bpftime::shm_open_type::SHM_NO_CREATE);
 }
 
-TEST_CASE("Test tail call copies only the caller context size and zero-fills the rest")
+TEST_CASE("Test tail call bounds entry context copies but preserves replacement contexts")
 {
 	static const int WORD_TARGET_FD = 1003;
 	static const int ZERO_TARGET_FD = 1004;
+	static const int TAIL_TARGET_FD = 1005;
 	shm_remove remover("BPFTIME_TAIL_CALL_CTX_BOUNDS_TEST_SHM");
 	bpftime_initialize_global_shm(
 		bpftime::shm_open_type::SHM_REMOVE_AND_CREATE);
@@ -110,6 +111,10 @@ TEST_CASE("Test tail call copies only the caller context size and zero-fills the
 			"tail_call_zero_target",
 			(int)bpftime::bpf_prog_type::
 				BPF_PROG_TYPE_SOCKET_FILTER) >= 0);
+	// r0 = *(u32 *)(r1 + 60); exit -- last word of a 64-byte replacement ctx
+	struct bpf_insn tail_target_insn[] = {
+		BPF_LDX_MEM(BPF_W, 0, 1, 60), BPF_EXIT_INSN(),
+	};
 	struct bpf_insn caller_insn[] = {
 		BPF_LD_IMM64_RAW_FULL(2, 0, 0, 0, PROG_ARRAY_MAP_FD, 0),
 		BPF_MOV64_IMM(3, 0), BPF_EMIT_CALL(0x0c),
@@ -121,6 +126,31 @@ TEST_CASE("Test tail call copies only the caller context size and zero-fills the
 	REQUIRE(bpftime_helper_group::get_kernel_utils_helper_group()
 			.add_helper_group_to_prog(&prog) == 0);
 	REQUIRE(prog.bpftime_prog_load(false) == 0);
+	REQUIRE(bpftime_progs_create(TAIL_TARGET_FD,
+			(const ebpf_inst *)tail_target_insn, 2,
+			"tail_call_tail_target",
+			(int)bpftime::bpf_prog_type::
+				BPF_PROG_TYPE_SOCKET_FILTER) >= 0);
+	// Caller that ignores the entry ctx and tail-calls with a 64-byte
+	// replacement context built on its own BPF stack (r1 = r10 - 0x40).
+	struct bpf_insn replacement_caller_insn[] = {
+		BPF_MOV64_IMM(6, 0x41424344),
+		BPF_STX_MEM(BPF_W, 10, 6, -0x40),
+		BPF_STX_MEM(BPF_W, 10, 6, -0x4),
+		BPF_MOV64_REG(1, 10),
+		BPF_ALU64_IMM(BPF_ADD, 1, -0x40),
+		BPF_LD_IMM64_RAW_FULL(2, 0, 0, 0, PROG_ARRAY_MAP_FD, 0),
+		BPF_MOV64_IMM(3, 0), BPF_EMIT_CALL(0x0c),
+		BPF_MOV64_IMM(0, 0xdead), BPF_EXIT_INSN(),
+	};
+	bpftime_prog replacement_prog(
+		(const ebpf_inst *)replacement_caller_insn,
+		sizeof(replacement_caller_insn) /
+			sizeof(replacement_caller_insn[0]),
+		"tail_call_replacement_caller");
+	REQUIRE(bpftime_helper_group::get_kernel_utils_helper_group()
+			.add_helper_group_to_prog(&replacement_prog) == 0);
+	REQUIRE(replacement_prog.bpftime_prog_load(false) == 0);
 
 	int key = 0;
 	int value = WORD_TARGET_FD;
@@ -143,6 +173,24 @@ TEST_CASE("Test tail call copies only the caller context size and zero-fills the
 	REQUIRE(prog.bpftime_prog_exec(&stack_ctx, sizeof(stack_ctx), &ret) >=
 		0);
 	REQUIRE(ret == 0);
+
+	// A program-built replacement context is not the host entry buffer,
+	// so none of its 64 bytes may be truncated to the 4-byte entry size.
+	value = TAIL_TARGET_FD;
+	REQUIRE(bpftime_map_update_elem(PROG_ARRAY_MAP_FD, &key, &value,
+					0) >= 0);
+	int entry_ctx = 0x2a;
+	REQUIRE(replacement_prog.bpftime_prog_exec(&entry_ctx,
+						    sizeof(entry_ctx),
+						    &ret) >= 0);
+	REQUIRE(ret == 0x41424344);
+	value = WORD_TARGET_FD;
+	REQUIRE(bpftime_map_update_elem(PROG_ARRAY_MAP_FD, &key, &value,
+					0) >= 0);
+	REQUIRE(replacement_prog.bpftime_prog_exec(&entry_ctx,
+						    sizeof(entry_ctx),
+						    &ret) >= 0);
+	REQUIRE(ret == 0x41424344);
 	bpftime_destroy_global_shm();
 	bpftime_initialize_global_shm(bpftime::shm_open_type::SHM_NO_CREATE);
 }
