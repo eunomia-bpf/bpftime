@@ -207,9 +207,12 @@ struct midfunction_int3_registry::impl {
 
 midfunction_int3_registry &midfunction_int3_registry::instance()
 {
-	static midfunction_int3_registry reg;
-	if (reg.p == nullptr)
-		reg.p = new impl();
+	/* Function-local statics: initialization is thread-safe (C++11),
+	 * every caller gets the same registry, and nothing leaks. The old
+	 * `if (reg.p == nullptr) reg.p = new impl();` was a check-then-act
+	 * race - two concurrent attaches could get different registries. */
+	static impl d;
+	static midfunction_int3_registry reg(&d);
 	return reg;
 }
 
