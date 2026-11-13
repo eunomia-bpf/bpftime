@@ -60,7 +60,7 @@ using hash_map_impl = fix_size_hash_map_impl;
 namespace {
 // Stable per-thread slot for the syscall map-in-map inner fd. The 4-byte value
 // is copied here while map_lock is held, so the caller's subsequent memcpy
-// cannot read a hash node freed by a concurrent delete (M13).
+// cannot read a hash node freed by a concurrent delete.
 thread_local int tl_map_in_map_fd_snapshot;
 } // namespace
 

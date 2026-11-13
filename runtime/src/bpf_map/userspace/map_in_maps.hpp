@@ -34,7 +34,7 @@ class array_map_of_maps_impl : public array_map_impl {
 	// address to user space. The helper path returns the inner id as a
 	// pointer-sized handle; the syscall ABI instead needs a pointer to the
 	// stored 4-byte fd, so return the raw storage address. Otherwise the
-	// caller's memcpy dereferences the id itself as an address (M13).
+	// caller's memcpy would dereference the id itself as an invalid address.
 	void *elem_lookup_userspace(const void *key)
 	{
 		auto *stored = static_cast<int *>(array_map_impl::elem_lookup(key));
