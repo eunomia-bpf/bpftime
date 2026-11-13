@@ -63,9 +63,15 @@ bool resolve_stack_mapping(uintptr_t sp, stack_interval &out)
 		// can throw under memory pressure. The snapshot is an optional
 		// acceleration, so record the failure and let the caller fall back
 		// to the fault-safe per-read backend instead of terminating the host.
-		SPDLOG_WARN(
-			"stack snapshot mapping resolution failed, using per-read backend: {}",
-			e.what());
+		// The diagnostic is best-effort: spdlog can itself allocate and
+		// throw under the same memory pressure, so never let logging
+		// escape this handler — mapping resolution must always fall back.
+		try {
+			SPDLOG_WARN(
+				"stack snapshot mapping resolution failed, using per-read backend: {}",
+				e.what());
+		} catch (...) {
+		}
 	}
 	return false;
 }
