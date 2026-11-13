@@ -5,6 +5,7 @@
  * True mid-function address probes via int3 breakpoints (x86_64).
  * See midfunction_int3.hpp for the rationale.
  */
+#define _GNU_SOURCE
 #include "midfunction_int3.hpp"
 
 #include <spdlog/spdlog.h>
@@ -54,10 +55,10 @@ void convert_ucontext_to_pt_regs(ucontext_t *uc, pt_regs &regs)
 	regs.di = g[REG_RDI];
 	regs.orig_ax = (uint64_t)-1;
 	regs.ip = (uint64_t)trap_address(uc);
-	regs.cs = g[REG_CS];
 	regs.flags = g[REG_EFL];
 	regs.sp = g[REG_RSP];
-	regs.ss = g[REG_SS];
+	/* cs/ss are not exposed by the portable glibc ucontext; leave zero -
+	 * they are not used by USDT argument decoding or PT_REGS accessors. */
 }
 
 } // namespace
@@ -86,8 +87,8 @@ struct midfunction_int3_registry::impl {
 	{
 		if (prev->sa_flags & SA_SIGINFO) {
 			auto h = prev->sa_sigaction;
-			if (h && (void (*)(int, siginfo_t *, void *))h != SIG_DFL &&
-			    (void (*)(int, siginfo_t *, void *))h != SIG_IGN) {
+			if (h && (void *)h != (void *)SIG_DFL &&
+			    (void *)h != (void *)SIG_IGN) {
 				h(sig, info, uctx);
 				return;
 			}
