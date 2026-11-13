@@ -73,8 +73,25 @@ jobs:
     # !cancelled() is required because a failed `needs` job otherwise skips
     # this one without evaluating the condition at all.
     if: ${{ !cancelled() && needs.detect-gpu-change.outputs.gpu_affected != 'false' }}
-    runs-on: eunomia-gpu
+    # GPU runners in eunomia-bpf carry self-hosted, linux, x64, gpu, nvidia and
+    # a label naming the card model (rtx5090 on the lab runners); any of them
+    # can build.
+    runs-on: [self-hosted, linux, x64, gpu]
+    outputs:
+      gpu_model: ${{ steps.gpu-model.outputs.label }}
     steps:
+      # The model label of this runner's card: the nvidia-smi name in lower
+      # case without "nvidia", "geforce" and non-alphanumerics, e.g. rtx5090.
+      - name: Record GPU model label
+        id: gpu-model
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="$(nvidia-smi --query-gpu=name --format=csv,noheader | head -n1)"
+          label="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]' | sed -e 's/nvidia//g' -e 's/geforce//g' -e 's/[^a-z0-9]//g')"
+          echo "GPU: $name -> label $label"
+          echo "label=$label" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
         with:
           submodules: true
@@ -255,7 +272,9 @@ jobs:
 
   test-gpu-examples:
     needs: [build-bpftime-gpu]
-    runs-on: eunomia-gpu
+    # Same card model as the build: the artifact carries a CUDA toolchain
+    # (e.g. its PTX compiler) that may not support another card.
+    runs-on: ${{ fromJSON(format('["self-hosted","linux","x64","gpu","{0}"]', needs.build-bpftime-gpu.outputs.gpu_model)) }}
     strategy:
       fail-fast: false
       max-parallel: 1
