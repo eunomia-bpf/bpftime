@@ -245,31 +245,55 @@ static void start_go_seccomp_workers()
 					std::memory_order_acquire)) < 0)
 				std::this_thread::yield();
 			for (;;) {
-				struct seccomp_notif request = {};
-				struct seccomp_notif_resp response = {};
-				if (ioctl(listener, SECCOMP_IOCTL_NOTIF_RECV,
-					  &request) < 0) {
-					if (errno == EINTR || errno == ENOENT)
-						continue;
+				try {
+					struct seccomp_notif request = {};
+					struct seccomp_notif_resp response = {};
+					if (ioctl(listener, SECCOMP_IOCTL_NOTIF_RECV,
+						  &request) < 0) {
+						if (errno == EINTR || errno == ENOENT)
+							continue;
+						return;
+					}
+					int64_t args[] = {
+						(int64_t)request.data.nr,
+						(int64_t)request.data.args[0],
+						(int64_t)request.data.args[1],
+						(int64_t)request.data.args[2],
+						(int64_t)request.data.args[3],
+						(int64_t)request.data.args[4],
+						(int64_t)request.data.args[5],
+					};
+					response.id = request.id;
+					int64_t result = dispatch_seccomp_syscall(args);
+					if (result < 0 && result >= -4095)
+						response.error = (int32_t)result;
+					else
+						response.val = result;
+					// Retry only on a signal; any other SEND failure must be
+					// recorded rather than silently dropping the response and
+					// leaving the target blocked on the notification.
+					while (ioctl(listener,
+						     SECCOMP_IOCTL_NOTIF_SEND,
+						     &response) < 0) {
+						if (errno != EINTR) {
+							SPDLOG_ERROR(
+								"seccomp response SEND failed for request {}: {}",
+								request.id, errno);
+							break;
+						}
+					}
+				} catch (const std::exception &ex) {
+					// dispatch_seccomp_syscall allocates; an escaping
+					// exception would terminate the host. Exit this worker
+					// cleanly instead; the remaining workers keep serving.
+					SPDLOG_ERROR(
+						"seccomp worker exiting after exception: {}",
+						ex.what());
 					return;
-				}
-				int64_t args[] = {
-					(int64_t)request.data.nr,
-					(int64_t)request.data.args[0],
-					(int64_t)request.data.args[1],
-					(int64_t)request.data.args[2],
-					(int64_t)request.data.args[3],
-					(int64_t)request.data.args[4],
-					(int64_t)request.data.args[5],
-				};
-				response.id = request.id;
-				int64_t result = dispatch_seccomp_syscall(args);
-				if (result < 0 && result >= -4095)
-					response.error = (int32_t)result;
-				else
-					response.val = result;
-				while (ioctl(listener, SECCOMP_IOCTL_NOTIF_SEND,
-					     &response) < 0 && errno == EINTR) {
+				} catch (...) {
+					SPDLOG_ERROR(
+						"seccomp worker exiting after unknown exception");
+					return;
 				}
 			}
 		}).detach();

@@ -8,7 +8,6 @@ add_library(bpftime-syscall-server SHARED
     syscall_context.cpp
     syscall_server_main.cpp
     syscall_server_utils.cpp
-    server_seccomp_hook.cpp
 )
 
 # Force link VM compat libraries so constructor-based factory registration is retained
