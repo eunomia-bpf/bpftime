@@ -134,8 +134,8 @@ static void probe_read_chain(const struct sigaction *prev, int sig,
 {
 	if (prev->sa_flags & SA_SIGINFO) {
 		auto handler = prev->sa_sigaction;
-		if (handler && (void (*)(int, siginfo_t *, void *))handler != SIG_DFL &&
-		    (void (*)(int, siginfo_t *, void *))handler != SIG_IGN)
+		if (handler && (void *)handler != (void *)SIG_DFL &&
+		    (void *)handler != (void *)SIG_IGN)
 			handler(sig, info, uctx);
 		else
 			_Exit(128 + sig); /* nothing to chain to */
@@ -153,7 +153,7 @@ static void probe_read_fault_handler(int sig, siginfo_t *info, void *uctx)
 	if (probe_read_guard_active) {
 		/* Fault inside our guarded memcpy: unwind to the guard. */
 		probe_read_guard_active = 0;
-		siglongjmp((sigjmp_buf)probe_read_jmp, 1);
+		siglongjmp(probe_read_jmp, 1);
 	}
 	/* Not ours (real bug elsewhere): chain to the previous disposition. */
 	if (sig == SIGSEGV)
