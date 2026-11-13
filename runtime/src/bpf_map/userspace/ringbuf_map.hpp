@@ -19,6 +19,9 @@
 #include <functional>
 #include <optional>
 #include <pthread.h>
+// Darwin libpthread has no pthread_spinlock_t; the wrapper supplies a
+// cross-platform Spinlock-backed type with the same interface.
+#include "spinlock_wrapper.hpp"
 #include <vector>
 
 namespace bpftime
