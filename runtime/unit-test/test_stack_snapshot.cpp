@@ -53,6 +53,21 @@ uint8_t *map_pattern(size_t pages)
 
 } // namespace
 
+TEST_CASE("Snapshot reads reject an invalid destination", "[stack_snapshot]")
+{
+	auto *region = map_pattern(1);
+	setenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT", "1", 1);
+	{
+		bpftime::stack_snapshot::stack_sample_capture capture(
+			reinterpret_cast<uintptr_t>(region));
+		REQUIRE(capture.active());
+		REQUIRE(bpftime_probe_read(1, 1,
+			reinterpret_cast<uint64_t>(region), 0, 0) == -EFAULT);
+	}
+	unsetenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT");
+	REQUIRE(munmap(region, page_size) == 0);
+}
+
 TEST_CASE("Stack snapshot env gate enables and disables the capture", "[stack_snapshot]")
 {
 	char local[64] = {};

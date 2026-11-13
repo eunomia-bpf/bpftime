@@ -138,7 +138,10 @@ snapshot_read_result try_read(void *dst, uintptr_t ptr, size_t size)
 	    size > sample->window.size() - offset)
 		return snapshot_read_result::fallback;
 
-	std::memcpy(dst, sample->window.data() + offset, size);
+	// The destination is supplied by the program too: copying the saved
+	// bytes must retain the checked backend's bad-destination protection.
+	if (!fault_safe_read(dst, sample->window.data() + offset, size))
+		return snapshot_read_result::fallback;
 	return snapshot_read_result::ok;
 }
 
