@@ -203,6 +203,14 @@ jobs:
           RC=$?
           set -e
           echo "victim rc=$RC" >> "$LOG"
+          # victim loops forever, so 124 is the intended 6s timeout. Any
+          # other non-zero status is a real crash and must fail the case
+          # even if the malloc trace text is present below.
+          if [ "$RC" -ne 0 ] && [ "$RC" -ne 124 ]; then
+            echo "FAILURE: victim exited unexpectedly with code $RC"
+            tail -n 200 "$LOG"
+            exit 1
+          fi
           wait $SP || true
           tail -n 200 "$LOG"
           grep -q "malloc calls: " "$LOG"
@@ -260,14 +268,9 @@ jobs:
           mkdir -p build/runtime/pos/cuda_impl/proto/
           ln -sf /usr/lib/llvm-*/include/clang-c/ /usr/include/ || true
           ln -sf /usr/lib/llvm-*/lib/libclang.so /usr/lib || true
-          cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc) || true
-          # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
-          # cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc) || true
-          # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
-          # cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc) || true
-          # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
-          # cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc) || true
-          # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
+          # Single authoritative test build. The prior tolerated warm-up plus
+          # commented sed workarounds masked build failures and duplicated the
+          # same target; this build now succeeds on its own.
           cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
       - name: test runtime with mpk
         if: matrix.container != 'openeuler-2403sp2'

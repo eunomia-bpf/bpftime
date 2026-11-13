@@ -33,7 +33,7 @@ concurrency:
 
 jobs:
   test-ptxpass:
-    runs-on: [self-hosted, Linux, X64, gpu]
+    runs-on: eunomia-gpu
     steps:
       - uses: actions/checkout@v4
         with:
@@ -75,7 +75,7 @@ jobs:
               -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
               -DENABLE_EBPF_VERIFIER=YES \
               -DFETCHCONTENT_SOURCE_DIR_CATCH2="${GITHUB_WORKSPACE}/third_party/Catch2" \
-              -DBPFTIME_CUDA_ROOT="/usr/local/cuda-12.6" \
+              -DBPFTIME_CUDA_ROOT="${BPFTIME_CUDA_ROOT:-/usr/local/cuda}" \
               -DLLVM_DIR="/usr/lib/llvm-18/lib/cmake/llvm/" \
               -G Ninja
           

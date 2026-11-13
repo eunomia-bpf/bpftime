@@ -1002,8 +1002,11 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 	SPDLOG_DEBUG(
 		"Calling original mmap64: addr={}, length={}, prot={}, flags={}, fd={}, offset={}",
 		addr, length, prot, flags, fd, offset);
-	auto ptr = orig_mmap64_fn(addr, length, prot | PROT_WRITE,
-				  flags | MAP_ANONYMOUS, -1, 0);
+	// Drop the previous extra orig_mmap64_fn() call here: its result was
+	// assigned to an unused local, leaking the mapping on every ordinary
+	// (non-mocked) mmap and re-entering the syscall interceptor. Under
+	// ASan that nested interposition crashes (nested SEGV) on e.g. openEuler;
+	// the single passthrough call below is the correct behavior.
 	return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
 }
 
