@@ -834,6 +834,13 @@ jobs:
             echo "bpftimetool run-on-cuda exited with code ${TOOL_RC}"; tail -n 200 tool.log || true
             RESULT=1
           fi
+          # CLIENT_RC is only set on the dynamic-attach path. A 137 means the
+          # 30s timeout SIGKILLed the long-running victim as intended; any other
+          # non-zero code is a real victim crash/error and must fail the case.
+          if [ -n "${CLIENT_RC:-}" ] && [ "$CLIENT_RC" -ne 0 ] && [ "$CLIENT_RC" -ne 137 ]; then
+            echo "dynamic-attach client exited unexpectedly with code $CLIENT_RC"; tail -n 200 client.log || true
+            RESULT=1
+          fi
           # treat crashes as failure even if expected string appears
           if grep -Eiq "(core dumped|Segmentation fault|Aborted)" server.log client.log tool.log; then
             echo "Detected crash in logs"; tail -n 200 server.log || true; tail -n 200 client.log || true; tail -n 200 tool.log || true; RESULT=1
