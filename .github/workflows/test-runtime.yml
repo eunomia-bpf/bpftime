@@ -260,14 +260,9 @@ jobs:
           mkdir -p build/runtime/pos/cuda_impl/proto/
           ln -sf /usr/lib/llvm-*/include/clang-c/ /usr/include/ || true
           ln -sf /usr/lib/llvm-*/lib/libclang.so /usr/lib || true
-          cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc) || true
-          # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
-          # cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc) || true
-          # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
-          # cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc) || true
-          # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
-          # cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc) || true
-          # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
+          # Single authoritative test build. The prior tolerated warm-up plus
+          # commented sed workarounds masked build failures and duplicated the
+          # same target; this build now succeeds on its own.
           cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
       - name: test runtime with mpk
         if: matrix.container != 'openeuler-2403sp2'
