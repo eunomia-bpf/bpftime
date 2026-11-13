@@ -15,7 +15,7 @@
 #include "bpftime_handler.hpp"
 #include "unit-test/common_def.hpp"
 #include <bpf_map/userspace/var_hash_map.hpp>
-#include <bpf_map/userspace/lru_var_hash_map.hpp>
+#include "bpftime_shm.hpp"
 #include <cerrno>
 #include <memory>
 #include <variant>
@@ -302,3 +302,82 @@ TEST_CASE("LRU hash map flags distinguish helper and syscall access",
 	manager->clear_id_at(wronly_fd, segment);
 	segment.destroy_ptr(manager);
 }
+
+#if __linux__
+// End-to-end through the global C shim, the layer shared by the intercepted
+// bpf() syscall (syscall_context, from_syscall=true via the plain wrappers)
+// and the GPU BPF-program relay in bpf_attach_ctx_cuda.cpp
+// (from_syscall=false via the _with_origin helpers). BPF_MAP_TYPE_LRU_HASH
+// is the creation-flag-aware backend reachable through this dispatch in the
+// default build.
+TEST_CASE("map shim separates syscall and BPF-helper access origin",
+	  "[map_flags]")
+{
+	::shm_remove remover("_MAP_FLAGS_SHIM_TEST_SHM");
+	bpftime_initialize_global_shm(
+		bpftime::shm_open_type::SHM_REMOVE_AND_CREATE);
+
+	constexpr int lru_hash_type =
+		(int)bpf_map_type::BPF_MAP_TYPE_LRU_HASH;
+	constexpr int rdonly_fd = 1201;
+	constexpr int wronly_fd = 1202;
+	REQUIRE(bpftime_maps_create(
+			rdonly_fd, "lru_rdonly_shim",
+			bpf_map_attr{
+				.type = lru_hash_type,
+				.key_size = sizeof(uint32_t),
+				.value_size = sizeof(uint64_t),
+				.max_ents = 16,
+				.flags = BPF_F_RDONLY }) >= 0);
+	REQUIRE(bpftime_maps_create(
+			wronly_fd, "lru_wronly_shim",
+			bpf_map_attr{
+				.type = lru_hash_type,
+				.key_size = sizeof(uint32_t),
+				.value_size = sizeof(uint64_t),
+				.max_ents = 16,
+				.flags = BPF_F_WRONLY }) >= 0);
+
+	uint32_t key = 7;
+	uint64_t value = 0x1122334455667788ULL;
+
+	// A read-only map stays fully writable by its BPF program.
+	REQUIRE(bpftime_map_update_elem_with_origin(
+			rdonly_fd, &key, &value, BPF_ANY, false) == 0);
+	REQUIRE(bpftime_map_lookup_elem_with_origin(rdonly_fd, &key, false) !=
+		nullptr);
+	REQUIRE(bpftime_map_delete_elem_with_origin(rdonly_fd, &key, false) ==
+		0);
+	REQUIRE(bpftime_map_update_elem_with_origin(
+			rdonly_fd, &key, &value, BPF_ANY, false) == 0);
+
+	// The same writes through the syscall shim fail with EPERM.
+	errno = 0;
+	REQUIRE(bpftime_map_update_elem(rdonly_fd, &key, &value, BPF_ANY) ==
+		-1);
+	REQUIRE(errno == EPERM);
+	errno = 0;
+	REQUIRE(bpftime_map_delete_elem(rdonly_fd, &key) == -1);
+	REQUIRE(errno == EPERM);
+	// Reads remain allowed on a read-only map.
+	REQUIRE(bpftime_map_lookup_elem(rdonly_fd, &key) != nullptr);
+
+	// A write-only map stays readable by its BPF program.
+	REQUIRE(bpftime_map_update_elem_with_origin(
+			wronly_fd, &key, &value, BPF_ANY, false) == 0);
+	REQUIRE(bpftime_map_lookup_elem_with_origin(wronly_fd, &key, false) !=
+		nullptr);
+
+	// Syscall reads from the write-only map fail with EPERM.
+	errno = 0;
+	REQUIRE(bpftime_map_lookup_elem(wronly_fd, &key) == nullptr);
+	REQUIRE(errno == EPERM);
+	// Syscall writes remain allowed on a write-only map.
+	REQUIRE(bpftime_map_update_elem(wronly_fd, &key, &value, BPF_ANY) == 0);
+	// The BPF program may delete as well.
+	REQUIRE(bpftime_map_delete_elem_with_origin(wronly_fd, &key, false) ==
+		0);
+
+	bpftime_destroy_global_shm();
+}
+#endif

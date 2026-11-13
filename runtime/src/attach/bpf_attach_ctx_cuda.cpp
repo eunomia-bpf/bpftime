@@ -137,8 +137,9 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 							.map_lookup;
 					auto &resp = ctx->cuda_shared_mem->resp
 							     .map_lookup;
-					auto ptr = bpftime_map_lookup_elem(
-						map_fd, req.key);
+					auto ptr =
+					bpftime_map_lookup_elem_with_origin(
+						map_fd, req.key, false);
 					resp.value = nullptr;
 					if (ptr) {
 						const auto host_ptr =
@@ -199,9 +200,10 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 							.map_update;
 					auto &resp = ctx->cuda_shared_mem->resp
 							     .map_update;
-					resp.result = bpftime_map_update_elem(
+					resp.result =
+					bpftime_map_update_elem_with_origin(
 						map_fd, req.key, req.value,
-						req.flags);
+						req.flags, false);
 					SPDLOG_DEBUG(
 						"CUDA: Executing map update for {}, result = {}",
 						map_fd, resp.result);
@@ -214,8 +216,9 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 					auto &resp = ctx->cuda_shared_mem->resp
 							     .map_delete;
 
-					resp.result = bpftime_map_delete_elem(
-						map_fd, req.key);
+					resp.result =
+					bpftime_map_delete_elem_with_origin(
+						map_fd, req.key, false);
 					SPDLOG_DEBUG(
 						"CUDA: Executing map delete for {}, result = {}",
 						map_fd, resp.result);
