@@ -79,7 +79,12 @@ namespace bpftime::vm::compat
 {
 namespace llvm
 {
-__attribute__((constructor(0))) void register_llvm_vm_factory()
+// Use a normal constructor instead of priority 0: priorities 0-100 are
+// reserved for the implementation/toolchain, and on some gcc versions (e.g.
+// gcc 12 under AddressSanitizer) a reserved-priority constructor can run
+// before the ASAN interceptors are installed, tripping a
+// "real_memcpy != 0" CHECK. Plain constructor ordering is sufficient here.
+__attribute__((constructor)) void register_llvm_vm_factory()
 {
 	register_vm_factory("llvm", create_llvm_vm_instance);
 	SPDLOG_DEBUG("llvm register vm factory\n");
