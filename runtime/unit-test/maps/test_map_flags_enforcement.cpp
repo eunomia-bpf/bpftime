@@ -15,6 +15,7 @@
 #include "bpftime_handler.hpp"
 #include "unit-test/common_def.hpp"
 #include <bpf_map/userspace/var_hash_map.hpp>
+#include <bpf_map/userspace/lru_var_hash_map.hpp>
 #include "bpftime_shm.hpp"
 #include <cerrno>
 #include <memory>
@@ -318,7 +319,7 @@ TEST_CASE("map shim separates syscall and BPF-helper access origin",
 		bpftime::shm_open_type::SHM_REMOVE_AND_CREATE);
 
 	constexpr int lru_hash_type =
-		(int)bpf_map_type::BPF_MAP_TYPE_LRU_HASH;
+		(int)bpftime::bpf_map_type::BPF_MAP_TYPE_LRU_HASH;
 	constexpr int rdonly_fd = 1201;
 	constexpr int wronly_fd = 1202;
 	REQUIRE(bpftime_maps_create(
