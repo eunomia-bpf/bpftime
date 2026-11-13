@@ -73,7 +73,7 @@ jobs:
     # !cancelled() is required because a failed `needs` job otherwise skips
     # this one without evaluating the condition at all.
     if: ${{ !cancelled() && needs.detect-gpu-change.outputs.gpu_affected != 'false' }}
-    runs-on: bpftime-gpu
+    runs-on: eunomia-gpu
     steps:
       - uses: actions/checkout@v4
         with:
@@ -255,7 +255,7 @@ jobs:
 
   test-gpu-examples:
     needs: [build-bpftime-gpu]
-    runs-on: bpftime-gpu
+    runs-on: eunomia-gpu
     strategy:
       fail-fast: false
       max-parallel: 1
