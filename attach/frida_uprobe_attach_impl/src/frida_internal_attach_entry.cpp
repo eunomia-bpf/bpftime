@@ -6,6 +6,8 @@
 #include <cstring>
 #include <dlfcn.h>
 #include <exception>
+#include <chrono>
+#include <thread>
 #include <sys/mman.h>
 #include <unistd.h>
 #include <spdlog/fmt/fmt.h>
@@ -211,27 +213,39 @@ bool install_short_uprobe_patch(void *function, void *stub,
 #endif
 }
 
-void remove_short_uprobe_patch(void *function, uint64_t original)
+// Returns true only when the original instruction word was restored and the
+// page made executable again. A false result means the text may still branch
+// to the stub, so the caller must keep the stub page mapped.
+bool remove_short_uprobe_patch(void *function, uint64_t original)
 {
 #if defined(__linux__) && defined(__x86_64__)
 	auto address = reinterpret_cast<uintptr_t>(function);
 	const long page_size = sysconf(_SC_PAGESIZE);
 	if (page_size <= 0)
-		return;
+		return false;
 	auto page = address & ~(static_cast<uintptr_t>(page_size) - 1);
 	if (mprotect(reinterpret_cast<void *>(page),
 		     static_cast<size_t>(page_size),
-		     PROT_READ | PROT_WRITE | PROT_EXEC) != 0)
-		return;
+		     PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+		SPDLOG_ERROR(
+			"Unable to make text page writable to remove short uprobe: {}",
+			errno);
+		return false;
+	}
 	std::atomic_ref<uint64_t>(*reinterpret_cast<uint64_t *>(function))
 		.store(original, std::memory_order_seq_cst);
 	__builtin___clear_cache(reinterpret_cast<char *>(function),
 			      reinterpret_cast<char *>(function) +
 				      sizeof(original));
 	if (mprotect(reinterpret_cast<void *>(page),
-		     static_cast<size_t>(page_size), PROT_READ | PROT_EXEC) != 0)
+		     static_cast<size_t>(page_size), PROT_READ | PROT_EXEC) != 0) {
 		SPDLOG_ERROR("Unable to restore executable page protections: {}",
 			     errno);
+		return false;
+	}
+	return true;
+#else
+	return false;
 #endif
 }
 
@@ -326,6 +340,9 @@ __bpftime_frida_attach_manager__run_short_uprobe(
 	short_uprobe_x86_frame *frame) noexcept
 {
 	try {
+		// Keep the entry and its stub alive until this callback returns.
+		bpftime::attach::frida_internal_attach_entry::short_callback_guard
+			in_flight(*frame->entry);
 		bpftime::pt_regs regs {};
 		regs.ip = reinterpret_cast<uint64_t>(
 			frame->entry->get_function_address());
@@ -454,9 +471,34 @@ frida_internal_attach_entry::~frida_internal_attach_entry()
 		SPDLOG_DEBUG("Reverted function replace");
 	}
 	if (short_uprobe_stub != nullptr) {
-		remove_short_uprobe_patch(function, short_uprobe_original);
-		munmap(short_uprobe_stub,
-		       static_cast<size_t>(sysconf(_SC_PAGESIZE)));
+		const size_t page_size =
+			static_cast<size_t>(sysconf(_SC_PAGESIZE));
+		// Restore the original word first so no new call can enter the
+		// stub, then wait for callbacks already executing it to leave.
+		const bool restored =
+			remove_short_uprobe_patch(function,
+						  short_uprobe_original);
+		const auto deadline = std::chrono::steady_clock::now() +
+				      std::chrono::seconds(1);
+		while (active_short_callbacks.load(
+			       std::memory_order_acquire) != 0 &&
+		       std::chrono::steady_clock::now() < deadline)
+			std::this_thread::yield();
+		const bool drained = active_short_callbacks.load(
+				     std::memory_order_acquire) == 0;
+		if (restored && drained) {
+			munmap(short_uprobe_stub, page_size);
+			short_uprobe_stub = nullptr;
+		} else {
+			// The text may still branch here (restore failed) or a
+			// thread is still in the stub (drain timed out). Unmapping
+			// would turn the next call into a fault, so retain the
+			// page and record the leak instead of crashing the host.
+			SPDLOG_ERROR(
+				"retaining short uprobe stub at {:x} (restore={}, drained={}) to avoid a dangling jump",
+				(uintptr_t)short_uprobe_stub, restored,
+				drained);
+		}
 	}
 	gum_object_unref(interceptor);
 	SPDLOG_DEBUG("Destructor of frida_internal_attach_entry exiting..");
