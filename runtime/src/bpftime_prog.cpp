@@ -24,6 +24,7 @@
 #include <stdexcept>
 #include "bpftime_vm_compat.hpp"
 #include <cstdio>
+#include "stack_snapshot.hpp"
 
 #define NVPTXCOMPILER_SAFE_CALL(x)                                             \
 	do {                                                                   \
@@ -249,6 +250,12 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 	if (is_cuda()) {
 		throw std::runtime_error("Unable to execute CUDA program");
 	}
+#if BPFTIME_HAVE_STACK_SNAPSHOT
+	// One fault-safe bounded stack capture per program invocation. Probe
+	// reads against the live stack region are served from this snapshot;
+	// a failed capture leaves the compiled-in helper backend unchanged.
+	stack_snapshot::stack_sample_capture stack_capture;
+#endif
 	uint64_t val = 0;
 	int res = 0;
 	// set share memory read and write able
