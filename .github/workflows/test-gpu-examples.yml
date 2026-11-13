@@ -803,7 +803,12 @@ jobs:
               wait "$SERVER_PID" 2>/dev/null || true
             fi
             kill -9 "$VICTIM_PID" 2>/dev/null || true
-            wait "$VICTIM_PID" 2>/dev/null || true
+            # The kill -9 above is the intended end of the long-running victim
+            # (wait reports 137). Any other status means it crashed on its own.
+            set +e
+            wait "$VICTIM_PID" 2>/dev/null
+            CLIENT_RC=$?
+            set -e
           else
             pushd "$EXAMPLE_DIR" >/dev/null
             echo "Launching server with $SERVER_SO: $EXE_REL (BPFTIME_SHM_MEMORY_MB=$SHM_MB)"
@@ -827,18 +832,26 @@ jobs:
             popd >/dev/null
           fi
           echo "Checking expected output: $EXPECTED"
-          # A non-zero bpftimetool exit code must fail the case even if the
-          # output happens to contain the expected string. TOOL_RC is only set
-          # on the run-on-cuda path; default to 0 elsewhere.
+          # Aggregate failures into RESULT instead of aborting under set -e:
+          # the background server still needs cleanup below and all three logs
+          # are uploaded as artifacts. Start green; every check below only
+          # flips RESULT to 1, so a later check can never mask an earlier
+          # failure.
+          RESULT=0
+          # TOOL_RC is set only on the direct-run path: bpftimetool
+          # run-on-cuda is a finite workload wrapped in timeout, so any
+          # non-zero status - including 137 from a timeout SIGKILL on a hang
+          # - is a real failure even if tool.log contains the expected text.
           if [ "${TOOL_RC:-0}" -ne 0 ]; then
-            echo "bpftimetool run-on-cuda exited with code ${TOOL_RC}"; tail -n 200 tool.log || true
+            echo "FAILURE: bpftimetool run-on-cuda exited with code ${TOOL_RC}"; tail -n 200 tool.log || true
             RESULT=1
           fi
-          # CLIENT_RC is only set on the dynamic-attach path. A 137 means the
-          # 30s timeout SIGKILLed the long-running victim as intended; any other
-          # non-zero code is a real victim crash/error and must fail the case.
+          # CLIENT_RC is set on both victim paths: the LD_PRELOAD client run
+          # under timeout and the dynamic-attach victim reaped during
+          # teardown. 137 is the intended SIGKILL of a long-running victim;
+          # any other non-zero status is a real crash/error and fails the case.
           if [ -n "${CLIENT_RC:-}" ] && [ "$CLIENT_RC" -ne 0 ] && [ "$CLIENT_RC" -ne 137 ]; then
-            echo "dynamic-attach client exited unexpectedly with code $CLIENT_RC"; tail -n 200 client.log || true
+            echo "FAILURE: victim/client exited unexpectedly with code $CLIENT_RC"; tail -n 200 client.log || true
             RESULT=1
           fi
           # treat crashes as failure even if expected string appears
@@ -878,7 +891,8 @@ jobs:
             esac
             if [ $FOUND -eq 0 ]; then
               echo "SUCCESS: found README-like output for $EXAMPLE_NAME"
-              RESULT=0
+              # Keep RESULT untouched: an exit-code failure above must not be
+              # overwritten by a matching expected string.
             else
               echo "FAILURE: expected output not found for $EXAMPLE_NAME"
               echo "--- server.log (tail) ---"; tail -n 200 server.log || true
