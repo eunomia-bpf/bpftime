@@ -31,7 +31,7 @@ concurrency:
 
 jobs:
   test-ptxpass:
-    runs-on: [self-hosted, Linux, X64, gpu]
+    runs-on: bpftime-gpu
     steps:
       - uses: actions/checkout@v4
         with:
