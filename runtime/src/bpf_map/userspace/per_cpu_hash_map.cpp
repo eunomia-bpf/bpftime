@@ -71,8 +71,12 @@ long per_cpu_hash_map_impl::elem_update(const void *key, const void *value,
 	if (!check_update_flags(flags))
 		return -1;
 	int cpu = my_sched_getcpu();
-	SPDLOG_DEBUG("Per cpu update, key {}, value {}", (const char *)key,
-		     *(long *)value);
+	SPDLOG_DEBUG(
+		"Per cpu update, key {}, value {}",
+		spdlog::to_hex((const uint8_t *)key,
+			       (const uint8_t *)key + key_size),
+		spdlog::to_hex((const uint8_t *)value,
+			       (const uint8_t *)value + value_size));
 
 	SPDLOG_DEBUG("Run per cpu hash update at cpu {}", cpu);
 	bytes_vec &key_vec = this->key_templates[cpu];
