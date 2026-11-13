@@ -45,14 +45,18 @@ long fix_size_hash_map_impl::elem_update(const void *key, const void *value,
 		errno = EINVAL;
 		return -1;
 	}
-	bool element_exists = map_impl.elem_lookup(key) != nullptr;
-	if (flags == BPF_NOEXIST && element_exists) {
-		errno = EEXIST;
-		return -1;
-	}
-	if (flags == BPF_EXIST && !element_exists) {
-		errno = ENOENT;
-		return -1;
+	// Only the existence-checked flags need a preliminary lookup;
+	// BPF_ANY goes straight to the underlying upsert.
+	if (flags != BPF_ANY) {
+		bool element_exists = map_impl.elem_lookup(key) != nullptr;
+		if (flags == BPF_NOEXIST && element_exists) {
+			errno = EEXIST;
+			return -1;
+		}
+		if (flags == BPF_EXIST && !element_exists) {
+			errno = ENOENT;
+			return -1;
+		}
 	}
 	if (!map_impl.elem_update(key, value)) {
 		// The underlying fixed-size map rejects insertion once it
