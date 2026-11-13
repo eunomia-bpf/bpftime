@@ -32,7 +32,7 @@ void *array_map_impl::elem_lookup(const void *key)
 		errno = ENOENT;
 		return nullptr;
 	}
-	return &data[key_val * _value_size];
+	return &data[size_t(key_val) * _value_size];
 }
 
 long array_map_impl::elem_update(const void *key, const void *value,
@@ -51,7 +51,7 @@ long array_map_impl::elem_update(const void *key, const void *value,
 		return -1;
 	}
 	std::copy((uint8_t *)value, (uint8_t *)value + _value_size,
-		  &data[key_val * _value_size]);
+		  &data[size_t(key_val) * _value_size]);
 	return 0;
 }
 

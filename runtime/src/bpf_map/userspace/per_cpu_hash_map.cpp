@@ -174,7 +174,7 @@ long per_cpu_hash_map_impl::elem_update_userspace(const void *key,
 	bytes_vec value_vec = this->value_template;
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
 	value_vec.assign((uint8_t *)value,
-			 (uint8_t *)value + value_size * ncpu);
+			 (uint8_t *)value + size_t(value_size) * ncpu);
 	bool elem_exists = impl.find(key_vec) != impl.end();
 	if (flags == BPF_NOEXIST && elem_exists) {
 		errno = EEXIST;
@@ -214,7 +214,7 @@ long per_cpu_hash_map_impl::lookup_and_delete_userspace(const void *key,
 		errno = ENOENT;
 		return -1;
 	}
-	memcpy(value, itr->second.data(), ncpu * value_size);
+	memcpy(value, itr->second.data(), size_t(ncpu) * value_size);
 	impl.erase(itr);
 	return 0;
 }

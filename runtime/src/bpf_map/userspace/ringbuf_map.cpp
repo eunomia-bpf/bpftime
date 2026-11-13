@@ -178,7 +178,7 @@ ringbuf::ringbuf(uint32_t max_ent,
 	  raw_buffer(boost::interprocess::make_managed_unique_ptr(
 		  memory.construct<buf_vec>(
 			  boost::interprocess::anonymous_instance)(
-			  getpagesize() * 2 + max_ent * 2,
+			  getpagesize() * 2 + size_t(max_ent) * 2,
 			  vec_allocator(memory.get_segment_manager())),
 		  memory))
 {

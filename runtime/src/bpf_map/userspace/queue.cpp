@@ -57,7 +57,7 @@ void *queue_map_impl::elem_lookup(const void *key)
 		return nullptr;
 	}
 
-	void *elem_ptr = data.data() + head * _value_size;
+	void *elem_ptr = data.data() + size_t(head) * _value_size;
 	SPDLOG_TRACE("Queue peek (lookup) success: returning ptr={:p}",
 		     elem_ptr);
 	return elem_ptr;
@@ -95,7 +95,8 @@ long queue_map_impl::elem_update(const void *key, const void *value,
 	}
 
 	const uint8_t *value_bytes = static_cast<const uint8_t *>(value);
-	memcpy(data.data() + tail * _value_size, value_bytes, _value_size);
+	memcpy(data.data() + size_t(tail) * _value_size, value_bytes,
+	       _value_size);
 	tail = next_index(tail);
 	count++;
 
@@ -159,7 +160,8 @@ long queue_map_impl::map_push_elem(const void *value, uint64_t flags)
 	}
 
 	const uint8_t *value_bytes = static_cast<const uint8_t *>(value);
-	memcpy(data.data() + tail * _value_size, value_bytes, _value_size);
+	memcpy(data.data() + size_t(tail) * _value_size, value_bytes,
+	       _value_size);
 	tail = next_index(tail);
 	count++;
 
@@ -183,7 +185,7 @@ long queue_map_impl::map_pop_elem(void *value)
 		return -1;
 	}
 
-	memcpy(value, data.data() + head * _value_size, _value_size);
+	memcpy(value, data.data() + size_t(head) * _value_size, _value_size);
 
 	head = next_index(head);
 	count--;
@@ -208,7 +210,7 @@ long queue_map_impl::map_peek_elem(void *value)
 		return -1;
 	}
 
-	memcpy(value, data.data() + head * _value_size, _value_size);
+	memcpy(value, data.data() + size_t(head) * _value_size, _value_size);
 
 	SPDLOG_TRACE("Queue map_peek_elem success");
 	return 0;
