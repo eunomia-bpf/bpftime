@@ -150,6 +150,21 @@ frida_internal_attach_entry::frida_internal_attach_entry(
 	override_return_callback = nullptr;
 	if (basic_attach_type == ATTACH_UPROBE ||
 	    basic_attach_type == ATTACH_URETPROBE) {
+		/*
+		 * USDT notes (and any address-based uprobe) point into the
+		 * middle of functions, but frida-gum's interceptor resolves
+		 * such addresses to the enclosing function's *entry*, giving
+		 * the program entry-time instead of note-time state. When the
+		 * site begins with a single-byte NOP (the SDT nop sled), take
+		 * the true-mid-function int3 path instead.
+		 */
+		if (basic_attach_type == ATTACH_UPROBE &&
+		    midfunction_int3_registry::instance().try_register(function,
+								      this)) {
+			int3_registered = true;
+			this->interceptor = gum_object_ref(interceptor);
+			return;
+		}
 		ensure_listener(basic_attach_type);
 	} else if (basic_attach_type == ATTACH_UPROBE_OVERRIDE) {
 		gum_interceptor_begin_transaction(interceptor);
@@ -182,6 +197,12 @@ frida_internal_attach_entry::frida_internal_attach_entry(
 frida_internal_attach_entry::~frida_internal_attach_entry()
 {
 	SPDLOG_DEBUG("Destroy internal attach at {:x}", (uintptr_t)function);
+	if (int3_registered) {
+		midfunction_int3_registry::instance().unregister(function, this);
+		gum_object_unref(interceptor);
+		SPDLOG_DEBUG("Destroyed midfunction int3 attach");
+		return;
+	}
 	for (auto *listener : { uprobe_listener, uretprobe_listener }) {
 		if (listener != nullptr) {
 			gum_interceptor_detach(interceptor, listener);
