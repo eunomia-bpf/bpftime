@@ -70,7 +70,7 @@ TEST_CASE("Software perf shard cache evicts and rebuilds beyond its capacity",
 	cache_fixture fixture;
 
 	// Touching more distinct events than cache slots forces the bounded
-	// eviction path (clear all slots, install the new entry) on one
+	// eviction path (round-robin replacement of one occupied slot) on one
 	// thread. Every output must still succeed and remain readable.
 	for (size_t i = 0; i < cache_fixture::event_count; ++i) {
 		REQUIRE(fixture.output(fixture.events[i],
@@ -126,7 +126,6 @@ TEST_CASE("Software perf shard cache stays independent across threads",
 	}
 }
 
-#endif
 
 TEST_CASE("Software perf shard cache replaces one slot instead of clearing",
 	  "[perf_event][software_perf_event][cache]")
@@ -151,3 +150,5 @@ TEST_CASE("Software perf shard cache replaces one slot instead of clearing",
 				       static_cast<int>(i), 0) == 0);
 	REQUIRE(bpftime::cached_software_perf_event_shard_count() == slots);
 }
+
+#endif
