@@ -16,6 +16,7 @@
 
 #include <cerrno>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <unordered_map>
@@ -132,38 +133,75 @@ struct midfunction_int3_registry::impl {
 		uc->uc_mcontext.gregs[REG_RIP] = (greg_t)(addr + 1);
 	}
 
-	static bool patch_int3(void *addr)
+	/* Return the protection flags of the page containing `addr` by
+	 * parsing /proc/self/maps, or -1 when the mapping is not found. */
+	static int query_page_protection(uintptr_t addr)
+	{
+		FILE *f = fopen("/proc/self/maps", "re");
+		if (!f)
+			return -1;
+		char line[512];
+		int prot = -1;
+		while (fgets(line, sizeof(line), f)) {
+			uintptr_t start, end;
+			char perms[5] = { 0 };
+			if (sscanf(line, "%lx-%lx %4s", &start, &end,
+				   perms) != 3)
+				continue;
+			if (start <= addr && addr < end) {
+				prot = 0;
+				if (perms[0] == 'r')
+					prot |= PROT_READ;
+				if (perms[1] == 'w')
+					prot |= PROT_WRITE;
+				if (perms[2] == 'x')
+					prot |= PROT_EXEC;
+				break;
+			}
+		}
+		fclose(f);
+		return prot;
+	}
+
+	/* Flip the page to RWX just long enough to store `value` at `addr`,
+	 * then restore the protection we found. The page must not stay
+	 * writable: this code runs inside processes we were injected into. */
+	static bool write_byte(void *addr, uint8_t value)
 	{
 		constexpr size_t page = 4096;
-		uintptr_t a = (uintptr_t)addr;
-		uintptr_t page_start = a & ~(page - 1);
-		size_t len = page; /* the byte is within this one page */
+		uintptr_t page_start = ((uintptr_t)addr) & ~(page - 1);
 
-		int prot_before = PROT_READ | PROT_EXEC;
-		/* Query the current protection to restore exactly. */
-		/* Best effort: try PROT_READ|PROT_WRITE|PROT_EXEC first. */
-		if (mprotect((void *)page_start, len,
+		int prot_before = query_page_protection((uintptr_t)addr);
+		if (prot_before < 0)
+			prot_before = PROT_READ | PROT_EXEC;
+
+		if (mprotect((void *)page_start, page,
 			     PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
 			SPDLOG_ERROR(
 				"midfunction int3: mprotect failed for {:x}: {}",
 				page_start, strerror(errno));
 			return false;
 		}
-		*(volatile uint8_t *)addr = 0xCC; /* INT3 */
-		/* Leave the page executable; do not drop the write bit that
-		 * gum or the loader may rely on - restore the common RX|W. */
-		mprotect((void *)page_start, len,
-			 PROT_READ | PROT_WRITE | PROT_EXEC);
+		*(volatile uint8_t *)addr = value;
+		if (mprotect((void *)page_start, page, prot_before) != 0) {
+			/* The byte is already live; failing the attach now
+			 * would leave a trap nobody dispatches. Keep the
+			 * patch and report the leftover permissions. */
+			SPDLOG_ERROR(
+				"midfunction int3: restoring protection failed for {:x}: {} (page stays RWX)",
+				page_start, strerror(errno));
+		}
 		return true;
+	}
+
+	static bool patch_int3(void *addr)
+	{
+		return write_byte(addr, 0xCC); /* INT3 */
 	}
 
 	static void restore_byte(void *addr, uint8_t old)
 	{
-		constexpr size_t page = 4096;
-		uintptr_t page_start = ((uintptr_t)addr) & ~(page - 1);
-		mprotect((void *)page_start, page,
-			 PROT_READ | PROT_WRITE | PROT_EXEC);
-		*(volatile uint8_t *)addr = old;
+		write_byte(addr, old);
 	}
 };
 
