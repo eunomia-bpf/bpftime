@@ -1,4 +1,6 @@
+#ifdef __clang__
 #include <__clang_cuda_builtin_vars.h>
+#endif
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -6,7 +8,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#ifndef __CUDA_ARCH__
 #include <cuda_runtime.h>
+#endif
 #include <iostream>
 #include <iterator>
 #include <ostream>
@@ -386,8 +390,8 @@ _bpf_helper_ext_0025(uint64_t ctx, uint64_t map, uint64_t flags, uint64_t data,
 			return 2;
 		}
 		header->dirty = 1;
-		auto tail_to_put =
-			__atomic_fetch_add(&header->tail, 1, __ATOMIC_SEQ_CST);
+		auto tail_to_put = atomicAdd(
+			reinterpret_cast<unsigned long long *>(&header->tail), 1ULL);
 		auto real_tail = tail_to_put % map_info.max_entries;
 		// printf("real tail=%lu\n", real_tail);
 		auto buffer =
@@ -512,6 +516,28 @@ _bpf_helper_ext_0511(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
     uint32_t lane_id;
     asm volatile("mov.u32 %0, %%laneid;" : "=r"(lane_id));
     return (uint64_t)lane_id;
+}
+
+// Helper 512: Read a PTX register value captured by a BB kprobe.
+// ctx points at [count, reg0, reg1, ...] (all u64).
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0512(uint64_t idx, uint64_t ctx, uint64_t, uint64_t, uint64_t)
+{
+	if (ctx == 0)
+		return 0;
+	const uint64_t *context = (const uint64_t *)(uintptr_t)ctx;
+	if (idx >= context[0])
+		return 0;
+	return context[1 + idx];
+}
+
+// Helper 513: Number of registers captured in the BB kprobe context.
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0513(uint64_t ctx, uint64_t, uint64_t, uint64_t, uint64_t)
+{
+	if (ctx == 0)
+		return 0;
+	return ((const uint64_t *)(uintptr_t)ctx)[0];
 }
 
 extern "C" __global__ void bpf_main(void *mem, size_t sz)
