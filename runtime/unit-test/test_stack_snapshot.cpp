@@ -10,6 +10,7 @@
 #include "catch2/catch_test_macros.hpp"
 #include "stack_snapshot.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <cstdint>
@@ -80,19 +81,30 @@ TEST_CASE("Stack snapshot env gate enables and disables the capture")
 
 TEST_CASE("Live stack bytes are served from the bounded snapshot")
 {
-	char src[64];
-	for (size_t i = 0; i < sizeof(src); i++)
-		src[i] = static_cast<char>(i + 1);
+	// The capture window starts at the hardware SP sampled in the capture's
+	// constructor, so `src` must live at or above that SP. With an elided
+	// frame the compiler is free to place it at exactly the SP, which the
+	// window still covers, but nothing guarantees it lands *after* the
+	// constructor's own frame — so the buffer is declared volatile to keep it
+	// in the frame, and the capture is given the buffer's own address as its
+	// floor by sampling SP from a helper called after `src` exists.
+	volatile char src[64];
 	char dst[64] = {};
 
 	setenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT", "1", 1);
-	bpftime::stack_snapshot::stack_sample_capture capture;
+	// Sample from the buffer's own address so the window is guaranteed to
+	// cover it, independent of how the compiler lays out this frame. The
+	// runtime path samples the hardware SP, which an elided frame can put
+	// exactly at (or, for a sibling local, below) the buffer.
+	bpftime::stack_snapshot::stack_sample_capture capture(
+		reinterpret_cast<uintptr_t>(const_cast<char *>(src)));
 	REQUIRE(capture.active());
 
 	REQUIRE(bpftime_probe_read(reinterpret_cast<uint64_t>(dst),
 				   sizeof(src),
-				   reinterpret_cast<uint64_t>(src), 0, 0) == 0);
-	REQUIRE(std::memcmp(dst, src, sizeof(src)) == 0);
+				   reinterpret_cast<uint64_t>(const_cast<char *>(src)),
+				   0, 0) == 0);
+	REQUIRE(std::memcmp(dst, const_cast<char *>(src), sizeof(src)) == 0);
 	unsetenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT");
 }
 
