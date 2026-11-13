@@ -6,6 +6,7 @@
 // already executing the stub before unmapping it / freeing the entry. This
 // drives the marker from several threads while detaching concurrently; the
 // test passing (process survives, no fault) is the reclaim-safety contract.
+#include "catch2/catch_test_macros.hpp"
 #include "frida_uprobe_attach_impl.hpp"
 #include <atomic>
 #include <chrono>
