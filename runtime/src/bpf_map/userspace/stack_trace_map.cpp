@@ -109,14 +109,18 @@ int stack_trace_map_impl::fill_stack_trace(const std::vector<uint64_t> &stk,
 		SPDLOG_DEBUG("Set new stack map entry");
 		return to_put_hash;
 	} else {
-		bool equals = true;
+		bool equals = compare_only_by_hash;
 		if (!compare_only_by_hash) {
 			SPDLOG_DEBUG("Checking equality by content..");
-			equals = equals && itr->second.size() == stk.size();
-			if (!equals) {
-				equals = equals &&
-					 std::equal(stk.begin(), stk.end(),
-						    itr->second.begin());
+			if (itr->second.size() == stk.size()) {
+				// Same size: compare every frame. The
+				// four-iterator overload stays bounded even
+				// if the size invariant were ever broken.
+				equals = std::equal(stk.begin(), stk.end(),
+						    itr->second.begin(),
+						    itr->second.end());
+			} else {
+				equals = false;
 			}
 		} else {
 			SPDLOG_DEBUG("Checking equality by hash..");
@@ -126,11 +130,17 @@ int stack_trace_map_impl::fill_stack_trace(const std::vector<uint64_t> &stk,
 			SPDLOG_DEBUG("Early return due to equals");
 			return to_put_hash;
 		}
-		if (discard_old_one) {
+		// A different stack hashed into an occupied bucket. Match
+		// the kernel bpf_get_stackid() behavior: without
+		// BPF_F_REUSE_STACKID the lookup fails with -EEXIST; with
+		// the flag the existing entry is replaced and its id reused.
+		if (!discard_old_one) {
 			SPDLOG_DEBUG(
-				"Discarding existsing stack trace entry..");
-			itr->second = key_buf;
+				"Stack trace collision without BPF_F_REUSE_STACKID, returning -EEXIST");
+			return -EEXIST;
 		}
+		SPDLOG_DEBUG("Discarding existing stack trace entry..");
+		itr->second = key_buf;
 		SPDLOG_DEBUG("Got hash {}", to_put_hash);
 		return to_put_hash;
 	}

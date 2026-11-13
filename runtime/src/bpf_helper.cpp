@@ -908,7 +908,9 @@ int64_t bpftime_get_stackid(uint64_t ctx_raw, uint64_t map_raw, uint64_t flags,
 					 flags & BPF_F_FAST_STACK_CMP);
 
 	SPDLOG_DEBUG("Got stackid {}", ret);
-	return (uint32_t)ret;
+	// Keep negative errno values (e.g. -EEXIST on a collision) intact;
+	// valid stack ids are non-negative and unchanged by the conversion.
+	return ret;
 }
 
 int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
