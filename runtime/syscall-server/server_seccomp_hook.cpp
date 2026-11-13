@@ -9,6 +9,7 @@
 #include <cstring>
 #include <linux/audit.h>
 #include <linux/filter.h>
+#include "seccomp_bpf_compat.hpp"
 #include <linux/seccomp.h>
 #include <mutex>
 #include <sys/ioctl.h>
