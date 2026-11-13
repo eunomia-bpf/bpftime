@@ -19,6 +19,7 @@
 #include <pthread.h>
 #elif __linux__
 #include <pthread.h>
+#include <fcntl.h>
 #include <sys/syscall.h>
 #include <sys/uio.h>
 #endif
@@ -38,6 +39,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <cstring>
+#include <cstdlib>
 #include <time.h>
 #include <unistd.h>
 #include <ctime>
@@ -87,6 +89,11 @@ uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
 #pragma GCC diagnostic pop
 	va_end(args);
 	return 0;
+}
+
+uint64_t bpftime_seq_write(uint64_t, uint64_t, uint64_t)
+{
+	return -EOPNOTSUPP;
 }
 
 long bpftime_strncmp(const char *s1, uint64_t s1_sz, const char *s2)
@@ -205,57 +212,127 @@ uint64_t bpftime_ktime_get_boot_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 	return spec.tv_sec * (uint64_t)1000000000 + spec.tv_nsec;
 }
 
-// bpf_get_current_pid_tgid caches the identity so it does not pay a syscall on
-// every call. The cache cannot be function-local: a forked child inherits the
-// parent's cached values, and would report the parent's pid and tid. These live
-// at file scope so the fork handler can refresh them in the child.
-static pid_t bpftime_cached_tgid = getpid();
 #if __linux__
-static thread_local int bpftime_cached_tid = -1;
-#elif __APPLE__
-static thread_local uint64_t bpftime_cached_tid = UINT64_MAX;
-#endif
-
-static void bpftime_refresh_cached_identity_in_child()
+static int get_host_nspid(const char *procfs, const char *entry, int fallback)
 {
-	bpftime_cached_tgid = getpid();
-	// tid is meaningless in the child; the next helper call refills it.
-#if __linux__
-	bpftime_cached_tid = -1;
-#elif __APPLE__
-	bpftime_cached_tid = UINT64_MAX;
-#endif
+	if (procfs == nullptr || procfs[0] == '\0')
+		return fallback;
+	char path[PATH_MAX];
+	int length = snprintf(path, sizeof(path), "%s/%s/status", procfs, entry);
+	if (length < 0 || static_cast<size_t>(length) >= sizeof(path))
+		return fallback;
+	int fd = open(path, O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return fallback;
+	char content[2048];
+	ssize_t size;
+	do {
+		size = read(fd, content, sizeof(content) - 1);
+	} while (size < 0 && errno == EINTR);
+	close(fd);
+	if (size <= 0)
+		return fallback;
+	content[size] = '\0';
+	int result = fallback;
+	for (char *line = content; line != nullptr;) {
+		char *next = strchr(line, '\n');
+		if (next != nullptr)
+			*next++ = '\0';
+		if (strncmp(line, "NSpid:", 6) == 0) {
+			char *end = nullptr;
+			long value = strtol(line + 6, &end, 10);
+			if (end != line + 6 && value > 0 &&
+			    value <= 2147483647L)
+				result = static_cast<int>(value);
+			break;
+		}
+		line = next;
+	}
+	return result;
 }
-
-static const int bpftime_identity_atfork_status = pthread_atfork(
-	nullptr, nullptr, bpftime_refresh_cached_identity_in_child);
+#endif
 
 uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 				      uint64_t)
 {
-	// If registering the fork handler failed, the cache is still the
-	// parent's after a fork, so read the identity directly. The probe
-	// access cache above falls back the same way.
-	if (bpftime_identity_atfork_status != 0) {
 #if __linux__
-		return ((uint64_t)getpid() << 32) |
-		       static_cast<uint32_t>(syscall(SYS_gettid));
+	static thread_local int cached_local_tgid = -1;
+	static thread_local int tgid = -1;
+	static thread_local int tid = -1;
+	int local_tgid = getpid();
+	if (cached_local_tgid != local_tgid) {
+		int local_tid = static_cast<int>(syscall(SYS_gettid));
+		cached_local_tgid = local_tgid;
+		tgid = get_host_nspid(getenv("BPFTIME_HOST_PROCFS"), "self",
+				       local_tgid);
+		tid = get_host_nspid(getenv("BPFTIME_HOST_PROCFS"),
+				      "thread-self", local_tid);
+	}
 #elif __APPLE__
-		uint64_t tid = 0;
+	// Mirror the Linux branch: detect fork via getpid() change so the child
+	// does not keep reporting the parent's cached identity. The previous
+	// one-shot `static int tgid = getpid()` never refreshed after fork.
+	static thread_local int cached_local_tgid = -1;
+	static thread_local uint64_t tgid = 0;
+	static thread_local uint64_t tid = UINT64_MAX; // pthread_threadid_np uses uint64_t
+	int local_tgid = getpid();
+	if (cached_local_tgid != local_tgid) {
+		cached_local_tgid = local_tgid;
+		tgid = static_cast<uint64_t>(local_tgid);
+		// Mach thread id is not inherited across fork; force re-resolution.
 		pthread_threadid_np(NULL, &tid);
-		return ((uint64_t)getpid() << 32) | tid;
-#endif
-	}
-#if __linux__
-	if (bpftime_cached_tid == -1) {
-		bpftime_cached_tid = static_cast<int>(syscall(SYS_gettid));
-	}
-#elif __APPLE__
-	if (bpftime_cached_tid == UINT64_MAX) {
-		pthread_threadid_np(NULL, &bpftime_cached_tid);
 	}
 #endif
-	return ((uint64_t)bpftime_cached_tgid << 32) | bpftime_cached_tid;
+	return ((uint64_t)tgid << 32) | tid;
+}
+
+uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t, uint64_t,
+				  uint64_t)
+{
+#if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))
+	// Keep the per-thread task storage on the heap through a pthread key
+	// instead of a thread_local buffer. This library can be linked into a
+	// dlopen'ed module that carries initial-exec TLS; a multi-KB thread_local
+	// would land in its static TLS block and exhaust the limited static TLS
+	// surplus ("cannot allocate memory in static TLS block").
+	constexpr size_t task_storage_size = 4096;
+	static pthread_key_t task_key = [] {
+		pthread_key_t key;
+		pthread_key_create(&key, [](void *p) { free(p); });
+		return key;
+	}();
+	uint8_t *task = static_cast<uint8_t *>(pthread_getspecific(task_key));
+	if (task == nullptr) {
+		void *raw = nullptr;
+		if (posix_memalign(&raw, 64, task_storage_size) != 0)
+			return 0;
+		task = static_cast<uint8_t *>(raw);
+		memset(task, 0, task_storage_size);
+		pthread_setspecific(task_key, task);
+	}
+	static const size_t tpbase_offset = [] {
+		const char *text =
+			getenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET");
+		if (text == nullptr)
+			return SIZE_MAX;
+		char *end = nullptr;
+		errno = 0;
+		unsigned long value = strtoul(text, &end, 0);
+		return errno == 0 && end != text && *end == '\0' &&
+				       value <= task_storage_size -
+						       sizeof(void *) ?
+			       (size_t)value :
+			       SIZE_MAX;
+	}();
+	if (tpbase_offset != SIZE_MAX) {
+		void *thread_pointer = __builtin_thread_pointer();
+		memcpy(task + tpbase_offset, &thread_pointer,
+		       sizeof(thread_pointer));
+	}
+	return (uint64_t)(uintptr_t)task;
+#else
+	return 0;
+#endif
 }
 
 uint64_t bpf_get_current_uid_gid(uint64_t, uint64_t, uint64_t, uint64_t,
@@ -838,7 +915,7 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 			  uint64_t flags, uint64_t)
 {
 	if (!(flags & BPF_F_USER_STACK)) {
-		SPDLOG_ERROR(
+		SPDLOG_DEBUG(
 			"bpftime_get_stack only supports collect user stack!");
 		return -ENOTSUP;
 	}
@@ -1253,6 +1330,12 @@ bpftime_helper_group::get_kernel_utils_helper_group()
 			    .name = "bpf_ktime_get_boot_ns",
 			    .fn = (void *)bpftime_ktime_get_boot_ns,
 		    } },
+		  { BPF_FUNC_seq_write,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_seq_write,
+			    .name = "bpf_seq_write",
+			    .fn = (void *)bpftime_seq_write,
+		    } },
 		  { BPF_FUNC_trace_printk,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_trace_printk,
@@ -1276,6 +1359,16 @@ bpftime_helper_group::get_kernel_utils_helper_group()
 			    .index = BPF_FUNC_get_current_uid_gid,
 			    .name = "bpf_get_current_uid_gid",
 			    .fn = (void *)bpf_get_current_uid_gid } },
+		  { BPF_FUNC_get_current_task,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_get_current_task,
+			    .name = "bpf_get_current_task",
+			    .fn = (void *)bpftime_get_current_task } },
+		  { BPF_FUNC_get_current_task_btf,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_get_current_task_btf,
+			    .name = "bpf_get_current_task_btf",
+			    .fn = (void *)bpftime_get_current_task } },
 		  { BPF_FUNC_get_current_comm,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_get_current_comm,
