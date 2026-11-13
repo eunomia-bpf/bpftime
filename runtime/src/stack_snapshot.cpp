@@ -5,6 +5,7 @@
 
 #include "spdlog/spdlog.h"
 #include <cerrno>
+#include <exception>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -38,23 +39,33 @@ bool resolve_stack_mapping(uintptr_t sp, stack_interval &out)
 		return true;
 	}
 
-	std::ifstream maps("/proc/self/maps");
-	if (!maps.is_open())
-		return false;
+	try {
+		std::ifstream maps("/proc/self/maps");
+		if (!maps.is_open())
+			return false;
 
-	std::string line;
-	while (std::getline(maps, line)) {
-		uintptr_t low = 0;
-		uintptr_t high = 0;
-		char perms[5] = {};
-		if (std::sscanf(line.c_str(), "%lx-%lx %4s", &low, &high,
-				perms) != 3)
-			continue;
-		if (perms[0] == 'r' && sp >= low && sp < high) {
-			cached_interval = { low, high };
-			out = cached_interval;
-			return true;
+		std::string line;
+		while (std::getline(maps, line)) {
+			uintptr_t low = 0;
+			uintptr_t high = 0;
+			char perms[5] = {};
+			if (std::sscanf(line.c_str(), "%lx-%lx %4s", &low,
+					&high, perms) != 3)
+				continue;
+			if (perms[0] == 'r' && sp >= low && sp < high) {
+				cached_interval = { low, high };
+				out = cached_interval;
+				return true;
+			}
 		}
+	} catch (const std::exception &e) {
+		// /proc/self/maps parsing allocates (ifstream/getline/string) and
+		// can throw under memory pressure. The snapshot is an optional
+		// acceleration, so record the failure and let the caller fall back
+		// to the fault-safe per-read backend instead of terminating the host.
+		SPDLOG_WARN(
+			"stack snapshot mapping resolution failed, using per-read backend: {}",
+			e.what());
 	}
 	return false;
 }
@@ -125,7 +136,7 @@ snapshot_read_result try_read(void *dst, uintptr_t ptr, size_t size)
 	return snapshot_read_result::ok;
 }
 
-stack_sample_capture::stack_sample_capture(uintptr_t target_sp) noexcept
+stack_sample_capture::stack_sample_capture(uintptr_t target_sp)
 {
 	if (!enabled())
 		return;

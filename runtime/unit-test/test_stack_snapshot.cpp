@@ -75,6 +75,26 @@ TEST_CASE("Stack snapshot env gate enables and disables the capture")
 	unsetenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT");
 }
 
+TEST_CASE("Unresolvable stack mapping disables the capture without terminating")
+{
+	// 0x1000 lies below the default mmap_min_addr, so it is never part of a
+	// mapping and cannot appear in /proc/self/maps. Mapping resolution must
+	// fail closed: the capture stays inactive and reads fall back to the
+	// compiled-in backend, instead of an exception escaping and killing the
+	// host process.
+	constexpr uintptr_t unmapped_sp = 0x1000;
+	uint8_t dst[16] = {};
+
+	setenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT", "1", 1);
+	bpftime::stack_snapshot::stack_sample_capture capture(unmapped_sp);
+	REQUIRE_FALSE(capture.active());
+	REQUIRE(bpftime::stack_snapshot::current_sample == nullptr);
+	REQUIRE(bpftime::stack_snapshot::try_read(dst, unmapped_sp,
+						  sizeof(dst)) ==
+		bpftime::stack_snapshot::snapshot_read_result::fallback);
+	unsetenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT");
+}
+
 TEST_CASE("In-window reads are served with the captured bytes")
 {
 	uint8_t *region = map_pattern(3);

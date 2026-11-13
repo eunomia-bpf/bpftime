@@ -83,7 +83,7 @@ class stack_sample_capture
 	// sp == 0 captures from the current hardware stack pointer. An
 	// explicit SP is used by tests and by paths that already hold the
 	// hooked thread's pt_regs.
-	explicit stack_sample_capture(uintptr_t sp = 0) noexcept;
+	explicit stack_sample_capture(uintptr_t sp = 0);
 	~stack_sample_capture();
 	stack_sample_capture(const stack_sample_capture &) = delete;
 	stack_sample_capture &
