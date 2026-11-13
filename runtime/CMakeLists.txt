@@ -191,7 +191,11 @@ if(BPFTIME_ENABLE_FRIDA)
   list(APPEND RUNTIME_DEPS FridaGum)
 endif()
 if(${BPFTIME_BUILD_WITH_LIBBPF})
-  list(APPEND RUNTIME_DEPS libbpf)
+  # copy_headers materialises the libbpf uapi headers into ${LIBBPF_INCLUDE_DIRS},
+  # which the sources below include as "linux/perf_event.h". Depending only on
+  # `libbpf` (the download step) leaves the copies racing the compile, so a
+  # partially written header surfaces as "unterminated #ifndef".
+  list(APPEND RUNTIME_DEPS libbpf copy_headers)
 endif()
 add_dependencies(${PROJECT_NAME} ${RUNTIME_DEPS})
 
@@ -263,6 +267,15 @@ if(BPFTIME_ENABLE_FRIDA)
 endif()
 target_link_libraries(${PROJECT_NAME} PUBLIC ${RUNTIME_LINK_LIBS})
 target_include_directories(${PROJECT_NAME} PUBLIC ${RUNTIME_INCLUDE_DIRS})
+
+# Lookup and helper paths run while libc may hold the allocator lock, so a
+# general-dynamic TLS access that reaches __tls_get_addr can re-enter malloc and
+# hang. The agent already places its PT_TLS segment in static TLS (its
+# attach-time variables are initial-exec), so compiling the runtime the same
+# way only removes __tls_get_addr calls and adds no static TLS.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT MSVC)
+  target_compile_options(${PROJECT_NAME} PRIVATE -ftls-model=initial-exec)
+endif()
 
 message(DEBUG "Successfully added all dependencies and linked against them.")
 

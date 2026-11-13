@@ -209,6 +209,9 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 		if (late_bootstrap_done.load(std::memory_order_acquire)) {
 			SPDLOG_INFO(
 				"nv_attach_impl: new hook added after bootstrap; rerunning late bootstrap");
+			// Drop the previous bootstrap's module set so the rerun doesn't
+			// leave two sets with split device-global addresses.
+			clear_patched_state_for_next_session();
 			reset_late_bootstrap_state_for_next_attach();
 		}
 		this->map_basic_info = data.map_basic_info;

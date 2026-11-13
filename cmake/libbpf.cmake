@@ -81,6 +81,17 @@ add_custom_target(libbpf_with_headers)
 
 add_dependencies(libbpf_with_headers libbpf copy_headers)
 
+# Patch usdt.bpf.h to allow LINUX_HAS_BPF_COOKIE pre-definition.
+# See https://github.com/eunomia-bpf/bpftime/issues/710
+add_custom_target(patch_usdt_bpf_h
+    COMMAND ${CMAKE_COMMAND}
+        -DINPUT_FILE=${LIBBPF_INCLUDE_DIRS}/bpf/usdt.bpf.h
+        -P ${CMAKE_CURRENT_LIST_DIR}/patch_usdt.cmake
+    DEPENDS copy_headers
+    COMMENT "Patching usdt.bpf.h for LINUX_HAS_BPF_COOKIE override"
+)
+add_dependencies(libbpf_with_headers patch_usdt_bpf_h)
+
 # # Setup bpftool
 set(BPFTOOL_DIR ${CMAKE_CURRENT_LIST_DIR}/../third_party/bpftool)
 set(BPFTOOL_INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/bpftool)

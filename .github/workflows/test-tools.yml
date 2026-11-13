@@ -60,3 +60,9 @@ jobs:
       - name: Test bpftimetool load
         run: |
           python3 tools/bpftimetool/test_load.py build/tools/bpftimetool/bpftimetool
+      - name: Test bpftimetool run
+        run: |
+          python3 tools/bpftimetool/test_run.py build/tools/bpftimetool/bpftimetool
+      - name: Test bpftimetool arguments
+        run: |
+          python3 tools/bpftimetool/test_arguments.py build/tools/bpftimetool/bpftimetool c++

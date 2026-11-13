@@ -39,6 +39,7 @@ set(TEST_SOURCES
     test_config.cpp
     test_shm_allocation_failure.cpp
     test_software_perf_event.cpp
+    test_ringbuf_tail_wrap.cpp
     test_epoll.cpp
 
     attach_with_ebpf/test_attach_uprobe_with_ebpf_trap.cpp
@@ -47,6 +48,7 @@ set(TEST_SOURCES
 
     tailcall/test_user_to_kernel_tailcall.cpp
     tailcall/test_user_to_user_tailcall.cpp
+    tailcall/test_prog_array_thread_local.cpp
 
 )
 # These tests instantiate attach::frida_attach_impl directly, so they only
@@ -67,9 +69,12 @@ option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_sources(bpftime_runtime_tests PRIVATE test_get_current_uid_gid.cpp)
+    target_sources(bpftime_runtime_tests PRIVATE
+        test_get_current_uid_gid.cpp
+        test_get_current_comm.cpp)
     target_link_options(bpftime_runtime_tests PRIVATE
-        -Wl,--wrap=getuid -Wl,--wrap=getgid)
+        -Wl,--wrap=getuid -Wl,--wrap=getgid
+        -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc)
 endif()
 
 if(ENABLE_PROBE_READ_CHECK)
