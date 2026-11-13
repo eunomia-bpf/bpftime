@@ -29,8 +29,20 @@ namespace attach {
  * pristine interrupted register state, then resume at addr+1 (the rest of
  * the nop sled), which is semantically identical to executing the sled.
  *
- * Callers whose target byte is not 0x90 keep the existing (function-entry)
- * behavior, with a warning.
+ * Callers whose target byte is not 0x90 keep the existing
+ * (function-entry) behavior. Coverage is one-byte (0x90) sleds only:
+ * a multi-byte NOP sled (0f 1f ...) starts with 0f, fails the check and
+ * keeps the function-entry behavior - i.e. such sites keep the bug
+ * described above. sys/sdt.h on this toolchain emits single-byte
+ * sleds, so SDT notes are covered; there is no runtime warning on the
+ * fallback path because ordinary function-entry uprobes take it too.
+ *
+ * fork(): a forked child inherits the patched byte, the SIGTRAP
+ * disposition and this registry together (plain copy-on-write; the
+ * registry is process-local, not in bpftime shared memory), so traps
+ * in the child dispatch exactly as in the parent. A later detach in
+ * either process restores only its own copy; exec*() discards all
+ * three.
  */
 class midfunction_int3_registry {
     public:
