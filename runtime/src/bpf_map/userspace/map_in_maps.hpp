@@ -30,6 +30,20 @@ class array_map_of_maps_impl : public array_map_impl {
 		int map_id = *(int *)key_val;
 		return (void *)((u_int64_t)map_id);
 	}
+	// Syscall BPF_MAP_LOOKUP_ELEM copies value_size bytes from the returned
+	// address to user space. The helper path returns the inner id as a
+	// pointer-sized handle; the syscall ABI instead needs a pointer to the
+	// stored 4-byte fd, so return the raw storage address. Otherwise the
+	// caller's memcpy dereferences the id itself as an address (M13).
+	void *elem_lookup_userspace(const void *key)
+	{
+		auto *stored = static_cast<int *>(array_map_impl::elem_lookup(key));
+		// Preserve the ENOENT semantics of the helper path: an unset slot
+		// holds fd 0 and must not be reported as a successful lookup.
+		if (stored == nullptr || *stored == 0)
+			return nullptr;
+		return stored;
+	}
 };
 
 class hash_map_of_maps_impl : public var_size_hash_map_impl {
@@ -49,6 +63,17 @@ class hash_map_of_maps_impl : public var_size_hash_map_impl {
 			return nullptr;
 		int map_id = *(int *)value;
 		return (void *)((u_int64_t)map_id);
+	}
+	// See array_map_of_maps_impl::elem_lookup_userspace: return the stored
+	// 4-byte inner fd address for the syscall memcpy path instead of the
+	// pointer-sized helper handle.
+	void *elem_lookup_userspace(const void *key)
+	{
+		auto *stored = static_cast<int *>(
+			var_size_hash_map_impl::elem_lookup(key));
+		if (stored == nullptr || *stored == 0)
+			return nullptr;
+		return stored;
 	}
 };
 

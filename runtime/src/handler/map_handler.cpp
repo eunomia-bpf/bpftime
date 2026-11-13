@@ -57,6 +57,13 @@ using hash_map_impl = var_size_hash_map_impl;
 using hash_map_impl = fix_size_hash_map_impl;
 #endif
 
+namespace {
+// Stable per-thread slot for the syscall map-in-map inner fd. The 4-byte value
+// is copied here while map_lock is held, so the caller's subsequent memcpy
+// cannot read a hash node freed by a concurrent delete (M13).
+thread_local int tl_map_in_map_fd_snapshot;
+} // namespace
+
 bpftime_map_ops global_map_ops_table[(int)bpf_map_type::BPF_MAP_TYPE_MAX] = {
 	{ 0 }
 };
@@ -214,12 +221,30 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
 		auto impl = static_cast<array_map_of_maps_impl *>(
 			map_impl_ptr.get());
-		return do_lookup(impl);
+		if (!from_syscall)
+			return do_lookup(impl);
+		bpftime_lock_guard guard(map_lock);
+		const int *stored =
+			static_cast<const int *>(impl->elem_lookup_userspace(key));
+		if (stored == nullptr)
+			return nullptr;
+		// Copy inside the lock; return thread-local stable storage so the
+		// caller's memcpy cannot touch a concurrently freed map node.
+		tl_map_in_map_fd_snapshot = *stored;
+		return &tl_map_in_map_fd_snapshot;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS: {
 		auto impl = static_cast<hash_map_of_maps_impl *>(
 			map_impl_ptr.get());
-		return do_lookup(impl);
+		if (!from_syscall)
+			return do_lookup(impl);
+		bpftime_lock_guard guard(map_lock);
+		const int *stored =
+			static_cast<const int *>(impl->elem_lookup_userspace(key));
+		if (stored == nullptr)
+			return nullptr;
+		tl_map_in_map_fd_snapshot = *stored;
+		return &tl_map_in_map_fd_snapshot;
 	}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_GPU_HASH_MAP: {
