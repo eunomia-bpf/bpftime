@@ -12,9 +12,22 @@
 // served from the snapshot with integer bounds checking; every other read
 // (another mapping, a frame above the window, a stale or unmapped pointer)
 // falls through to the compiled-in backend, whose process_vm_readv() still
-// converts bad addresses into -EFAULT. The snapshot is therefore a pure
-// acceleration layer: it never changes the observable result of a probe read,
-// and a failed capture makes every read use the legacy backend unchanged.
+// converts bad addresses into -EFAULT.
+//
+// Two properties bound what "served from the snapshot" means, and both are
+// observable:
+//
+//   - The bytes are the state at capture time, i.e. when the program was
+//     entered. A stack slot written afterwards by the program, by a helper or
+//     by the hooked function is still read at its capture-time value, so such
+//     a read can differ from what the live backend would return.
+//   - The window is [sampled_sp, sampled_sp + window.size()) within the
+//     mapping that holds the sampled SP. A read fully contained in it is
+//     served; anything else falls through, so a fault the live backend would
+//     report as -EFAULT is still reported as -EFAULT.
+//
+// Apart from those two, a failed capture makes every read use the legacy
+// backend unchanged, and the snapshot never turns a fault into a success.
 //
 // Build: ENABLE_STACK_SNAPSHOT=1 (CMake option, Linux x86_64/aarch64).
 // Runtime opt-in: BPFTIME_EXPERIMENT_STACK_SNAPSHOT=1. When the option is off
@@ -98,8 +111,13 @@ class stack_sample_capture
 	// Fixed-size member storage keeps the capture heap-allocation free
 	// (the BPF program may run inside a malloc interposer) and makes
 	// nested captures independent. One live capture per nesting level
-	// costs at most capture_cap_bytes of real stack.
-	std::array<std::byte, capture_cap_bytes> buffer{};
+	// costs capture_cap_bytes of real stack.
+	//
+	// Deliberately not value-initialized: the constructor fills
+	// `captured_length` bytes before publishing a window, and a `{}` here
+	// zeroed all 4 KiB on every program invocation even with the feature
+	// switched off (~90 ns per call at -O2).
+	std::array<std::byte, capture_cap_bytes> buffer;
 	replay_context context;
 	const replay_context *previous = nullptr;
 	size_t captured_length = 0;

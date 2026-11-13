@@ -53,7 +53,7 @@ uint8_t *map_pattern(size_t pages)
 
 } // namespace
 
-TEST_CASE("Stack snapshot env gate enables and disables the capture")
+TEST_CASE("Stack snapshot env gate enables and disables the capture", "[stack_snapshot]")
 {
 	char local[64] = {};
 	(void)local;
@@ -75,7 +75,7 @@ TEST_CASE("Stack snapshot env gate enables and disables the capture")
 	unsetenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT");
 }
 
-TEST_CASE("Unresolvable stack mapping disables the capture without terminating")
+TEST_CASE("Unresolvable stack mapping disables the capture without terminating", "[stack_snapshot]")
 {
 	// 0x1000 lies below the default mmap_min_addr, so it is never part of a
 	// mapping and cannot appear in /proc/self/maps. Mapping resolution must
@@ -95,7 +95,7 @@ TEST_CASE("Unresolvable stack mapping disables the capture without terminating")
 	unsetenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT");
 }
 
-TEST_CASE("In-window reads are served with the captured bytes")
+TEST_CASE("In-window reads are served with the captured bytes", "[stack_snapshot]")
 {
 	uint8_t *region = map_pattern(3);
 	const uintptr_t sp = reinterpret_cast<uintptr_t>(region) + 2048;
@@ -103,9 +103,17 @@ TEST_CASE("In-window reads are served with the captured bytes")
 	setenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT", "1", 1);
 	bpftime::stack_snapshot::stack_sample_capture capture(sp);
 	REQUIRE(capture.active());
+	// Note: the capture stays alive for the rest of this case, so the
+	// mutated-source comparison below runs in its own scope.
 
 	uint8_t dst[64] = {};
 	const uintptr_t inside = sp + 64;
+	// Overwrite the source *after* the capture. A read that still reports
+	// the capture-time bytes proves the snapshot produced them: the live
+	// backend would now return 0x5a. Without this mutation a read served
+	// by the fallback returns the same bytes and the case passes for the
+	// wrong reason.
+	std::memset(reinterpret_cast<void *>(inside), 0x5a, sizeof(dst));
 	REQUIRE(bpftime_probe_read(reinterpret_cast<uint64_t>(dst),
 				   sizeof(dst), inside, 0, 0) == 0);
 	for (size_t i = 0; i < sizeof(dst); i++)
@@ -119,7 +127,7 @@ TEST_CASE("In-window reads are served with the captured bytes")
 	unsetenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT");
 }
 
-TEST_CASE("Reads above the captured window fall back and still succeed")
+TEST_CASE("Reads above the captured window fall back and still succeed", "[stack_snapshot]")
 {
 	// A deep unwind frame can sit far above the sampled SP. It is inside a
 	// readable mapping but outside the 4 KiB window, so the per-read
@@ -143,7 +151,7 @@ TEST_CASE("Reads above the captured window fall back and still succeed")
 	unsetenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT");
 }
 
-TEST_CASE("Readable addresses below the sampled SP fall back correctly")
+TEST_CASE("Readable addresses below the sampled SP fall back correctly", "[stack_snapshot]")
 {
 	uint8_t *region = map_pattern(3);
 	const uintptr_t sp = reinterpret_cast<uintptr_t>(region) + 2048;
@@ -164,7 +172,7 @@ TEST_CASE("Readable addresses below the sampled SP fall back correctly")
 	unsetenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT");
 }
 
-TEST_CASE("Unreadable addresses return EFAULT while the process survives")
+TEST_CASE("Unreadable addresses return EFAULT while the process survives", "[stack_snapshot]")
 {
 	uint8_t *region = map_pattern(2);
 	REQUIRE(mprotect(region + page_size, page_size, PROT_NONE) == 0);
@@ -189,7 +197,7 @@ TEST_CASE("Unreadable addresses return EFAULT while the process survives")
 	unsetenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT");
 }
 
-TEST_CASE("Non-stack mappings fall back to the compiled-in backend")
+TEST_CASE("Non-stack mappings fall back to the compiled-in backend", "[stack_snapshot]")
 {
 	const size_t size = 128;
 	void *heap = std::malloc(size);
@@ -211,7 +219,7 @@ TEST_CASE("Non-stack mappings fall back to the compiled-in backend")
 	unsetenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT");
 }
 
-TEST_CASE("Nested captures restore the outer replay context")
+TEST_CASE("Nested captures restore the outer replay context", "[stack_snapshot]")
 {
 	char outer_src[32] = {};
 	for (size_t i = 0; i < sizeof(outer_src); i++)
@@ -246,7 +254,7 @@ TEST_CASE("Nested captures restore the outer replay context")
 	unsetenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT");
 }
 
-TEST_CASE("Per-thread snapshot contexts are isolated")
+TEST_CASE("Per-thread snapshot contexts are isolated", "[stack_snapshot]")
 {
 	constexpr int thread_count = 4;
 	std::vector<std::thread> threads;
@@ -281,7 +289,7 @@ TEST_CASE("Per-thread snapshot contexts are isolated")
 
 #else
 
-TEST_CASE("Stack snapshot backend is compiled out on unsupported platforms")
+TEST_CASE("Stack snapshot backend is compiled out on unsupported platforms", "[stack_snapshot]")
 {
 	SUCCEED();
 }
