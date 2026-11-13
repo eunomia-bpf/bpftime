@@ -8,7 +8,14 @@ using namespace bpftime::attach;
 int syscall_trace_attach_private_data::initialize_from_string(
 	const std::string_view &sv)
 {
-	int tp_id = std::stoi(std::string(sv));
+	int tp_id;
+	try {
+		tp_id = std::stoi(std::string(sv));
+	} catch (const std::exception &) {
+		SPDLOG_ERROR("Invalid tracepoint id: {}",
+			     std::string(sv));
+		return -EINVAL;
+	}
 	SPDLOG_DEBUG(
 		"Initializing syscall trace attach private data from tp_id {}",
 		tp_id);
@@ -32,7 +39,7 @@ int syscall_trace_attach_private_data::initialize_from_string(
 			auto &tp_name_to_sys_nr =
 				std::get<0>(get_global_syscall_id_table());
 			std::string syscall_name;
-			bool is_enter;
+			bool is_enter = false;
 			if (name.starts_with("sys_enter_")) {
 				syscall_name = name.substr(10);
 				is_enter = true;
@@ -52,12 +59,12 @@ int syscall_trace_attach_private_data::initialize_from_string(
 				SPDLOG_ERROR(
 					"Unable to lookup sys nr for syscall tracepoint {}, syscall name {}",
 					name, syscall_name);
-				return -EEXIST;
+				return -ENOENT;
 			}
 		}
 	} else {
 		SPDLOG_ERROR("Unable to find tp id {} in syscall tracepoints",
 			     tp_id);
-		return -EEXIST;
+		return -ENOENT;
 	}
 }
