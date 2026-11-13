@@ -36,6 +36,10 @@
 #define BPF_F_RDONLY (1U << 3)
 #define BPF_F_WRONLY (1U << 4)
 
+/* Ring-buffer notification flags. */
+#define BPF_RB_NO_WAKEUP (1ULL << 0)
+#define BPF_RB_FORCE_WAKEUP (1ULL << 1)
+
 /* Stack-trace map flags. */
 #define BPF_F_USER_STACK (1ULL << 8)
 #define BPF_F_FAST_STACK_CMP (1ULL << 9)
