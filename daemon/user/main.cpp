@@ -55,7 +55,7 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 	case 'u':
 		errno = 0;
 		uid = strtol(arg, NULL, 10);
-		if (errno || uid < 0 || uid >= -1) {
+		if (errno || uid < 0 || uid >= UINT32_MAX) {
 			SPDLOG_ERROR("Invalid UID: {}", arg);
 			argp_usage(state);
 		}
