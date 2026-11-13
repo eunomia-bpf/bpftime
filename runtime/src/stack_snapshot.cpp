@@ -108,16 +108,18 @@ snapshot_read_result try_read(void *dst, uintptr_t ptr, size_t size)
 	if (ptr < sample->stack_begin || ptr >= sample->stack_end)
 		return snapshot_read_result::fallback;
 
-	// D-gate: the address belongs to a stack mapping but cannot be served
-	// from the captured window. A stale frame pointer saved across a fiber
-	// switch lands here and is rejected with no syscall at all.
+	// Only reads fully contained in the captured window are served from
+	// the snapshot. A stack frame above the window (a deep unwind frame),
+	// an address below the sampled SP, or a crossing read reaches the
+	// fault-safe per-read backend instead of being rejected: the snapshot
+	// accelerates reads, it never changes their observable result.
 	if (ptr < sample->sampled_sp)
-		return snapshot_read_result::fault;
+		return snapshot_read_result::fallback;
 
 	const uintptr_t offset = ptr - sample->sampled_sp;
 	if (offset > sample->window.size() ||
 	    size > sample->window.size() - offset)
-		return snapshot_read_result::fault;
+		return snapshot_read_result::fallback;
 
 	std::memcpy(dst, sample->window.data() + offset, size);
 	return snapshot_read_result::ok;

@@ -139,8 +139,6 @@ int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
 		static_cast<size_t>(size))) {
 	case bpftime::stack_snapshot::snapshot_read_result::ok:
 		return 0;
-	case bpftime::stack_snapshot::snapshot_read_result::fault:
-		return -EFAULT;
 	case bpftime::stack_snapshot::snapshot_read_result::fallback:
 		break;
 	}

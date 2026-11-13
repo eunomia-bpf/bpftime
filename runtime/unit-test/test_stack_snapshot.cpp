@@ -2,21 +2,29 @@
 // Tests for the bounded fault-safe stack snapshot backend.
 //
 // These tests pin the contract that matters for rootless profiling:
-//   * live stack reads inside a capture are served from the snapshot,
-//   * stale/out-of-window stack pointers deterministically return -EFAULT
-//     instead of dereferencing them (the boost::fiber SIGSEGV scenario),
+//   * reads fully inside the captured window are served from the snapshot,
+//   * reads outside the window but inside a readable mapping fall back to the
+//     compiled-in backend and still succeed (deep unwind frames must work),
+//   * unreadable addresses are absorbed as -EFAULT while the process keeps
+//     running (the boost::fiber crash contract),
 //   * non-stack mappings keep the compiled-in probe-read semantics,
 //   * nested captures restore the outer context and threads are isolated.
+//
+// The mapping tests pass an explicit target SP into the capture so they do
+// not depend on compiler frame layout (debug frames can exceed the 4 KiB
+// window, which is exactly the case the fallback must handle).
 #include "catch2/catch_test_macros.hpp"
 #include "stack_snapshot.hpp"
 
-#include <algorithm>
-#include <atomic>
 #include <cerrno>
+#include <algorithm>
 #include <cstdint>
+#include <atomic>
 #include <cstdlib>
 #include <cstring>
+#include <sys/mman.h>
 #include <thread>
+#include <unistd.h>
 #include <vector>
 
 #if defined(__linux__) && BPFTIME_HAVE_STACK_SNAPSHOT
@@ -27,32 +35,20 @@ extern "C" int64_t bpftime_probe_read(uint64_t dst, int64_t size,
 namespace
 {
 
-struct stack_mapping {
-	uintptr_t begin = 0;
-	uintptr_t end = 0;
-};
+constexpr size_t page_size = 4096;
 
-// Resolve the readable mapping containing `address` from /proc/self/maps.
-stack_mapping find_mapping(const void *address)
+// mmap `pages` readable/writable anonymous pages and fill them with a
+// position-dependent byte pattern.
+uint8_t *map_pattern(size_t pages)
 {
-	stack_mapping result;
-	FILE *maps = fopen("/proc/self/maps", "r");
-	REQUIRE(maps != nullptr);
-	const uintptr_t target = reinterpret_cast<uintptr_t>(address);
-	char line[512];
-	while (fgets(line, sizeof(line), maps) != nullptr) {
-		uintptr_t low = 0;
-		uintptr_t high = 0;
-		char perms[5] = {};
-		if (sscanf(line, "%lx-%lx %4s", &low, &high, perms) != 3)
-			continue;
-		if (perms[0] == 'r' && target >= low && target < high) {
-			result = { low, high };
-			break;
-		}
-	}
-	fclose(maps);
-	return result;
+	void *region =
+		mmap(nullptr, pages * page_size, PROT_READ | PROT_WRITE,
+		     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	REQUIRE(region != MAP_FAILED);
+	auto *bytes = static_cast<uint8_t *>(region);
+	for (size_t i = 0; i < pages * page_size; i++)
+		bytes[i] = static_cast<uint8_t>(i & 0xff);
+	return bytes;
 }
 
 } // namespace
@@ -79,78 +75,97 @@ TEST_CASE("Stack snapshot env gate enables and disables the capture")
 	unsetenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT");
 }
 
-TEST_CASE("Live stack bytes are served from the bounded snapshot")
+TEST_CASE("In-window reads are served with the captured bytes")
 {
-	// The capture window starts at the hardware SP sampled in the capture's
-	// constructor, so `src` must live at or above that SP. With an elided
-	// frame the compiler is free to place it at exactly the SP, which the
-	// window still covers, but nothing guarantees it lands *after* the
-	// constructor's own frame — so the buffer is declared volatile to keep it
-	// in the frame, and the capture is given the buffer's own address as its
-	// floor by sampling SP from a helper called after `src` exists.
-	volatile char src[64];
-	char dst[64] = {};
+	uint8_t *region = map_pattern(3);
+	const uintptr_t sp = reinterpret_cast<uintptr_t>(region) + 2048;
 
 	setenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT", "1", 1);
-	// Sample from the buffer's own address so the window is guaranteed to
-	// cover it, independent of how the compiler lays out this frame. The
-	// runtime path samples the hardware SP, which an elided frame can put
-	// exactly at (or, for a sibling local, below) the buffer.
-	bpftime::stack_snapshot::stack_sample_capture capture(
-		reinterpret_cast<uintptr_t>(const_cast<char *>(src)));
+	bpftime::stack_snapshot::stack_sample_capture capture(sp);
 	REQUIRE(capture.active());
 
+	uint8_t dst[64] = {};
+	const uintptr_t inside = sp + 64;
 	REQUIRE(bpftime_probe_read(reinterpret_cast<uint64_t>(dst),
-				   sizeof(src),
-				   reinterpret_cast<uint64_t>(const_cast<char *>(src)),
-				   0, 0) == 0);
-	REQUIRE(std::memcmp(dst, const_cast<char *>(src), sizeof(src)) == 0);
+				   sizeof(dst), inside, 0, 0) == 0);
+	for (size_t i = 0; i < sizeof(dst); i++)
+		REQUIRE(dst[i] ==
+			static_cast<uint8_t>((inside - reinterpret_cast<uintptr_t>(
+							      region) +
+						      i) &
+					     0xff));
+
+	munmap(region, 3 * page_size);
 	unsetenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT");
 }
 
-TEST_CASE("Stale stack pointer below sampled SP returns EFAULT, no dereference")
+TEST_CASE("Reads above the captured window fall back and still succeed")
 {
-	char anchor[16] = {};
-	(void)anchor;
-	const stack_mapping mapping = find_mapping(anchor);
-	REQUIRE(mapping.begin != 0);
+	// A deep unwind frame can sit far above the sampled SP. It is inside a
+	// readable mapping but outside the 4 KiB window, so the per-read
+	// backend must serve it instead of reporting a fault.
+	uint8_t *region = map_pattern(3);
+	const uintptr_t sp = reinterpret_cast<uintptr_t>(region);
 
 	setenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT", "1", 1);
-	bpftime::stack_snapshot::stack_sample_capture capture;
+	bpftime::stack_snapshot::stack_sample_capture capture(sp);
 	REQUIRE(capture.active());
-	const auto *sample = bpftime::stack_snapshot::current_sample;
-	REQUIRE(sample != nullptr);
-	// The first byte of the mapping is mapped and readable, but it lies
-	// below the sampled SP: the D-gate must reject it with EFAULT rather
-	// than touching it through the per-read fault-safe backend.
-	REQUIRE(mapping.begin < sample->sampled_sp);
 
-	char dst[16] = {};
+	uint8_t dst[32] = {};
+	const uintptr_t deep = sp + 2 * page_size;
 	REQUIRE(bpftime_probe_read(reinterpret_cast<uint64_t>(dst),
-				   sizeof(dst), mapping.begin, 0, 0) ==
-		-EFAULT);
+				   sizeof(dst), deep, 0, 0) == 0);
+	for (size_t i = 0; i < sizeof(dst); i++)
+		REQUIRE(dst[i] ==
+			static_cast<uint8_t>((2 * page_size + i) & 0xff));
+
+	munmap(region, 3 * page_size);
 	unsetenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT");
 }
 
-TEST_CASE("Reads crossing the captured window end return EFAULT")
+TEST_CASE("Readable addresses below the sampled SP fall back correctly")
 {
-	char anchor[16] = {};
-	(void)anchor;
+	uint8_t *region = map_pattern(3);
+	const uintptr_t sp = reinterpret_cast<uintptr_t>(region) + 2048;
 
 	setenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT", "1", 1);
-	bpftime::stack_snapshot::stack_sample_capture capture;
+	bpftime::stack_snapshot::stack_sample_capture capture(sp);
 	REQUIRE(capture.active());
-	const auto *sample = bpftime::stack_snapshot::current_sample;
-	REQUIRE(sample != nullptr);
-	REQUIRE(sample->window.size() > sizeof(uint64_t));
 
-	const uintptr_t last_four =
-		sample->sampled_sp + sample->window.size() - 4;
-	uint64_t dst = 0;
-	// 8-byte read starting 4 bytes before the window end must be rejected
-	// by integer bounds checking, never split across the boundary.
-	REQUIRE(bpftime_probe_read(reinterpret_cast<uint64_t>(&dst),
-				   sizeof(dst), last_four, 0, 0) == -EFAULT);
+	uint8_t dst[16] = {};
+	const uintptr_t below = reinterpret_cast<uintptr_t>(region) + 128;
+	REQUIRE(below < sp);
+	REQUIRE(bpftime_probe_read(reinterpret_cast<uint64_t>(dst),
+				   sizeof(dst), below, 0, 0) == 0);
+	for (size_t i = 0; i < sizeof(dst); i++)
+		REQUIRE(dst[i] == static_cast<uint8_t>((128 + i) & 0xff));
+
+	munmap(region, 3 * page_size);
+	unsetenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT");
+}
+
+TEST_CASE("Unreadable addresses return EFAULT while the process survives")
+{
+	uint8_t *region = map_pattern(2);
+	REQUIRE(mprotect(region + page_size, page_size, PROT_NONE) == 0);
+	const uintptr_t sp = reinterpret_cast<uintptr_t>(region);
+
+	setenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT", "1", 1);
+	bpftime::stack_snapshot::stack_sample_capture capture(sp);
+	REQUIRE(capture.active());
+
+	uint8_t dst[16] = {};
+	// Guarded page: outside the window, fallback pvmr absorbs the fault.
+	REQUIRE(bpftime_probe_read(reinterpret_cast<uint64_t>(dst),
+				   sizeof(dst),
+				   reinterpret_cast<uint64_t>(
+					   region + page_size),
+				   0, 0) == -EFAULT);
+	// Unmapped low address keeps the same guarantee.
+	REQUIRE(bpftime_probe_read(reinterpret_cast<uint64_t>(dst),
+				   sizeof(dst), 0x1000, 0, 0) == -EFAULT);
+
+	munmap(region, 2 * page_size);
 	unsetenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT");
 }
 
@@ -171,11 +186,6 @@ TEST_CASE("Non-stack mappings fall back to the compiled-in backend")
 		0);
 	REQUIRE(std::all_of(dst, dst + size,
 			    [](char c) { return c == static_cast<char>(0x7a); }));
-
-	// An unmapped address must be absorbed as EFAULT while the process
-	// keeps running: the fiber crash contract.
-	REQUIRE(bpftime_probe_read(reinterpret_cast<uint64_t>(dst), 8,
-				   0x1000, 0, 0) == -EFAULT);
 
 	std::free(heap);
 	unsetenv("BPFTIME_EXPERIMENT_STACK_SNAPSHOT");

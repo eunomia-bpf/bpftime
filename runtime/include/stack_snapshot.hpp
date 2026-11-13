@@ -8,13 +8,13 @@
 // event on deep stacks.
 //
 // This backend captures a single, bounded window of the live stack once per
-// BPF program invocation. Every probe read targeting that window is then
-// served from the snapshot with integer bounds checking: a stale frame
-// pointer produced while a boost::fiber switches stacks deterministically
-// yields -EFAULT (the same errno the kernel would return) instead of a
-// process SIGSEGV, at the fixed cost of one syscall per event regardless of
-// the unwind depth. Reads targeting mappings other than the stack keep the
-// compiled-in backend semantics.
+// BPF program invocation. Probe reads fully contained in that window are
+// served from the snapshot with integer bounds checking; every other read
+// (another mapping, a frame above the window, a stale or unmapped pointer)
+// falls through to the compiled-in backend, whose process_vm_readv() still
+// converts bad addresses into -EFAULT. The snapshot is therefore a pure
+// acceleration layer: it never changes the observable result of a probe read,
+// and a failed capture makes every read use the legacy backend unchanged.
 //
 // Build: ENABLE_STACK_SNAPSHOT=1 (CMake option, Linux x86_64/aarch64).
 // Runtime opt-in: BPFTIME_EXPERIMENT_STACK_SNAPSHOT=1. When the option is off
@@ -62,15 +62,12 @@ bool enabled();
 
 // Result of attempting to serve a probe read from the active snapshot.
 enum class snapshot_read_result {
-	// The address is not part of the sampled stack mapping; the caller
-	// must use the normal (compiled-in) probe read backend.
+	// The read is not fully inside the captured window. The caller must
+	// use the compiled-in probe read backend so the result (success or
+	// fault-safe -EFAULT) stays identical to a build without snapshots.
 	fallback,
 	// The bytes were copied from the bounded snapshot.
 	ok,
-	// The address belongs to the stack mapping but lies below the sampled
-	// SP or outside the captured window. Returning -EFAULT here costs no
-	// syscall and is what a real kernel probe read would return.
-	fault,
 };
 
 // Bounds-checked snapshot lookup. Never touches the kernel; safe to call from
