@@ -641,12 +641,18 @@ restore_affinity:
 
 // Tail-call targets always receive a 64-byte context buffer.
 //
-// The helper's ctx may be either the host-owned buffer passed to
-// bpftime_prog::bpftime_prog_exec (whose real size is published per
-// thread), or a replacement context the running BPF program built on its
-// own stack and passed as r1. The BPF ABI carries no size for the latter,
-// so only the host entry context is bounded; replacement contexts keep the
-// historical full 64-byte copy.
+// The helper's ctx may be either host-owned memory from the region passed
+// to bpftime_prog::bpftime_prog_exec (whose pointer and size are published
+// per thread), or a replacement context the running BPF program built on
+// its own BPF stack and passed as r1. The BPF ABI carries no size for the
+// latter, so only pointers contained in the host entry region are bounded;
+// replacement contexts keep the historical full 64-byte copy.
+//
+// Safety of a replacement context (the pointer actually lands on the
+// program's BPF stack and 64 bytes are readable there) is a verifier/ABI
+// precondition this helper cannot enforce without BPF-stack metadata; a
+// malformed program pointing r1 outside its stack frame is tracked under
+// the verifier-bypass work (issue #699).
 static void bpftime_prepare_tail_call_context(char (&context)[64],
 					      uint64_t ctx)
 {
@@ -655,19 +661,22 @@ static void bpftime_prepare_tail_call_context(char (&context)[64],
 		memset(context, 0, tail_call_context_size);
 		return;
 	}
-	const void *ctx_ptr =
-		reinterpret_cast<const void *>((uintptr_t)ctx);
+	const uintptr_t ctx_addr = (uintptr_t)ctx;
 	size_t copy_size = tail_call_context_size;
 	if (bpftime::current_thread_exec_ctx.has_value()) {
 		const auto &entry = *bpftime::current_thread_exec_ctx;
-		if (entry.ptr == ctx_ptr) {
-			// Host-owned entry context: only the published bytes
-			// are known valid, so never read past them and
-			// zero-fill the remainder of the target buffer.
-			copy_size = std::min(entry.size,
-					     tail_call_context_size);
+		const uintptr_t entry_begin =
+			reinterpret_cast<uintptr_t>(entry.ptr);
+		const uintptr_t entry_end = entry_begin + entry.size;
+		if (ctx_addr >= entry_begin && ctx_addr < entry_end) {
+			// Inside the host entry region (exact base or an
+			// interior alias such as entry + 4): only the bytes
+			// from the alias to the region end are known valid.
+			copy_size = std::min(
+				static_cast<size_t>(entry_end - ctx_addr),
+				tail_call_context_size);
 		}
-		// A different pointer is a program-owned replacement
+		// Fully outside the region: a program-owned replacement
 		// context; copy all 64 bytes as the ABI historically does.
 	} else {
 		// Helper reached without any published exec context: the
@@ -679,7 +688,8 @@ static void bpftime_prepare_tail_call_context(char (&context)[64],
 				"tail_call: exec context info is unavailable; copying the full 64-byte tail-call context");
 		});
 	}
-	memcpy(context, ctx_ptr, copy_size);
+	memcpy(context, reinterpret_cast<const void *>(ctx_addr),
+	       copy_size);
 	if (copy_size < tail_call_context_size) {
 		memset(context + copy_size, 0,
 		       tail_call_context_size - copy_size);

@@ -83,6 +83,7 @@ TEST_CASE("Test tail call bounds entry context copies but preserves replacement 
 	static const int WORD_TARGET_FD = 1003;
 	static const int ZERO_TARGET_FD = 1004;
 	static const int TAIL_TARGET_FD = 1005;
+	static const int ALIAS_ZERO_TARGET_FD = 1006;
 	shm_remove remover("BPFTIME_TAIL_CALL_CTX_BOUNDS_TEST_SHM");
 	bpftime_initialize_global_shm(
 		bpftime::shm_open_type::SHM_REMOVE_AND_CREATE);
@@ -151,6 +152,30 @@ TEST_CASE("Test tail call bounds entry context copies but preserves replacement 
 	REQUIRE(bpftime_helper_group::get_kernel_utils_helper_group()
 			.add_helper_group_to_prog(&replacement_prog) == 0);
 	REQUIRE(replacement_prog.bpftime_prog_load(false) == 0);
+	// r0 = *(u32 *)(r1 + 4); exit -- one word past a 4-byte alias copy, 0
+	struct bpf_insn alias_zero_target_insn[] = {
+		BPF_LDX_MEM(BPF_W, 0, 1, 4), BPF_EXIT_INSN(),
+	};
+	REQUIRE(bpftime_progs_create(ALIAS_ZERO_TARGET_FD,
+			(const ebpf_inst *)alias_zero_target_insn, 2,
+			"tail_call_alias_zero_target",
+			(int)bpftime::bpf_prog_type::
+				BPF_PROG_TYPE_SOCKET_FILTER) >= 0);
+	// Caller that tail-calls with an interior alias r1 = entry + 4.
+	struct bpf_insn alias_caller_insn[] = {
+		BPF_MOV64_REG(1, 1),
+		BPF_ALU64_IMM(BPF_ADD, 1, 4),
+		BPF_LD_IMM64_RAW_FULL(2, 0, 0, 0, PROG_ARRAY_MAP_FD, 0),
+		BPF_MOV64_IMM(3, 0), BPF_EMIT_CALL(0x0c),
+		BPF_MOV64_IMM(0, 0xdead), BPF_EXIT_INSN(),
+	};
+	bpftime_prog alias_prog((const ebpf_inst *)alias_caller_insn,
+				sizeof(alias_caller_insn) /
+					sizeof(alias_caller_insn[0]),
+				"tail_call_alias_caller");
+	REQUIRE(bpftime_helper_group::get_kernel_utils_helper_group()
+			.add_helper_group_to_prog(&alias_prog) == 0);
+	REQUIRE(alias_prog.bpftime_prog_load(false) == 0);
 
 	int key = 0;
 	int value = WORD_TARGET_FD;
@@ -191,6 +216,24 @@ TEST_CASE("Test tail call bounds entry context copies but preserves replacement 
 						    sizeof(entry_ctx),
 						    &ret) >= 0);
 	REQUIRE(ret == 0x41424344);
+
+	// Interior alias r1 = entry + 4 is still host-owned memory: the copy
+	// is bounded to the remaining 4 bytes and the tail zero-filled. The
+	// exact 8-byte heap block makes any read past it an ASan error.
+	int *entry8 = new int[2]{ 0x11111111, 0x22222222 };
+	value = WORD_TARGET_FD;
+	REQUIRE(bpftime_map_update_elem(PROG_ARRAY_MAP_FD, &key, &value,
+					0) >= 0);
+	REQUIRE(alias_prog.bpftime_prog_exec(entry8, 2 * sizeof(int),
+					      &ret) >= 0);
+	REQUIRE(ret == 0x22222222);
+	value = ALIAS_ZERO_TARGET_FD;
+	REQUIRE(bpftime_map_update_elem(PROG_ARRAY_MAP_FD, &key, &value,
+					0) >= 0);
+	REQUIRE(alias_prog.bpftime_prog_exec(entry8, 2 * sizeof(int),
+					      &ret) >= 0);
+	REQUIRE(ret == 0);
+	delete[] entry8;
 	bpftime_destroy_global_shm();
 	bpftime_initialize_global_shm(bpftime::shm_open_type::SHM_NO_CREATE);
 }
