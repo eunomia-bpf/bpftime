@@ -203,6 +203,14 @@ jobs:
           RC=$?
           set -e
           echo "victim rc=$RC" >> "$LOG"
+          # victim loops forever, so 124 is the intended 6s timeout. Any
+          # other non-zero status is a real crash and must fail the case
+          # even if the malloc trace text is present below.
+          if [ "$RC" -ne 0 ] && [ "$RC" -ne 124 ]; then
+            echo "FAILURE: victim exited unexpectedly with code $RC"
+            tail -n 200 "$LOG"
+            exit 1
+          fi
           wait $SP || true
           tail -n 200 "$LOG"
           grep -q "malloc calls: " "$LOG"
