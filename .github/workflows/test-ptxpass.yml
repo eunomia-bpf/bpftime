@@ -66,7 +66,7 @@ jobs:
               -DBPFTIME_LLVM_JIT=YES \
               -DBPFTIME_ENABLE_UNIT_TESTING=YES \
               -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
-              -DBPFTIME_CUDA_ROOT="/usr/local/cuda-12.6" \
+              -DBPFTIME_CUDA_ROOT="${BPFTIME_CUDA_ROOT:-/usr/local/cuda}" \
               -DLLVM_DIR="/usr/lib/llvm-18/lib/cmake/llvm/" \
               -G Ninja
           
