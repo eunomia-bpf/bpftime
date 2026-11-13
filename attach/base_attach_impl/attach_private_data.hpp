@@ -1,6 +1,7 @@
 #ifndef _BPFTIME_ATTACH_PRIVATE_DATA_HPP
 #define _BPFTIME_ATTACH_PRIVATE_DATA_HPP
 
+#include <string>
 #include <string_view>
 #include "spdlog/spdlog.h"
 #include <stdexcept>
@@ -10,7 +11,7 @@ namespace attach
 {
 // A base class for all attach-independent private data
 struct attach_private_data {
-	virtual ~attach_private_data() {};
+	virtual ~attach_private_data(){};
 	// Initialize this private data structure from a string.
 	// This function should be implemented by things like
 	// `uprobe_attach_private_data` or `syscall_attach_private_data` or

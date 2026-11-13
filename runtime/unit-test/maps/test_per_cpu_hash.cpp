@@ -22,7 +22,7 @@ static const char *SHM_NAME = "BPFTIME_PER_CPU_HASH_SHM";
 TEST_CASE("Test basic operations of hash map")
 {
 	shm_remove remover(SHM_NAME);
-	managed_shared_memory mem(create_only, SHM_NAME, 20 << 20);
+	managed_shared_memory mem(create_only, SHM_NAME, 1 << 22);
 	uint32_t ncpu = sysconf(_SC_NPROCESSORS_ONLN);
 	std::mt19937 gen;
 	gen.seed(Catch::rngSeed());

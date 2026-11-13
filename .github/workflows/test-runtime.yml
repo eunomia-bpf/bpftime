@@ -144,7 +144,7 @@ jobs:
           fi
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           cmake --build build --config Debug --target bpftime-agent bpftime-syscall-server libbpf bpftool -j$(nproc)
-      
+
       # Remove unrelated smoke tests; focus on malloc example to validate VM switching
 
       - name: Build malloc example (openEuler)

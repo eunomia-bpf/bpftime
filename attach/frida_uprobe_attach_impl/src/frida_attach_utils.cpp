@@ -120,6 +120,9 @@ resolve_function_addr_by_module_offset(const std::string_view &module_name,
 	    std::filesystem::equivalent(module_name, exec_path, ec)) {
 		module_base_addr = get_module_base_addr("");
 	} else {
+		SPDLOG_DEBUG(
+			"module name {} is *not* equivalent to exec path {}, using module name to resolve module base addr",
+			module_name, exec_path);
 		module_base_addr =
 			get_module_base_addr(std::string(module_name).c_str());
 	}

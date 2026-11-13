@@ -121,10 +121,12 @@ void handler_manager::clear_id_at(int fd, managed_shared_memory &memory)
 			if (std::holds_alternative<bpf_link_handler>(handler)) {
 				auto &link_handler =
 					std::get<bpf_link_handler>(handler);
-				if (link_handler.attach_target_id == fd) {
+				if (link_handler.link_attach_type ==
+					    BPF_PERF_EVENT &&
+				    link_handler.target_id == fd) {
 					SPDLOG_DEBUG(
-						"Remove link handler with id {}, prog id {}, due to the removal of perf event {}",
-						i, link_handler.prog_id, fd);
+						"Removing link handler {} since its target is {}",
+						i, fd);
 					clear_id_at(i, memory);
 				}
 			}
@@ -138,17 +140,15 @@ void handler_manager::clear_id_at(int fd, managed_shared_memory &memory)
 					std::get<bpf_link_handler>(handler);
 				if (link_handler.prog_id == fd) {
 					SPDLOG_DEBUG(
-						"Remove link handler with id {}, perf event id {}, due to the removal of perf event {}",
-						i,
-						link_handler.attach_target_id,
-						fd);
+						"Remove link handler with id {},  due to the removal of perf event {}",
+						i, fd);
 					clear_id_at(i, memory);
 				}
 			}
 		}
 	} else if (std::holds_alternative<bpf_link_handler>(handlers[fd])) {
 		auto target_fd =
-			std::get<bpf_link_handler>(handlers[fd]).attach_target_id;
+			std::get<bpf_link_handler>(handlers[fd]).target_id;
 		handlers[fd] = unused_handler();
 		SPDLOG_DEBUG("Destroying link handler {}, cascading to perf event {}", fd, target_fd);
 		clear_id_at(target_fd, memory);

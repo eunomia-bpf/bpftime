@@ -59,6 +59,7 @@ set(sources
   src/handler/perf_event_handler.cpp
   src/handler/prog_handler.cpp
   src/handler/epoll_handler.cpp
+  src/handler/link_handler.cpp
   src/handler/memfd_handler.cpp
   
   src/bpftime_shm.cpp
@@ -96,7 +97,7 @@ if(${BPFTIME_ENABLE_CUDA_ATTACH})
   list(APPEND sources src/bpf_map/gpu/nv_gpu_shared_array_map.cpp)
   list(APPEND sources src/bpf_map/gpu/nv_gpu_ringbuf_map.cpp)
   list(APPEND sources src/bpf_map/gpu_kernel_shared/array_map_kernel_gpu.cpp)
-  list(APPEND sources src/bpf_map/gpu/nv_gpu_shared_hash_map.cpp)    
+  list(APPEND sources src/bpf_map/gpu/nv_gpu_shared_hash_map.cpp)
   # HOST-based GPU maps (for Tegra/platforms without CUDA IPC)
   list(APPEND sources src/bpf_map/gpu/nv_gpu_array_host_map.cpp)
   list(APPEND sources src/bpf_map/gpu/nv_gpu_shared_array_host_map.cpp)
