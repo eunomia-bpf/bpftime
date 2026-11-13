@@ -743,6 +743,11 @@ jobs:
               SHM_MB="$MAX_MB"
             fi
           fi
+          # Default to "not an intentional teardown"; each victim path sets
+          # this to 1 only after confirming the process was alive and reaped
+          # by our own timeout/teardown. Initialized before the mode branches
+          # so the validation gate never sees a stale or post-branch reset.
+          CLIENT_KILLED_INTENTIONALLY=0
           if [ "$EXAMPLE_MODE" = "direct-run" ]; then
             pushd "$EXAMPLE_DIR" >/dev/null
             echo "Launching direct-run server with $SERVER_SO: $EXE_REL (BPFTIME_SHM_MEMORY_MB=$SHM_MB)"
@@ -802,12 +807,30 @@ jobs:
               kill -9 "$SERVER_PID" 2>/dev/null || true
               wait "$SERVER_PID" 2>/dev/null || true
             fi
-            kill -9 "$VICTIM_PID" 2>/dev/null || true
-            # The kill -9 above is the intended end of the long-running victim
-            # (wait reports 137). Any other status means it crashed on its own.
+            # Only treat the victim's 137 as the intended teardown if it was
+            # still alive when we killed it. A process that already died (for
+            # example an OOM SIGKILL) must not be excused just because 137
+            # matches the teardown code.
             set +e
-            wait "$VICTIM_PID" 2>/dev/null
-            CLIENT_RC=$?
+            if kill -0 "$VICTIM_PID" 2>/dev/null; then
+              CLIENT_KILLED_INTENTIONALLY=1
+              kill -9 "$VICTIM_PID" 2>/dev/null || true
+            else
+              CLIENT_KILLED_INTENTIONALLY=0
+            fi
+            grace=0
+            while [ "$grace" -lt 10 ] &&
+                  kill -0 "$VICTIM_PID" 2>/dev/null; do
+              sleep 1
+              grace=$((grace + 1))
+            done
+            if ! kill -0 "$VICTIM_PID" 2>/dev/null; then
+              wait "$VICTIM_PID" 2>/dev/null
+              CLIENT_RC=$?
+            else
+              echo "FAILURE: victim still alive after teardown grace period"
+              CLIENT_RC=1
+            fi
             set -e
           else
             pushd "$EXAMPLE_DIR" >/dev/null
@@ -825,9 +848,42 @@ jobs:
             echo "Launching client with $AGENT_SO: $VICTIM_REL"
             pushd "$EXAMPLE_DIR" >/dev/null
             set +e
-            # Don't preload into the shell itself; only preload into the target binary.
-            timeout -s SIGKILL ${CLIENT_TIMEOUT}s env BPFTIME_LOG_OUTPUT=console bash -lc "LD_PRELOAD=\"$AGENT_SO\" exec $VICTIM_REL" > "$ROOT_DIR/client.log" 2>&1
-            CLIENT_RC=$?
+            # Don't preload into the shell itself; only preload into the target
+            # binary. Run it in the background and bound the window ourselves so
+            # an exit-137 caused by an external OOM kill (before the window
+            # elapses) is distinguishable from our own timeout teardown.
+            env BPFTIME_LOG_OUTPUT=console bash -lc "LD_PRELOAD=\"$AGENT_SO\" exec $VICTIM_REL" > "$ROOT_DIR/client.log" 2>&1 &
+            CLIENT_PID=$!
+            CLIENT_KILLED_INTENTIONALLY=0
+            for ((elapsed = 0; elapsed < CLIENT_TIMEOUT; ++elapsed)); do
+              if ! kill -0 "$CLIENT_PID" 2>/dev/null; then
+                break
+              fi
+              sleep 1
+            done
+            if kill -0 "$CLIENT_PID" 2>/dev/null; then
+              # Still running after the bounded window: intended teardown.
+              kill -9 "$CLIENT_PID" 2>/dev/null || true
+              CLIENT_KILLED_INTENTIONALLY=1
+            fi
+            # Reap with a script-level bound: only wait once the process is
+            # observed dead, so an uninterruptible victim cannot stall the job
+            # past the teardown window. If it survives the grace period the
+            # SIGKILL did not take effect, which is a real failure rather than
+            # an intended teardown — do not fabricate a passing 137.
+            grace=0
+            while [ "$grace" -lt 10 ] &&
+                  kill -0 "$CLIENT_PID" 2>/dev/null; do
+              sleep 1
+              grace=$((grace + 1))
+            done
+            if ! kill -0 "$CLIENT_PID" 2>/dev/null; then
+              wait "$CLIENT_PID" 2>/dev/null
+              CLIENT_RC=$?
+            else
+              echo "FAILURE: client still alive after teardown grace period"
+              CLIENT_RC=1
+            fi
             set -e
             popd >/dev/null
           fi
@@ -846,12 +902,15 @@ jobs:
             echo "FAILURE: bpftimetool run-on-cuda exited with code ${TOOL_RC}"; tail -n 200 tool.log || true
             RESULT=1
           fi
-          # CLIENT_RC is set on both victim paths: the LD_PRELOAD client run
-          # under timeout and the dynamic-attach victim reaped during
-          # teardown. 137 is the intended SIGKILL of a long-running victim;
-          # any other non-zero status is a real crash/error and fails the case.
-          if [ -n "${CLIENT_RC:-}" ] && [ "$CLIENT_RC" -ne 0 ] && [ "$CLIENT_RC" -ne 137 ]; then
-            echo "FAILURE: victim/client exited unexpectedly with code $CLIENT_RC"; tail -n 200 client.log || true
+          # CLIENT_RC is set on both victim paths. A 137 is accepted only when
+          # we verified the process was still alive and killed it as the
+          # intended timeout/teardown (CLIENT_KILLED_INTENTIONALLY=1). A 137
+          # from an external OOM kill that happened on its own, or any other
+          # non-zero status, is a real failure and fails the case.
+          if [ -n "${CLIENT_RC:-}" ] && [ "$CLIENT_RC" -ne 0 ] &&
+             { [ "$CLIENT_RC" -ne 137 ] ||
+               [ "${CLIENT_KILLED_INTENTIONALLY:-0}" -ne 1 ]; }; then
+            echo "FAILURE: victim/client exited unexpectedly with code $CLIENT_RC (intentional_kill=${CLIENT_KILLED_INTENTIONALLY:-0})"; tail -n 200 client.log || true
             RESULT=1
           fi
           # treat crashes as failure even if expected string appears
