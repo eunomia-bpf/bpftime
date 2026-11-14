@@ -1,3 +1,8 @@
+#if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))
+#include <bpf/btf.h>
+#include <bpf/libbpf.h>
+#include <malloc.h>
+#endif
 #include "bpftime_helper_group.hpp"
 #include <algorithm>
 #include "catch2/catch_test_macros.hpp"
@@ -256,23 +261,18 @@ TEST_CASE("Test default SIGSEGV handler is preserved")
 }
 
 extern "C" uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t,
-	uint64_t, uint64_t) __attribute__((weak));
-extern "C" uint64_t bpftime_seq_write(uint64_t, uint64_t, uint64_t)
-	__attribute__((weak));
+	uint64_t, uint64_t);
+extern "C" uint64_t bpftime_seq_write(uint64_t, uint64_t, uint64_t);
 
 TEST_CASE("Task and seq_write helpers are registered")
 {
 	auto ids = bpftime::bpftime_helper_group::get_kernel_utils_helper_group().get_helper_ids();
 	for (int id : { 35, 127, 158 })
 		REQUIRE(std::find(ids.begin(), ids.end(), id) != ids.end());
-	REQUIRE(bpftime_seq_write != nullptr);
 	REQUIRE(static_cast<int64_t>(bpftime_seq_write(0, 0, 0)) == -EOPNOTSUPP);
 }
 
 #if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))
-#include <bpf/btf.h>
-#include <bpf/libbpf.h>
-#include <malloc.h>
 
 static bool task_test_no_btf = false;
 extern "C" struct btf *__real_btf__parse_raw(const char *);
@@ -283,7 +283,6 @@ extern "C" struct btf *__wrap_btf__parse_raw(const char *path)
 
 TEST_CASE("Task storage covers host BTF and the no-BTF fallback")
 {
-	REQUIRE(bpftime_get_current_task != nullptr);
 	bool no_btf = false;
 	SECTION("host BTF") {}
 	SECTION("no BTF") { no_btf = true; }
