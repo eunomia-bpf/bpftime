@@ -219,6 +219,10 @@ bool frida_internal_attach_entry::has_uprobe_or_uretprobe() const
 
 void frida_internal_attach_entry::run_filter_callback(const pt_regs &regs) const
 {
+	attach_callback_scope callback_scope;
+	if (!callback_scope.entered())
+		return;
+
 	for (auto v : user_attaches) {
 		if (v->get_type() == ATTACH_UPROBE_OVERRIDE) {
 			v->run_callback<ATTACH_UPROBE_OVERRIDE_INDEX>(regs);
@@ -235,6 +239,10 @@ void frida_internal_attach_entry::run_filter_callback(const pt_regs &regs) const
 void frida_internal_attach_entry::iterate_uprobe_callbacks(
 	const pt_regs &regs) const
 {
+	attach_callback_scope callback_scope;
+	if (!callback_scope.entered())
+		return;
+
 	for (auto v : user_attaches) {
 		if (v->get_type() == ATTACH_UPROBE) {
 			v->run_callback<ATTACH_UPROBE_INDEX>(regs);
@@ -245,6 +253,10 @@ void frida_internal_attach_entry::iterate_uprobe_callbacks(
 void frida_internal_attach_entry::iterate_uretprobe_callbacks(
 	const pt_regs &regs) const
 {
+	attach_callback_scope callback_scope;
+	if (!callback_scope.entered())
+		return;
+
 	for (auto v : user_attaches) {
 		if (v->get_type() == ATTACH_URETPROBE) {
 			v->run_callback<ATTACH_URETPROBE_INDEX>(regs);
