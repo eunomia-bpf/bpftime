@@ -105,6 +105,7 @@ TEST_CASE("Module offset resolution rejects offsets outside the module extent")
 		nullptr);
 }
 
+#if defined(__linux__)
 TEST_CASE("Resolution accepts a full module path from an attach spec")
 {
 	frida_attach_impl man;
@@ -124,7 +125,6 @@ TEST_CASE("Resolution accepts a full module path from an attach spec")
 		nullptr);
 }
 
-#if defined(__linux__)
 // An address past the module's own mappings must not count as mapped, even
 // though it falls inside the outer [base, base+extent) span that a bounds-only
 // check would accept.
