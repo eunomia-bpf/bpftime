@@ -1,4 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
+// Exercise the header fallback rather than CMake's explicit default.
+#undef DEFAULT_VM_NAME
 #include <bpftime_config.hpp>
 #include "./common_def.hpp"
 #include <boost/interprocess/interprocess_fwd.hpp>
@@ -20,6 +22,18 @@ TEST_CASE("Test bpftime runtime_config")
 	REQUIRE(cfg.get_logger_output_path() == test_string);
 	cfg.set_logger_output_path(test_string_2.c_str());
 	REQUIRE(cfg.get_logger_output_path() == test_string_2);
+}
+
+TEST_CASE("Default VM matches an enabled backend")
+{
+	runtime_config cfg;
+#if defined(BPFTIME_LLVM_JIT)
+	REQUIRE(std::string(cfg.get_vm_name()) == "llvm");
+#elif defined(BPFTIME_UBPF_JIT)
+	REQUIRE(std::string(cfg.get_vm_name()) == "ubpf");
+#else
+	REQUIRE(std::string(cfg.get_vm_name()).empty());
+#endif
 }
 
 TEST_CASE("Allow external maps from the environment")
