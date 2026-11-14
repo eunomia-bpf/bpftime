@@ -1,4 +1,5 @@
 #include "bpftime_internal.h"
+#include "ebpf_inst.h"
 #if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
 #include "trap_uprobe_attach_impl.hpp"
 #include "trap_attach_utils.hpp"
