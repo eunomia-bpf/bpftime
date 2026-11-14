@@ -55,10 +55,12 @@ jobs:
       - name: System setup and kernel headers
         run: |
           apt-get update
+          # The running kernel's headers come from Ubuntu when it packages that
+          # kernel; a VM runner's guest kernel has none, and bpftrace reads its BTF.
           apt-get install -y --no-install-recommends \
           lcov tree strace gdb sudo libc6-dev bpftrace \
           linux-headers-generic linux-tools-generic \
-          linux-headers-$(uname -r) \
+          $(apt-cache show linux-headers-$(uname -r) >/dev/null 2>&1 && echo linux-headers-$(uname -r)) \
           libelf-dev procps gnupg gnupg-agent pinentry-curses dirmngr
 
           mkdir -p ~/.gnupg
@@ -382,10 +384,12 @@ jobs:
       - name: System setup and kernel headers
         run: |
           apt-get update
+          # The running kernel's headers come from Ubuntu when it packages that
+          # kernel; a VM runner's guest kernel has none, and bpftrace reads its BTF.
           apt-get install -y --no-install-recommends \
             lcov tree strace gdb sudo libc6-dev bpftrace \
             linux-headers-generic linux-tools-generic \
-            linux-headers-$(uname -r) \
+            $(apt-cache show linux-headers-$(uname -r) >/dev/null 2>&1 && echo linux-headers-$(uname -r)) \
             libelf-dev libssl-dev procps gnupg gnupg-agent pinentry-curses dirmngr
 
           # Setup GPG agent for Codecov
@@ -743,10 +747,12 @@ jobs:
       - name: System setup and kernel headers
         run: |
           apt-get update
+          # The running kernel's headers come from Ubuntu when it packages that
+          # kernel; a VM runner's guest kernel has none, and bpftrace reads its BTF.
           apt-get install -y --no-install-recommends \
             lcov tree strace gdb sudo libc6-dev bpftrace \
             linux-headers-generic linux-tools-generic \
-            linux-headers-$(uname -r) \
+            $(apt-cache show linux-headers-$(uname -r) >/dev/null 2>&1 && echo linux-headers-$(uname -r)) \
             libelf-dev procps gnupg gnupg-agent pinentry-curses dirmngr
 
           echo "==== System Information ===="; uname -a && cat /etc/os-release
