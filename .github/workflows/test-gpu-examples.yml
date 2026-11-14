@@ -30,7 +30,7 @@ env:
   BPFTIME_VM_NAME: llvm
   # Pass/compiler paths are baked into binaries; keep this absolute build
   # prefix identical when the artifact is downloaded on another runner.
-  BPFTIME_GPU_BUILD_DIR: /tmp/bpftime-gpu-${{ github.run_id }}-${{ github.run_attempt }}
+  BPFTIME_GPU_BUILD_DIR: /tmp/bpftime-gpu-${{ github.run_id }}
 
 jobs:
   # Runs on a generic (non-GPU) runner and decides whether the GPU jobs are
