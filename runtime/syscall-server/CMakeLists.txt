@@ -31,6 +31,10 @@ target_link_libraries(bpftime-syscall-server PUBLIC
     -ldl
     spdlog::spdlog)
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(bpftime-syscall-server PRIVATE bpftime_syscall_trace_attach_impl)
+endif()
+
 add_dependencies(bpftime-syscall-server spdlog::spdlog)
 
 target_include_directories(bpftime-syscall-server

@@ -49,10 +49,8 @@ namespace attach
 {
 const syscall_id_pair &get_global_syscall_id_table()
 {
-	static std::optional<syscall_id_pair> value;
-	if (!value)
-		value = generate_syscall_id_table();
-	return value.value();
+	static const syscall_id_pair value = generate_syscall_id_table();
+	return value;
 }
 
 const syscall_tracepoint_table &get_global_syscall_tracepoint_name_table()
