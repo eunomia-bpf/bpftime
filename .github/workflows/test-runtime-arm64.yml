@@ -60,4 +60,10 @@ jobs:
             -DLLVM_DIR="$(llvm-config-18 --cmakedir)"
           cmake --build build --target bpftime_runtime_tests -j2
       - name: Test runtime
-        run: ./build/runtime/unit-test/bpftime_runtime_tests
+        # The gVisor sandbox offers no kernel BPF (user-to-kernel tail calls),
+        # and a uprobe that patches libc crashes there; on the same aarch64
+        # host outside the sandbox both pass, and the x86-64 runners run them.
+        # The internal-function section of the uprobe test still runs here.
+        run: |
+          ./build/runtime/unit-test/bpftime_runtime_tests             "~Test tail calling from userspace to kernel"             "~Test probing internal functions"
+          ./build/runtime/unit-test/bpftime_runtime_tests             "Test probing internal functions" -c "Test probing internal functions"
