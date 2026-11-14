@@ -6,6 +6,8 @@ on:
     paths:
       - ".github/workflows/test-verifier.yml"
       - "bpftime-verifier/**"
+      - "runtime/**"
+      - "vm/**"
       - "cmake/**"
       - "third_party/**"
       - "CMakeLists.txt"
@@ -15,6 +17,8 @@ on:
     paths:
       - ".github/workflows/test-verifier.yml"
       - "bpftime-verifier/**"
+      - "runtime/**"
+      - "vm/**"
       - "cmake/**"
       - "third_party/**"
       - "CMakeLists.txt"
@@ -44,11 +48,12 @@ jobs:
           sudo apt install -y lcov libzstd-dev
       - name: Build test target
         run: |
-          cmake -DTEST_LCOV=ON -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_LLVM_JIT=NO -DENABLE_EBPF_VERIFIER=YES -DCMAKE_BUILD_TYPE:STRING=Release -S . -B build -G Ninja -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
-          cmake --build build --config Release --target bpftime_verifier_tests
+          cmake -DBUILD_SHARED_LIBS=OFF -DBPFTIME_BUILD_WITH_LIBBPF=ON -DBPFTIME_BUILD_KERNEL_BPF=OFF -DBUILD_BPFTIME_DAEMON=OFF -DBPFTIME_ENABLE_CUDA_ATTACH=OFF -DBPFTIME_ENABLE_FRIDA=OFF -DTEST_LCOV=ON -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_LLVM_JIT=NO -DENABLE_EBPF_VERIFIER=YES -DCMAKE_BUILD_TYPE:STRING=Release -S . -B build -G Ninja -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
+          cmake --build build --config Release --target bpftime_verifier_tests bpftime_json_verifier_tests bpftime_hex_encoding_tests --parallel 2
       - name: Run tests
         run: |
           ./build/bpftime-verifier/bpftime_verifier_tests
+          ctest --test-dir build --no-tests=error --output-on-failure -R '^(bpftime_json_verifier_tests|bpftime_hex_encoding_tests)$'
       - name: upload runtime coverage
         run: |
           lcov --capture --directory . --output-file coverage.info

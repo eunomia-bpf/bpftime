@@ -234,11 +234,21 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DBPFTIME_LLVM_JIT=YES \
             -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
+            -DBPFTIME_ENABLE_UNIT_TESTING=ON \
+            -DBPFTIME_ENABLE_MPK=OFF \
             -DBPFTIME_CUDA_ROOT="${BPFTIME_CUDA_ROOT:-/usr/local/cuda}" \
             -DLLVM_DIR="${LLVM_DIR}" \
             -G Ninja
           cmake --build build --config Debug --target bpftime-agent bpftime-syscall-server bpftime-cli-cpp bpftimetool bpftime_text_segment_transformer nv_attach_impl_ptx_compiler ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture -j"$(nproc)"
 
+      - name: Build and test JSON host-array compatibility
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build --config Debug --target bpftime_json_map_tests --parallel 2
+          ctest --test-dir build --no-tests=error --output-on-failure -R '^bpftime_json_map_tests$'
+          ctest --test-dir build --no-tests=error --output-on-failure -R '^bpftime_json_host_array_(storage|dimensions)_tests$'
       - name: Upload bpftime build artifact
         uses: actions/upload-artifact@v4
         with:

@@ -110,9 +110,10 @@ void set_available_helpers(const std::vector<int32_t> &helpers)
 }
 void set_map_descriptors(const std::map<int, BpftimeMapDescriptor> &maps)
 {
-	map_descriptors.clear();
+	// Prepare the replacement before changing the thread-local registry.
+	decltype(map_descriptors) replacement;
 	for (const auto &[k, v] : maps) {
-		map_descriptors[k] = EbpfMapDescriptor{
+		replacement[k] = EbpfMapDescriptor{
 			.original_fd = v.original_fd,
 			.type = v.type,
 			.key_size = v.key_size,
@@ -121,7 +122,9 @@ void set_map_descriptors(const std::map<int, BpftimeMapDescriptor> &maps)
 			.inner_map_fd = v.inner_map_fd,
 		};
 	}
+	map_descriptors.swap(replacement);
 }
+
 void set_non_kernel_helpers(
 	const std::map<int32_t, BpftimeHelperProrotype> &protos)
 {

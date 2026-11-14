@@ -33,6 +33,7 @@ set(TEST_SOURCES
     maps/test_lru_hash_map.cpp
 
     test_bpftime_shm_json.cpp
+    test_bpftime_json_map_compat.cpp
     test_probe.cpp
     test_get_current_pid_tgid.cpp
     test_get_stack.cpp
@@ -73,7 +74,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         test_get_current_uid_gid.cpp
         test_get_current_comm.cpp)
     target_link_options(bpftime_runtime_tests PRIVATE
-        -Wl,--wrap=getuid -Wl,--wrap=getgid
+-Wl,--wrap=getuid -Wl,--wrap=getgid -Wl,--wrap=close
         -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc)
 endif()
 
@@ -143,6 +144,38 @@ endif()
 
 target_include_directories(bpftime_runtime_tests PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS} ${Catch2_INCLUDE} ${Boost_INCLUDE})
 add_test(NAME bpftime_runtime_tests COMMAND bpftime_runtime_tests)
+
+# Pure encoding regression: no runtime, BPF, shared memory or device linkage.
+add_executable(bpftime_hex_encoding_tests test_bpftime_hex_encoding.cpp)
+target_include_directories(bpftime_hex_encoding_tests PRIVATE ../src)
+set_property(TARGET bpftime_hex_encoding_tests PROPERTY CXX_STANDARD 20)
+add_test(NAME bpftime_hex_encoding_tests COMMAND bpftime_hex_encoding_tests)
+set_tests_properties(bpftime_hex_encoding_tests PROPERTIES TIMEOUT 10)
+
+# Keep allocator/linker interposition out of the general runtime executable.
+# --wrap and the explicit C++ symbols require a static runtime, an ELF linker
+# and the Itanium/libstdc++ ABI used by the Linux verifier CI job.
+if(ENABLE_EBPF_VERIFIER AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
+   AND NOT BUILD_SHARED_LIBS AND CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang)$")
+    include(CheckCXXSourceCompiles)
+    check_cxx_source_compiles("
+        #include <map>
+        #ifndef __GLIBCXX__
+        #error This test requires libstdc++
+        #endif
+        int main() { return 0; }
+    " BPFTIME_JSON_VERIFIER_TEST_LIBSTDCXX)
+    if(BPFTIME_JSON_VERIFIER_TEST_LIBSTDCXX)
+        add_executable(bpftime_json_verifier_tests test_bpftime_json_verifier.cpp)
+        target_link_libraries(bpftime_json_verifier_tests PRIVATE
+            runtime bpftime-verifier Catch2::Catch2WithMain)
+        target_link_options(bpftime_json_verifier_tests PRIVATE
+            "-Wl,--wrap=_ZN7bpftime8verifier19get_map_descriptorsEv"
+            "-Wl,--wrap=_ZN7bpftime8verifier19set_map_descriptorsERKSt3mapIiNS0_20BpftimeMapDescriptorESt4lessIiESaISt4pairIKiS2_EEE")
+        add_test(NAME bpftime_json_verifier_tests COMMAND bpftime_json_verifier_tests)
+        set_tests_properties(bpftime_json_verifier_tests PROPERTIES TIMEOUT 60)
+    endif()
+endif()
 
 # These are necessary ebpf program required by the test
 set(used_ebpf_programs
