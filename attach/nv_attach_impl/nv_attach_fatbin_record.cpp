@@ -192,8 +192,12 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 	if (ptx_loaded)
 		return;
 	if (impl.shared_mem_ptr == 0) {
-		throw std::runtime_error(
-			"shared_mem_ptr is not initialized before loading PTX");
+		// CUDA fatbin/function registration can run before the agent has
+		// received the shared map pointer. Leave this record pending; late
+		// bootstrap will load it after the CUDA hook is fully attached.
+		SPDLOG_DEBUG(
+			"Deferring PTX load until shared_mem_ptr is initialized");
+		return;
 	}
 	SPDLOG_INFO("Loading & patching current fatbin..");
 
