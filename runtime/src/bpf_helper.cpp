@@ -221,7 +221,7 @@ static int get_host_nspid(const char *procfs, const char *entry, int fallback)
 	char *line = nullptr;
 	size_t capacity = 0;
 	int result = fallback;
-	// Groups can be arbitrarily long and precedes NSpid in procfs.
+	// The Groups line can be arbitrarily long and precedes NSpid in procfs.
 	// getline also avoids accepting a PID truncated at a read boundary.
 	while (getline(&line, &capacity, file) >= 0) {
 		if (strncmp(line, "NSpid:", 6) != 0)
@@ -272,7 +272,8 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 {
 	// If registering the fork handler failed, the cache is still the
 	// parent's after a fork, so read the identity directly. The probe
-	// access cache above falls back the same way.
+	// access cache above falls back the same way. This exceptional path
+	// also recomputes procfs translation on each call.
 	if (bpftime_identity_atfork_status != 0) {
 #if __linux__
 		const char *procfs = getenv("BPFTIME_HOST_PROCFS");
@@ -298,7 +299,7 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 		pthread_threadid_np(NULL, &bpftime_cached_tid);
 	}
 #endif
-	#if __linux__
+#if __linux__
 	return bpftime_cached_host_identity;
 #else
 	return ((uint64_t)bpftime_cached_tgid << 32) | bpftime_cached_tid;
