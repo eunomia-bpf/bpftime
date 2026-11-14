@@ -4,10 +4,6 @@
  * All rights reserved.
  */
 #include "bpf_attach_ctx.hpp"
-
-#include <csetjmp>
-#include <csignal>
-#include <mutex>
 #if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
 #include "trap_uprobe_attach_impl.hpp"
 #endif
@@ -106,88 +102,6 @@ long bpftime_strncmp(const char *s1, uint64_t s1_sz, const char *s2)
 }
 
 #ifdef ENABLE_PROBE_READ_CHECK
-#if defined(__linux__)
-/*
- * Fast path for probe reads of the agent's own address space.
- *
- * The vast majority of bpf_probe_read_user / bpf_probe_read_kernel calls
- * issued from an attached program read the agent's own process memory: the
- * synthesized pt_regs context, the target's stack (USDT stack args), or
- * pointers chased from registers. Routing every such read through
- * process_vm_readv costs one syscall per read, which dominates USDT argument
- * decoding (1-2 reads per argument) and makes bpf_probe_read_* helpers far
- * more expensive than they need to be.
- *
- * Instead, perform a plain memcpy guarded by a SIGSEGV/SIGBUS trap
- * (sigsetjmp/siglongjmp). On fault - i.e. the pointer was genuinely invalid,
- * which the kernel reports as -EFAULT - we fall back to process_vm_readv so
- * that cross-process attach modes and the original error semantics are
- * preserved.
- */
-static __thread sigjmp_buf probe_read_jmp;
-static __thread volatile sig_atomic_t probe_read_guard_active;
-static struct sigaction probe_read_prev_segv;
-static struct sigaction probe_read_prev_bus;
-
-static void probe_read_chain(const struct sigaction *prev, int sig,
-			     siginfo_t *info, void *uctx)
-{
-	if (prev->sa_flags & SA_SIGINFO) {
-		auto handler = prev->sa_sigaction;
-		if (handler && (void *)handler != (void *)SIG_DFL &&
-		    (void *)handler != (void *)SIG_IGN)
-			handler(sig, info, uctx);
-		else
-			_Exit(128 + sig); /* nothing to chain to */
-	} else {
-		auto handler = prev->sa_handler;
-		if (handler && handler != SIG_DFL && handler != SIG_IGN)
-			handler(sig);
-		else
-			_Exit(128 + sig);
-	}
-}
-
-static void probe_read_fault_handler(int sig, siginfo_t *info, void *uctx)
-{
-	if (probe_read_guard_active) {
-		/* Fault inside our guarded memcpy: unwind to the guard. */
-		probe_read_guard_active = 0;
-		siglongjmp(probe_read_jmp, 1);
-	}
-	/* Not ours (real bug elsewhere): chain to the previous disposition. */
-	if (sig == SIGSEGV)
-		probe_read_chain(&probe_read_prev_segv, sig, info, uctx);
-	else
-		probe_read_chain(&probe_read_prev_bus, sig, info, uctx);
-}
-
-static void probe_read_install_guard_handlers_once()
-{
-	static std::once_flag once;
-	std::call_once(once, [] {
-		struct sigaction sa = {};
-		sa.sa_sigaction = probe_read_fault_handler;
-		sa.sa_flags = SA_SIGINFO;
-		sigemptyset(&sa.sa_mask);
-		sigaction(SIGSEGV, &sa, &probe_read_prev_segv);
-		sigaction(SIGBUS, &sa, &probe_read_prev_bus);
-	});
-}
-
-static bool probe_read_local_guarded(void *dst, const void *src, size_t size)
-{
-	probe_read_install_guard_handlers_once();
-	if (sigsetjmp(probe_read_jmp, 1) == 0) {
-		probe_read_guard_active = 1;
-		memcpy(dst, src, size);
-		probe_read_guard_active = 0;
-		return true;
-	}
-	return false;
-}
-#endif /* __linux__ */
-
 static bool probe_read_memory(void *dst, const void *src, size_t size)
 {
 	if (size == 0)
@@ -200,10 +114,6 @@ static bool probe_read_memory(void *dst, const void *src, size_t size)
 				      &copied) == KERN_SUCCESS &&
 	       copied == size;
 #elif __linux__
-	/* Fast path: own address space, fault-guarded memcpy (no syscall). */
-	if (probe_read_local_guarded(dst, src, size))
-		return true;
-	/* Faulted or cross-process: fall back to process_vm_readv. */
 	struct iovec local = { dst, size };
 	struct iovec remote = { const_cast<void *>(src), size };
 	return syscall(SYS_process_vm_readv,

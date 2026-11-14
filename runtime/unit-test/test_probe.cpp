@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <cstring>
+#include <cstdlib>
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
@@ -279,3 +280,52 @@ TEST_CASE("Test default SIGSEGV handler is preserved")
 	REQUIRE(WIFEXITED(status));
 	REQUIRE(WEXITSTATUS(status) == 0);
 }
+
+#if defined(__linux__)
+TEST_CASE("Probe reads preserve default host signal dispositions", "[probe-default-signal-disposition]")
+{
+	// exec gives this check fresh once-flags even when other probe tests ran
+	// first; fork alone would inherit the initialized guard from its parent.
+	if (getenv("BPFTIME_PROBE_DISPOSITION_TEST_CHILD")) {
+		struct sigaction host = {}, before_segv = {}, before_bus = {};
+		host.sa_handler = count_sigsegv;
+		host.sa_flags = SA_RESTART;
+		sigemptyset(&host.sa_mask);
+		sigaddset(&host.sa_mask, SIGUSR1);
+		if (sigaction(SIGSEGV, &host, nullptr) != 0)
+			_exit(1);
+		host.sa_handler = SIG_IGN;
+		if (sigaction(SIGBUS, &host, nullptr) != 0 ||
+		    sigaction(SIGSEGV, nullptr, &before_segv) != 0 ||
+		    sigaction(SIGBUS, nullptr, &before_bus) != 0)
+			_exit(2);
+		int source = 42, destination = 0;
+		if (bpftime_probe_read((uint64_t)&destination, sizeof(destination),
+			   (uint64_t)&source, 0, 0) != 0 || destination != source)
+			_exit(3);
+		struct sigaction after_segv = {}, after_bus = {};
+		if (sigaction(SIGSEGV, nullptr, &after_segv) != 0 ||
+		    sigaction(SIGBUS, nullptr, &after_bus) != 0 ||
+		    after_segv.sa_handler != before_segv.sa_handler ||
+		    after_segv.sa_flags != before_segv.sa_flags ||
+		    sigismember(&after_segv.sa_mask, SIGUSR1) != 1 ||
+		    after_bus.sa_handler != before_bus.sa_handler ||
+		    after_bus.sa_flags != before_bus.sa_flags)
+			_exit(4);
+		_exit(0);
+	}
+	pid_t child = fork();
+	REQUIRE(child >= 0);
+	if (child == 0) {
+		if (setenv("BPFTIME_PROBE_DISPOSITION_TEST_CHILD", "1", 1) != 0)
+			_exit(5);
+		execl("/proc/self/exe", "probe-disposition-test",
+		      "[probe-default-signal-disposition]", (char *)nullptr);
+		_exit(6);
+	}
+	int status = 0;
+	REQUIRE(waitpid(child, &status, 0) == child);
+	REQUIRE(WIFEXITED(status));
+	REQUIRE(WEXITSTATUS(status) == 0);
+}
+#endif
