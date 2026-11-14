@@ -179,9 +179,12 @@ static void print_sm_histogram(struct threadscheduling_bpf *obj)
 	// to floor it to zero and pin the score at a fixed 50%.
 	if (total_threads > 0) {
 		double ideal_per_sm = (double)total_threads / (double)sm_total;
-		int scan = sm_total > max_sm + 1 ? sm_total : max_sm + 1;
-		double total_deviation = 0;
-		for (int i = 0; i < scan; i++) {
+		// SM identifiers need not be contiguous. Count idle physical SMs,
+		// not the unused identifiers between sampled SMs.
+		double total_deviation = ideal_per_sm * (sm_total - active_sms);
+		for (int i = 0; i <= max_sm; i++) {
+			if (sm_counts[i] == 0)
+				continue;
 			double diff = (double)sm_counts[i] - ideal_per_sm;
 			total_deviation += diff < 0 ? -diff : diff;
 		}
