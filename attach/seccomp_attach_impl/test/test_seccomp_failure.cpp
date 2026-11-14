@@ -2,6 +2,7 @@
 #include <condition_variable>
 #include <cstdarg>
 #include <new>
+#include <spdlog/sinks/callback_sink.h>
 #include "../src/seccomp_notifier.cpp"
 
 namespace {
@@ -11,6 +12,7 @@ std::condition_variable response_ready;
 uint32_t response_flags = 0;
 uint64_t response_id = 0;
 std::atomic<int> worker_allocations_before_failure{ -1 };
+std::atomic<bool> allow_install{ false };
 
 int64_t failing_dispatch(int64_t, int64_t, int64_t, int64_t, int64_t,
 			 int64_t, int64_t, int64_t, int64_t, int64_t)
@@ -64,6 +66,8 @@ TEST_CASE("Seccomp dispatch failure resumes the intercepted host syscall")
 
 extern "C" int __wrap_prctl(int, ...)
 {
+	if (allow_install.load())
+		return 0;
 	errno = EACCES;
 	return -1;
 }
@@ -103,4 +107,31 @@ TEST_CASE("Worker construction failure cancels partially started seccomp setup")
 	unsetenv("BPFTIME_GO_SECCOMP");
 	REQUIRE_FALSE(installed);
 	REQUIRE(bpftime::seccomp::go_seccomp_listener.load() == -2);
+}
+
+extern "C" long __wrap_syscall(long number, ...)
+{
+	if (allow_install.load() && number == SYS_seccomp)
+		return 42;
+	errno = ENOSYS;
+	return -1;
+}
+
+TEST_CASE("Post-install logging failure preserves the live seccomp listener")
+{
+	REQUIRE(setenv("BPFTIME_GO_SECCOMP", "1", 1) == 0);
+	auto previous_logger = spdlog::default_logger();
+	auto sink = std::make_shared<spdlog::sinks::callback_sink_mt>(
+		[](const spdlog::details::log_msg &) { throw std::bad_alloc(); });
+	auto logger = std::make_shared<spdlog::logger>("seccomp-failure-test", sink);
+	logger->set_error_handler([](const std::string &) { throw std::bad_alloc(); });
+	spdlog::set_default_logger(logger);
+	bpftime::seccomp::go_seccomp_listener.store(-1);
+	allow_install = true;
+	const bool installed = bpftime::seccomp::install_seccomp_tracer();
+	allow_install = false;
+	spdlog::set_default_logger(previous_logger);
+	unsetenv("BPFTIME_GO_SECCOMP");
+	REQUIRE(installed);
+	REQUIRE(bpftime::seccomp::go_seccomp_listener.load() == 42);
 }

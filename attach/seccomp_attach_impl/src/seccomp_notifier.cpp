@@ -371,6 +371,9 @@ bool install_seccomp_tracer()
 	try {
 		return setup_go_seccomp_tracer();
 	} catch (...) {
+		// Once installed, the kernel filter still needs its published listener.
+		if (go_seccomp_listener.load(std::memory_order_acquire) >= 0)
+			return true;
 		// A later worker constructor can fail after earlier workers start.
 		go_seccomp_listener.store(-2, std::memory_order_release);
 		return false;

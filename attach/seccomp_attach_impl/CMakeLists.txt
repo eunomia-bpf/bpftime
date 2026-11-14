@@ -21,6 +21,6 @@ if(BPFTIME_ENABLE_UNIT_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
   target_link_libraries(bpftime_seccomp_failure_tests PRIVATE
     Catch2::Catch2WithMain spdlog::spdlog)
   target_link_options(bpftime_seccomp_failure_tests PRIVATE
-    -Wl,--wrap=ioctl -Wl,--wrap=prctl)
+    -Wl,--wrap=ioctl -Wl,--wrap=prctl -Wl,--wrap=syscall)
   add_test(NAME bpftime_seccomp_failure_tests COMMAND bpftime_seccomp_failure_tests)
 endif()
