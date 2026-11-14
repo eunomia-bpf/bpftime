@@ -191,6 +191,7 @@ static void print_sm_histogram(struct threadscheduling_bpf *obj)
 			balance_score = 0;
 		printf("\n  Load Balance Score: %.1f%% (100%% = perfect distribution%s)\n",
 		       balance_score,
+		       physical_sms > MAX_SMS ? ", over histogram SM range" :
 		       physical_sms > 0 ? ", over all physical SMs" : ", over observed SMs");
 	}
 }
