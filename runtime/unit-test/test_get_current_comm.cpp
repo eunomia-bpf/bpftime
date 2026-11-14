@@ -224,8 +224,13 @@ TEST_CASE("bpf_get_current_comm makes no heap allocation on first call",
 	REQUIRE(pid >= 0);
 	if (pid == 0) {
 		setenv(reentry_env, "1", 1);
+		// Run only this test case in the child: without a test spec it
+		// would run the whole suite first and fail on any test the host
+		// cannot run before reaching the self check.
+		char test_name[] =
+			"bpf_get_current_comm makes no heap allocation on first call";
 		char *const argv[] = { const_cast<char *>(link_path.c_str()),
-				       nullptr };
+				       test_name, nullptr };
 		execve(link_path.c_str(), argv, environ);
 		_exit(5);
 	}
