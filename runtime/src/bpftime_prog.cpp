@@ -9,6 +9,7 @@
 #include "bpftime_helper_group.hpp"
 #include "bpftime_internal.h"
 #include "bpftime_vm_compat.hpp"
+#include "bpftime_mpk_guard.hpp"
 #include "ebpf-vm.h"
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 #include "nvPTXCompiler.h"
@@ -251,8 +252,10 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 	}
 	uint64_t val = 0;
 	int res = 0;
-	// set share memory read and write able
-	bpftime_protect_disable();
+	// Open a nesting-aware write window for the SHM segment. The RAII
+	// guard re-protects the segment on every exit path, including a
+	// throw, which the previous raw disable/enable pair did not.
+	BPFTIME_MPK_GLOBAL_WRITE_GUARD();
 	SPDLOG_DEBUG(
 		"Calling bpftime_prog::bpftime_prog_exec, memory={:x}, memory_size={}, return_val={:x}, prog_name={}",
 		(uintptr_t)memory, memory_size, (uintptr_t)return_val,
@@ -270,8 +273,6 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 	}
 	*return_val = current_thread_tail_call_ret.value_or(val);
 	current_thread_tail_call_ret.reset();
-	// set share memory read only
-	bpftime_protect_enable();
 	return res;
 }
 
