@@ -723,6 +723,15 @@ jobs:
           verbose: true
 
   build-and-run-one-liners-test:
+    name: build-and-run-one-liners-test (${{ matrix.log_level }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # TRACE keeps historical timing; INFO compiles DEBUG/TRACE call sites
+        # out of hot paths. The syscall re-entrancy guard must hold under
+        # both: INFO timing deterministically exposed multi-threaded fork
+        # corruption (garbage wait4 pid/ECHILD followed by SIGSEGV).
+        log_level: [TRACE, INFO]
     runs-on: ubuntu-22.04
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
@@ -766,7 +775,8 @@ jobs:
             -DBUILD_BPFTIME_DAEMON=OFF \
             -DBUILD_AGENT=1 \
             -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
-            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
+            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'" \
+            -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_${{ matrix.log_level }}
           cmake --build build --config RelWithDebInfo --target bpftime-agent bpftime-syscall-server bpftime_text_segment_transformer -j$(nproc)
 
           echo "Checking built libraries:"
@@ -882,7 +892,16 @@ jobs:
             done
 
             echo "CASE $name: running victim ($victim)"
-            $LD_PRELOAD_CMD $victim || echo "CASE $name: victim exited nonzero (continuing)"
+            # The step shell runs with `set -e`: capture the status instead
+            # of aborting. 0 and timeout's 124 are the accepted outcomes;
+            # anything else (ECHILD-driven 125, SIGSEGV 139, ...) fails the
+            # case instead of being swallowed.
+            local victim_rc=0
+            $LD_PRELOAD_CMD $victim || victim_rc=$?
+            if [ $victim_rc -ne 0 ] && [ $victim_rc -ne 124 ]; then
+              echo "CASE $name: FAILURE - victim abnormal exit $victim_rc"
+              FAILED_CASES="$FAILED_CASES $name"
+            fi
             echo "CASE $name: draining events"
             sleep 4
 
@@ -960,7 +979,7 @@ jobs:
         if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
-          name: oneliner-server-logs-${{ runner.os }}
+          name: oneliner-server-logs-${{ runner.os }}-${{ matrix.log_level }}
           include-hidden-files: false
           path: |
             ./logs
