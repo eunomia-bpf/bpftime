@@ -37,7 +37,7 @@ namespace bpftime
 void stop_cuda_watcher_before_shm_unmap();
 } // namespace bpftime
 #endif
-#elif __APPLE__
+#elif defined(__APPLE__) || defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
 #include "bpftime_epoll.h"
 #endif
 #include <unistd.h>
