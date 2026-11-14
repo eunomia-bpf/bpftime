@@ -691,6 +691,12 @@ jobs:
           esac
           export BPFTIME_MAP_GPU_THREAD_COUNT="$GPU_THREAD_COUNT"
           export LD_LIBRARY_PATH="$ROOT_DIR/build/attach/text_segment_transformer:${LD_LIBRARY_PATH:-}"
+          # The PTX pass/compiler libraries are baked into ptx_pass_config.h with
+          # the build runner's absolute workspace path, which does not exist on
+          # the containerized test runners. Point both loaders at the artifacts
+          # extracted under this job's workspace instead.
+          export BPFTIME_PTXPASS_LIBRARIES="$BUILD_DIR/attach/nv_attach_impl/pass/ptxpass_kprobe_entry/libptxpass_kprobe_entry.so:$BUILD_DIR/attach/nv_attach_impl/pass/ptxpass_kretprobe/libptxpass_kretprobe.so:$BUILD_DIR/attach/nv_attach_impl/pass/ptxpass_kprobe_memcapture/libptxpass_kprobe_memcapture.so"
+          export BPFTIME_PTX_COMPILER_LIB="$BUILD_DIR/attach/nv_attach_impl/ptx_compiler/libnv_attach_impl_ptx_compiler.so"
           df -h /dev/shm || true
           # Best-effort cleanup in case a previous job was interrupted.
           # Note: `pkill -f` matches argv only (not environment variables),

@@ -558,9 +558,21 @@ nv_attach_impl::nv_attach_impl()
 				handle));
 	}
 	{
+		const char *provided_compiler_lib =
+			getenv("BPFTIME_PTX_COMPILER_LIB");
+		const char *compiler_lib =
+			(provided_compiler_lib &&
+			 strlen(provided_compiler_lib) > 0)
+				? provided_compiler_lib
+				: DEFAULT_PTX_COMPILER_SHARED_LIB;
+		if (provided_compiler_lib &&
+		    strlen(provided_compiler_lib) > 0) {
+			SPDLOG_INFO(
+				"Using user provided (by BPFTIME_PTX_COMPILER_LIB) PTX compiler library: {}",
+				compiler_lib);
+		}
 		this->ptx_compiler = *load_nv_attach_impl_ptx_compiler(
-			DEFAULT_PTX_COMPILER_SHARED_LIB,
-			this->ptx_compiler_dl_handle);
+			compiler_lib, this->ptx_compiler_dl_handle);
 	}
 }
 
