@@ -53,7 +53,7 @@ class bpf_cpu_execution_guard {
 			return;
 		cpu = bpftime_get_native_cpu();
 		if (cpu < 0) {
-			warn_throttled([] { SPDLOG_WARN("sched_getcpu failed; BPF runs without per-CPU serialization"); });
+			warn_throttled([] { SPDLOG_WARN("sched_getcpu failed; BPF execution skipped"); });
 			return;
 		}
 		if (cpu >= BPFTIME_MAX_CPU_COUNT) {
@@ -62,7 +62,7 @@ class bpf_cpu_execution_guard {
 			const int cpu_for_log = cpu;
 			warn_throttled([cpu_for_log] {
 				SPDLOG_WARN(
-					"logical cpu {} exceeds BPFTIME_MAX_CPU_COUNT={}; BPF runs without per-CPU serialization",
+					"logical cpu {} exceeds BPFTIME_MAX_CPU_COUNT={}; BPF execution skipped",
 					cpu_for_log, BPFTIME_MAX_CPU_COUNT);
 			});
 			return;
@@ -71,7 +71,7 @@ class bpf_cpu_execution_guard {
 			const int cpu_for_log = cpu;
 			warn_throttled([cpu_for_log] {
 				SPDLOG_WARN(
-					"per-CPU lock for cpu {} unavailable; BPF runs without per-CPU serialization",
+					"per-CPU lock for cpu {} unavailable; BPF execution skipped",
 					cpu_for_log);
 			});
 			return;
@@ -81,6 +81,8 @@ class bpf_cpu_execution_guard {
 	}
 
 	~bpf_cpu_execution_guard() { release(); }
+
+	bool entered() const { return owns_lock || bpftime_get_current_bpf_cpu() >= 0; }
 
 	void release()
 	{
@@ -333,6 +335,10 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 	// set share memory read and write able
 	bpftime_protect_disable();
 	bpf_cpu_execution_guard cpu_guard;
+	if (!cpu_guard.entered()) {
+		bpftime_protect_enable();
+		return -EAGAIN;
+	}
 	SPDLOG_DEBUG(
 		"Calling bpftime_prog::bpftime_prog_exec, memory={:x}, memory_size={}, return_val={:x}, prog_name={}",
 		(uintptr_t)memory, memory_size, (uintptr_t)return_val,

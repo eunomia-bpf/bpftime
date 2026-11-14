@@ -1052,7 +1052,7 @@ bool bpftime_shm::try_lock_bpf_cpu(int cpu)
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	} while (std::chrono::steady_clock::now() < deadline);
 	SPDLOG_WARN(
-		"Timed out locking bpftime cpu {}; running without per-CPU serialization",
+		"Timed out locking bpftime cpu {}; skipping BPF execution",
 		cpu);
 	return false;
 }

@@ -183,7 +183,7 @@ class bpftime_shm {
 	// Bounded, exception-safe per-CPU lock used on the BPF hot path. Returns
 	// true when the lock was acquired within the deadline. On timeout or a
 	// shared-memory/locking error it returns false so the caller can degrade
-	// to running without per-CPU serialization instead of blocking forever
+	// to skipping BPF execution instead of blocking forever
 	// or letting an exception escape into the host.
 	bool try_lock_bpf_cpu(int cpu);
 

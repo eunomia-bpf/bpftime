@@ -99,6 +99,28 @@ TEST_CASE("BPF executions on one CPU are serialized", "[percpu][execution]")
 
 	REQUIRE(failures == 0);
 	REQUIRE(maximum_active_helpers == 1);
+
+	// A timed-out contender must skip the probe instead of running outside
+	// the lock and racing the program that still owns this CPU slot.
+	maximum_active_helpers = 0;
+	auto &shm = bpftime::shm_holder.global_shared_memory;
+	shm.lock_bpf_cpu(cpu);
+	int blocked_result = 0;
+	std::thread blocked([&] {
+		cpu_set_t affinity;
+		CPU_ZERO(&affinity);
+		CPU_SET(cpu, &affinity);
+		if (sched_setaffinity(0, sizeof(affinity), &affinity) != 0) {
+			blocked_result = -errno;
+			return;
+		}
+		uint64_t result = 0, context = 0;
+		blocked_result = prog.bpftime_prog_exec(&context, sizeof(context), &result);
+	});
+	blocked.join();
+	shm.unlock_bpf_cpu(cpu);
+	REQUIRE(blocked_result == -EAGAIN);
+	REQUIRE(maximum_active_helpers == 0);
 }
 
 TEST_CASE("Per-CPU try-lock degrades instead of hanging or throwing",
