@@ -256,6 +256,7 @@ static void example_listener_on_enter_impl(GumInvocationContext *ic)
 		return;
 	if (context->to_function == AttachedToFunction::RegisterFatbin) {
 		SPDLOG_DEBUG("Entering __cudaRegisterFatBinary..");
+		context->impl->current_fatbin = nullptr;
 
 		auto header = (__fatBinC_Wrapper_t *)
 			gum_invocation_context_get_nth_argument(gum_ctx, 0);
@@ -288,15 +289,18 @@ static void example_listener_on_enter_impl(GumInvocationContext *ic)
 		fatbin_record->module_pool = context->impl->module_pool;
 		fatbin_record->ptx_pool = context->impl->ptx_pool;
 
-		context->impl->current_fatbin = fatbin_record.get();
 		context->impl->fatbin_records.emplace_back(
 			std::move(fatbin_record));
+		context->impl->current_fatbin =
+			context->impl->fatbin_records.back().get();
 
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterFunction) {
 		SPDLOG_DEBUG("Entering __cudaRegisterFunction..");
 		auto &impl = *context->impl;
 		auto current_fatbin = context->impl->current_fatbin;
+		if (current_fatbin == nullptr)
+			return;
 		current_fatbin->try_loading_ptxs(*context->impl);
 
 		auto func_addr =
@@ -329,6 +333,8 @@ static void example_listener_on_enter_impl(GumInvocationContext *ic)
 		   AttachedToFunction::RegisterVariable) {
 		SPDLOG_DEBUG("Entering __cudaRegisterVar");
 		auto current_fatbin = context->impl->current_fatbin;
+		if (current_fatbin == nullptr)
+			return;
 		current_fatbin->try_loading_ptxs(*context->impl);
 		auto fatbin_handle =
 			gum_invocation_context_get_nth_argument(gum_ctx, 0);
