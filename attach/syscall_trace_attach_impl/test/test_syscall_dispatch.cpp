@@ -4,6 +4,10 @@
 #include <cstdint>
 #include <stdexcept>
 #include <syscall_trace_attach_impl.hpp>
+
+#ifdef __linux__
+#include <unistd.h>
+#endif
 using namespace bpftime::attach;
 
 extern "C" int64_t _bpftime_dummy_syscall(int64_t, int64_t, int64_t, int64_t,
@@ -207,4 +211,73 @@ TEST_CASE("A failing exit callback is contained")
 	REQUIRE(syscall_call_count == 1);
 	REQUIRE(later_callback_count == 1);
 	REQUIRE(!curr_thread_override_return_callback.has_value());
+}
+
+TEST_CASE("Reentrant syscall dispatch skips nested callbacks")
+{
+	// Reproduces issue #165: a userspace program that attaches its own
+	// tracepoint issues the attaching bpf() syscall while the agent is
+	// already dispatching a syscall on the same thread. The nested dispatch
+	// must not re-enter the callback machinery; it runs the original syscall
+	// only, and the host process keeps running.
+	syscall_trace_attach_impl attacher;
+	attacher.set_original_syscall_function(_bpftime_counting_syscall);
+
+	// Global enter callback (sys_nr -1). Construct the private data
+	// directly so the test does not depend on the tracefs name table,
+	// which is unavailable in rootless/container CI environments.
+	syscall_trace_attach_private_data data;
+	data.sys_nr = -1;
+	data.is_enter = true;
+
+	int outer_callbacks = 0;
+	int nested_ret = 0;
+	bool inside_callback = false;
+	int id = attacher.create_attach_with_ebpf_callback(
+		[&](const void *, size_t, uint64_t *) -> int {
+			outer_callbacks++;
+			if (!inside_callback) {
+				inside_callback = true;
+				nested_ret = (int)attacher.dispatch_syscall(
+					12, 0, 0, 0, 0, 0, 0);
+				inside_callback = false;
+			}
+			return 0;
+		},
+		data, ATTACH_SYSCALL_TRACE);
+	REQUIRE(id >= 0);
+
+	syscall_call_count = 0;
+	int64_t ret = attacher.dispatch_syscall(11, 0, 0, 0, 0, 0, 0);
+	REQUIRE(outer_callbacks == 1);
+	REQUIRE(nested_ret == 1);
+	REQUIRE(ret == 2);
+	REQUIRE(syscall_call_count == 2);
+	REQUIRE(attacher.detach_by_id(id) == 0);
+}
+
+TEST_CASE("Dispatch depth resets between independent syscalls")
+{
+	syscall_trace_attach_impl attacher;
+	attacher.set_original_syscall_function(_bpftime_dummy_syscall);
+
+	// Direct construction keeps the test independent of the tracefs
+	// name table (see the reentrancy case above).
+	syscall_trace_attach_private_data data;
+	data.sys_nr = -1;
+	data.is_enter = true;
+
+	int callback_count = 0;
+	int id = attacher.create_attach_with_ebpf_callback(
+		[&](const void *, size_t, uint64_t *) -> int {
+			callback_count++;
+			return 0;
+		},
+		data, ATTACH_SYSCALL_TRACE);
+	REQUIRE(id >= 0);
+
+	attacher.dispatch_syscall(11, 0, 0, 0, 0, 0, 0);
+	attacher.dispatch_syscall(11, 0, 0, 0, 0, 0, 0);
+	REQUIRE(callback_count == 2);
+	REQUIRE(attacher.detach_by_id(id) == 0);
 }
