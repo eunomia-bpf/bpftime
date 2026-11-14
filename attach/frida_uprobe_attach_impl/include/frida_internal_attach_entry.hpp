@@ -1,7 +1,6 @@
 #ifndef _BPFTIME_FRIDA_INTERNAL_ATTACH_ENTRY_HPP
 #define _BPFTIME_FRIDA_INTERNAL_ATTACH_ENTRY_HPP
 #include "frida_attach_entry.hpp"
-#include "midfunction_int3.hpp"
 #include <frida-gum.h>
 #include <vector>
 #include "frida_uprobe_attach_impl.hpp"
@@ -19,9 +18,6 @@ class frida_internal_attach_entry {
 	std::vector<frida_attach_entry *> user_attaches;
 	GumInvocationListener *uprobe_listener = nullptr;
 	GumInvocationListener *uretprobe_listener = nullptr;
-	/* True when this entry was taken over by the mid-function int3
-	 * registry (true note-site traps) instead of gum's interceptor. */
-	bool int3_registered = false;
 
 	friend class frida_attach_impl;
 
