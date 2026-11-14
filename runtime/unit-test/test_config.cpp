@@ -1,6 +1,4 @@
 #include <catch2/catch_test_macros.hpp>
-// Exercise the header fallback rather than CMake's explicit default.
-#undef DEFAULT_VM_NAME
 #include <bpftime_config.hpp>
 #include "./common_def.hpp"
 #include <boost/interprocess/interprocess_fwd.hpp>

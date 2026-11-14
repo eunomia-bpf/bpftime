@@ -68,6 +68,17 @@ endif()
 option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})
 
+# Compile the header fallback without CMake's DEFAULT_VM_NAME override.
+# Keep this object unlinked so its runtime_config definition cannot violate ODR.
+add_library(bpftime_config_header_test OBJECT test_default_vm_header.cpp)
+target_include_directories(bpftime_config_header_test PRIVATE
+    ${BPFTIME_RUNTIME_INCLUDE} ${Boost_INCLUDE_DIRS})
+target_compile_definitions(bpftime_config_header_test PRIVATE
+    $<$<BOOL:${BPFTIME_LLVM_JIT}>:BPFTIME_LLVM_JIT=1>
+    $<$<BOOL:${BPFTIME_UBPF_JIT}>:BPFTIME_UBPF_JIT=1>)
+set_property(TARGET bpftime_config_header_test PROPERTY CXX_STANDARD 20)
+add_dependencies(bpftime_runtime_tests bpftime_config_header_test)
+
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_sources(bpftime_runtime_tests PRIVATE
         test_get_current_uid_gid.cpp
