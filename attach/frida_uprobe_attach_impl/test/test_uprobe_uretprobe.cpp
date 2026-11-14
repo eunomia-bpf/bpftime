@@ -168,3 +168,36 @@ TEST_CASE("Test the mix usage of uprobe and uretprobe")
 	REQUIRE(b == j);
 	REQUIRE(ret == dummy);
 }
+
+#if defined(__linux__) && defined(__x86_64__)
+#include <signal.h>
+extern "C" __attribute__((naked, noinline)) int
+__bpftime_test_nop_entry(int)
+{
+        asm volatile("nop; nop; nop; nop; nop; lea 1(%rdi), %eax; ret");
+}
+
+TEST_CASE("NOP-led probes retain the established Frida route")
+{
+        frida_attach_impl impl;
+        struct sigaction before{}, installed{};
+        REQUIRE(sigaction(SIGTRAP, nullptr, &before) == 0);
+        const auto *code = reinterpret_cast<const unsigned char *>(
+                __bpftime_test_nop_entry);
+        REQUIRE(code[0] == 0x90);
+        int hits = 0;
+        const int id = impl.create_uprobe_at(
+                (void *)__bpftime_test_nop_entry,
+                [&](const bpftime::pt_regs &) { ++hits; });
+        REQUIRE(id >= 0);
+        const bool ordinary_patch = code[0] != 0xcc;
+        REQUIRE(sigaction(SIGTRAP, nullptr, &installed) == 0);
+        const int result = __bpftime_test_nop_entry(41);
+        const int detached = impl.detach_by_id(id);
+        REQUIRE(ordinary_patch);
+        REQUIRE(installed.sa_handler == before.sa_handler);
+        REQUIRE(result == 42);
+        REQUIRE(hits == 1);
+        REQUIRE(detached == 0);
+}
+#endif
