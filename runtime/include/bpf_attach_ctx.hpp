@@ -32,7 +32,7 @@ typedef struct _GumInvocationListener GumInvocationListener;
 namespace bpftime
 {
 
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH) || defined(BPFTIME_ENABLE_ROCM_ATTACH)
 namespace cuda
 {
 	// The old 1<<30 value makes the shared segment too large for Boost IPC.
@@ -100,6 +100,12 @@ struct CommSharedMem {
 	HelperCallResponse resp;
 	uint64_t time_sum[8];
 };
+} // namespace cuda
+#endif
+
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+namespace cuda
+{
 struct CUDAContext {
 	// Indicate whether cuda watcher thread should stop
 	std::shared_ptr<std::atomic<bool>> cuda_watcher_should_stop =
@@ -142,6 +148,7 @@ inline uintptr_t get_cuda_shared_mem_device_pointer() noexcept
 
 } // namespace cuda
 #endif
+
 
 class base_attach_manager;
 
@@ -252,7 +259,7 @@ private:
 	int instantiate_perf_event_handler_at(
 		int id, const bpf_perf_event_handler &perf_handler);
 
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH) || defined(BPFTIME_ENABLE_ROCM_ATTACH)
 	std::vector<attach::MapBasicInfo>
 	create_map_basic_info(int filled_size);
 #endif

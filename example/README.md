@@ -114,7 +114,7 @@ The [example/gpu](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu
 - [`threadscheduling_dynamic_hook`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/threadscheduling_dynamic_hook): Dynamic-attach-friendly variant that demonstrates late attach with `bpftime trace`
 - [`mem_trace`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/mem_trace): Memory access pattern tracing
 - [`directly_run_on_gpu`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/directly_run_on_gpu): Run eBPF programs directly on GPU
-- [`rocm-counter`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/rocm-counter): AMD ROCm GPU kernel tracing
+- [`rocm-ebpf`](https://github.com/eunomia-bpf/bpftime/tree/master/example/rocm-ebpf): AMD ROCm GPU kernel tracing
 
 ## Hotpatching Applications
 

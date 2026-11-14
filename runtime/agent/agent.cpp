@@ -53,6 +53,11 @@ typedef int gboolean;
 #include "nv_attach_private_data.hpp"
 #include "nv_attach_impl.hpp"
 #endif
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+#include "rocm_attach_impl.hpp"
+#include "rocm_attach_private_data.hpp"
+#include "rocm_profiler.hpp"
+#endif
 
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 #include "syscall_trace_attach_impl.hpp"
@@ -71,6 +76,7 @@ enum agent_init_state {
 	AGENT_READY = 2,
 };
 static int initialized = AGENT_UNINITIALIZED;
+static std::atomic<bool> initialized_by_rocprofiler{ false };
 
 using agent_control_fn_t = void (*)(const gchar *);
 
@@ -1055,6 +1061,24 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 					return priv_data;
 				});
 #endif
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+			ctx_holder.ctx.register_attach_impl(
+				{ ATTACH_ROCM_PROBE_AND_RETPROBE },
+				std::make_unique<attach::rocm_attach_impl>(),
+				[](const std::string_view &sv, int &err) {
+					std::unique_ptr<attach_private_data>
+						priv_data = std::make_unique<
+							rocm_attach_private_data>();
+					if (int e = priv_data->initialize_from_string(
+						    sv);
+					    e < 0) {
+						err = e;
+						return std::unique_ptr<
+							attach_private_data>();
+					}
+					return priv_data;
+				});
+#endif
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 			syscall_trace_impl_ptr->set_to_global();
 #endif
@@ -1148,14 +1172,16 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			} catch (...) {
 			}
 			// We use SIGUSR1 to indicate the detaching.
-			if (!ensure_detach_worker_started()) {
+			if (!initialized_by_rocprofiler &&
+			    !ensure_detach_worker_started()) {
 				init_fail();
 				return;
 			}
 			// Start IPC control plane for repeat attach/refresh (used by
 			// `bpftime trace`).
 			start_agent_ipc_server_once();
-			signal(SIGUSR1, sig_handler_sigusr1_detach);
+			if (!initialized_by_rocprofiler)
+				signal(SIGUSR1, sig_handler_sigusr1_detach);
 			/* We don't want our library to be unloaded after we return. */
 			*stay_resident = TRUE;
 			setenv("BPFTIME_USED", "1", 0);
@@ -1175,6 +1201,44 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			init_fail();
 		}
 }
+
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+static bool initialize_rocm_agent() noexcept
+{
+	initialized_by_rocprofiler = true;
+	injected_with_frida = false;
+	// This path shares normal agent initialization, but must not initialize
+	// HIP/HSA or replace host signal handlers during SDK registration.
+	if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) == AGENT_UNINITIALIZED) {
+		gboolean resident = FALSE;
+		bpftime_agent_main("", &resident);
+	}
+	return __atomic_load_n(&initialized, __ATOMIC_SEQ_CST) == AGENT_READY;
+}
+
+static void finalize_rocm_agent() noexcept
+{
+	try {
+		(void)perform_detach();
+	} catch (...) {
+	}
+}
+
+extern "C" __attribute__((visibility("default")))
+rocprofiler_tool_configure_result_t *
+rocprofiler_configure(uint32_t version, const char *, uint32_t,
+		      rocprofiler_client_id_t *client)
+{
+	// Exporting the entry point must not turn ordinary LD_PRELOAD starts
+	// into profiler sessions. The CLI sets this only for start --rocm.
+	const char *enabled = getenv("BPFTIME_ROCM_ATTACH");
+	if (!enabled || strcmp(enabled, "1") != 0)
+		return nullptr;
+	install_agent_bootstrap_logger();
+	return configure_rocm_profiler(version, client, initialize_rocm_agent,
+				       finalize_rocm_agent);
+}
+#endif
 
 // using definition for libbpf for syscall issues
 // maybe should separate libbpf and kernel features separately
