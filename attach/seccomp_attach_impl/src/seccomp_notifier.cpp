@@ -368,7 +368,13 @@ bool install_seccomp_tracer()
 {
 	if (getenv("BPFTIME_GO_SECCOMP") == nullptr)
 		return false;
-	return setup_go_seccomp_tracer();
+	try {
+		return setup_go_seccomp_tracer();
+	} catch (...) {
+		// A later worker constructor can fail after earlier workers start.
+		go_seccomp_listener.store(-2, std::memory_order_release);
+		return false;
+	}
 }
 
 } // namespace seccomp

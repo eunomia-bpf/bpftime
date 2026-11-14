@@ -9,6 +9,8 @@ std::atomic<unsigned> receives{ 0 };
 std::mutex response_mutex;
 std::condition_variable response_ready;
 uint32_t response_flags = 0;
+uint64_t response_id = 0;
+std::atomic<int> worker_allocations_before_failure{ -1 };
 
 int64_t failing_dispatch(int64_t, int64_t, int64_t, int64_t, int64_t,
 			 int64_t, int64_t, int64_t, int64_t, int64_t)
@@ -44,6 +46,7 @@ extern "C" int __wrap_ioctl(int, unsigned long operation, ...)
 	auto *response = static_cast<seccomp_notif_resp *>(data);
 	std::lock_guard lock(response_mutex);
 	response_flags = response->flags;
+	response_id = response->id;
 	response_ready.notify_one();
 	return 0;
 }
@@ -54,7 +57,8 @@ TEST_CASE("Seccomp dispatch failure resumes the intercepted host syscall")
 	bpftime::seccomp::start_go_seccomp_workers();
 	std::unique_lock lock(response_mutex);
 	REQUIRE(response_ready.wait_for(lock, std::chrono::seconds(3), [] {
-		return response_flags == SECCOMP_USER_NOTIF_FLAG_CONTINUE;
+		return response_flags == SECCOMP_USER_NOTIF_FLAG_CONTINUE &&
+		       response_id == 123;
 	}));
 }
 
@@ -69,6 +73,33 @@ TEST_CASE("Failed seccomp installation cancels waiting workers")
 	REQUIRE(setenv("BPFTIME_GO_SECCOMP", "1", 1) == 0);
 	bpftime::seccomp::go_seccomp_listener.store(-1);
 	const bool installed = bpftime::seccomp::install_seccomp_tracer();
+	unsetenv("BPFTIME_GO_SECCOMP");
+	REQUIRE_FALSE(installed);
+	REQUIRE(bpftime::seccomp::go_seccomp_listener.load() == -2);
+}
+
+// Fail a worker-state allocation after one constructor has already succeeded.
+void *operator new(size_t size)
+{
+	if (worker_allocations_before_failure.load() >= 0 &&
+	    worker_allocations_before_failure.fetch_sub(1) == 0) {
+		worker_allocations_before_failure = -1;
+		throw std::bad_alloc();
+	}
+	if (void *memory = std::malloc(size ? size : 1))
+		return memory;
+	throw std::bad_alloc();
+}
+void operator delete(void *memory) noexcept { std::free(memory); }
+void operator delete(void *memory, size_t) noexcept { std::free(memory); }
+
+TEST_CASE("Worker construction failure cancels partially started seccomp setup")
+{
+	REQUIRE(setenv("BPFTIME_GO_SECCOMP", "1", 1) == 0);
+	bpftime::seccomp::go_seccomp_listener.store(-1);
+	worker_allocations_before_failure = 1;
+	const bool installed = bpftime::seccomp::install_seccomp_tracer();
+	worker_allocations_before_failure = -1;
 	unsetenv("BPFTIME_GO_SECCOMP");
 	REQUIRE_FALSE(installed);
 	REQUIRE(bpftime::seccomp::go_seccomp_listener.load() == -2);
