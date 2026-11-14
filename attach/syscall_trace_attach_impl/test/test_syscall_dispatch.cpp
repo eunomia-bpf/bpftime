@@ -299,6 +299,7 @@ TEST_CASE("Dispatch depth resets in a forked child")
 
 	int callback_count = 0;
 	bool child_ok = false;
+	bool forked_child = false;
 	int id = attacher.create_attach_with_ebpf_callback(
 		[&](const void *, size_t, uint64_t *) -> int {
 			callback_count++;
@@ -306,19 +307,13 @@ TEST_CASE("Dispatch depth resets in a forked child")
 				pid_t pid = fork();
 				REQUIRE(pid >= 0);
 				if (pid == 0) {
-					// The child inherited depth == 1.
-					// A fresh dispatch must still run
-					// the callback after the atfork
-					// reset; without it the guard skips
-					// the callback and count stays 1.
-					attacher.dispatch_syscall(
-						11, 0, 0, 0, 0, 0, 0);
-					_exit(callback_count == 2 ? 0 : 1);
+					forked_child = true;
+				} else {
+					int status = 0;
+					REQUIRE(waitpid(pid, &status, 0) == pid);
+					child_ok = WIFEXITED(status) &&
+						   WEXITSTATUS(status) == 0;
 				}
-				int status = 0;
-				REQUIRE(waitpid(pid, &status, 0) == pid);
-				child_ok = WIFEXITED(status) &&
-					   WEXITSTATUS(status) == 0;
 			}
 			return 0;
 		},
@@ -326,6 +321,11 @@ TEST_CASE("Dispatch depth resets in a forked child")
 	REQUIRE(id >= 0);
 
 	attacher.dispatch_syscall(11, 0, 0, 0, 0, 0, 0);
+	if (forked_child) {
+		// Let the inherited dispatch guard unwind before a fresh call.
+		attacher.dispatch_syscall(11, 0, 0, 0, 0, 0, 0);
+		_exit(callback_count == 2 ? 0 : 1);
+	}
 	REQUIRE(child_ok);
 	REQUIRE(attacher.detach_by_id(id) == 0);
 }

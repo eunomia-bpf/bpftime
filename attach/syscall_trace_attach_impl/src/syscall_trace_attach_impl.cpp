@@ -50,7 +50,9 @@ struct dispatch_depth_guard {
 	}
 	~dispatch_depth_guard()
 	{
-		--syscall_dispatch_depth;
+		// atfork may have reset the inherited frame in the child.
+		if (syscall_dispatch_depth > 0)
+			--syscall_dispatch_depth;
 	}
 };
 
