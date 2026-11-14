@@ -11,6 +11,10 @@
 #include <unistd.h>
 #include <cstring>
 #include <climits>
+#include <atomic>
+#include <barrier>
+#include <thread>
+#include <vector>
 #include <cstdarg>
 
 // Control only the real-id probe; the provider still uses RTLD_NEXT and
@@ -93,5 +97,22 @@ TEST_CASE("Rootless tracepoint IDs resolve before any callback table access")
 	}
 	syscall_trace_attach_private_data invalid;
 	REQUIRE(invalid.initialize_from_string(std::to_string(INT_MAX)) == -EINVAL);
+}
+TEST_CASE("Rootless tracepoint IDs initialize concurrently")
+{
+	using bpftime::attach::syscall_trace_attach_private_data;
+	std::barrier start(16);
+	std::atomic<int> matched{0};
+	std::vector<std::thread> workers;
+	for (int i = 0; i < 16; ++i)
+		workers.emplace_back([&] {
+			start.arrive_and_wait();
+			if (syscall_trace_attach_private_data::synthetic_id_for_event(
+				    "syscalls/sys_enter_read") == 0x40000000 + 2 * (SYS_read + 1))
+				++matched;
+		});
+	for (auto &worker : workers)
+		worker.join();
+	REQUIRE(matched == 16);
 }
 #endif
