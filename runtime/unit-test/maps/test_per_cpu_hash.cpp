@@ -97,3 +97,39 @@ TEST_CASE("Test basic operations of hash map")
 		}
 	}
 }
+
+TEST_CASE("Per-CPU hash helper flags preserve conditional update semantics",
+	  "[maps][percpu_hash][update_flags]")
+{
+	shm_remove remover("BPFTIME_PER_CPU_HASH_FLAGS_SHM");
+	managed_shared_memory mem(create_only, "BPFTIME_PER_CPU_HASH_FLAGS_SHM",
+				 20 << 20);
+	per_cpu_hash_map_impl map(mem, sizeof(uint32_t), sizeof(uint64_t), 1);
+	uint32_t key = 1, missing = 2;
+	uint64_t replacement = 22;
+	std::vector<uint64_t> values(map.getncpu(), 11);
+	REQUIRE(map.elem_update_userspace(&key, values.data(), 0) == 0);
+	// The common flag validator reserves the high bits for custom operations;
+	// they must not bypass BPF_NOEXIST/BPF_EXIST in the low 32 bits.
+	for (uint64_t custom : { 0ULL, 1ULL << 32 }) {
+		errno = 0;
+		REQUIRE(map.elem_update(&key, &replacement, custom | 1) == -1);
+		REQUIRE(errno == EEXIST);
+		auto *stored = static_cast<uint64_t *>(map.elem_lookup_userspace(&key));
+		REQUIRE(stored != nullptr);
+		REQUIRE(std::equal(values.begin(), values.end(), stored));
+		errno = 0;
+		REQUIRE(map.elem_update(&missing, &replacement, custom | 2) == -1);
+		REQUIRE(errno == ENOENT);
+	}
+	errno = 0;
+	REQUIRE(map.elem_update(&missing, &replacement, 0) == -1);
+	REQUIRE(errno == E2BIG);
+	REQUIRE(map.elem_delete(&key) == 0);
+	REQUIRE(map.elem_lookup_userspace(&key) == nullptr);
+	REQUIRE(map.elem_lookup(&key) == nullptr);
+	errno = 0;
+	REQUIRE(map.elem_delete(&key) == -1);
+	REQUIRE(errno == ENOENT);
+	REQUIRE(map.elem_update(&missing, &replacement, 1) == 0);
+}

@@ -70,6 +70,7 @@ long per_cpu_hash_map_impl::elem_update(const void *key, const void *value,
 {
 	if (!check_update_flags(flags))
 		return -1;
+	flags &= 0xFFFFFFFFULL;
 	int cpu = my_sched_getcpu();
 	SPDLOG_DEBUG(
 		"Per cpu update, key {}, value {}",
