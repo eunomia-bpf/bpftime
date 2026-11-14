@@ -51,6 +51,9 @@ class bpf_cpu_execution_guard {
 	{
 		if (bpftime_get_current_bpf_cpu() >= 0)
 			return;
+		// Map-free programs may use only process-local runtime config.
+		if (!shm_holder.global_shared_memory.get_manager())
+			return;
 		cpu = bpftime_get_native_cpu();
 		if (cpu < 0) {
 			warn_throttled([] { SPDLOG_WARN("sched_getcpu failed; BPF execution skipped"); });
@@ -82,7 +85,11 @@ class bpf_cpu_execution_guard {
 
 	~bpf_cpu_execution_guard() { release(); }
 
-	bool entered() const { return owns_lock || bpftime_get_current_bpf_cpu() >= 0; }
+	bool entered() const
+	{
+		return owns_lock || bpftime_get_current_bpf_cpu() >= 0 ||
+		       !shm_holder.global_shared_memory.get_manager();
+	}
 
 	void release()
 	{

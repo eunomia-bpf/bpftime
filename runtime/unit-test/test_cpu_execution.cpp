@@ -100,27 +100,37 @@ TEST_CASE("BPF executions on one CPU are serialized", "[percpu][execution]")
 	REQUIRE(failures == 0);
 	REQUIRE(maximum_active_helpers == 1);
 
-	// A timed-out contender must skip the probe instead of running outside
-	// the lock and racing the program that still owns this CPU slot.
+	// A contender must wait while this CPU slot is owned, then execute
+	// normally after release rather than running outside the lock.
 	maximum_active_helpers = 0;
 	auto &shm = bpftime::shm_holder.global_shared_memory;
 	shm.lock_bpf_cpu(cpu);
 	int blocked_result = 0;
+	std::atomic<bool> contender_ready{ false }, contender_done{ false };
 	std::thread blocked([&] {
 		cpu_set_t affinity;
 		CPU_ZERO(&affinity);
 		CPU_SET(cpu, &affinity);
 		if (sched_setaffinity(0, sizeof(affinity), &affinity) != 0) {
 			blocked_result = -errno;
+			contender_ready = true;
+			contender_done = true;
 			return;
 		}
 		uint64_t result = 0, context = 0;
+		contender_ready = true;
 		blocked_result = prog.bpftime_prog_exec(&context, sizeof(context), &result);
+		contender_done = true;
 	});
-	blocked.join();
+	while (!contender_ready.load())
+		std::this_thread::yield();
+	std::this_thread::sleep_for(std::chrono::milliseconds(50));
+	const bool waited = !contender_done.load() && maximum_active_helpers == 0;
 	shm.unlock_bpf_cpu(cpu);
-	REQUIRE(blocked_result == -EAGAIN);
-	REQUIRE(maximum_active_helpers == 0);
+	blocked.join();
+	REQUIRE(waited);
+	REQUIRE(blocked_result == 0);
+	REQUIRE(maximum_active_helpers == 1);
 }
 
 TEST_CASE("Per-CPU lock blocks through contention and releases cleanly",
@@ -175,4 +185,20 @@ TEST_CASE("Per-CPU lock blocks through contention and releases cleanly",
 	// After handoff the slot is obtainable again.
 	REQUIRE(shm.acquire_bpf_cpu(cpu));
 	shm.unlock_bpf_cpu(cpu);
+}
+
+TEST_CASE("Map-free local programs do not need shared-memory CPU locks",
+	  "[percpu][execution]")
+{
+	bpftime_destroy_global_shm();
+	bpftime_initialize_global_shm(shm_open_type::SHM_NO_CREATE);
+	struct bpf_insn insns[] = { BPF_MOV64_IMM(BPF_REG_0, 42), BPF_EXIT_INSN() };
+	runtime_config config;
+	config.set_vm_name(DEFAULT_VM_NAME);
+	bpftime_prog prog(reinterpret_cast<const ebpf_inst *>(insns),
+			  std::size(insns), "map_free_local", std::move(config));
+	REQUIRE(prog.bpftime_prog_load(true) == 0);
+	uint64_t result = 0;
+	REQUIRE(prog.bpftime_prog_exec(nullptr, 0, &result) == 0);
+	REQUIRE(result == 42);
 }
