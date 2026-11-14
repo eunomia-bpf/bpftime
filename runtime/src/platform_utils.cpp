@@ -16,18 +16,7 @@ int my_sched_getcpu()
 
 int my_sched_getcpu()
 {
-	// QNX: current CPU for the calling thread (see SYSPAGE CPU info).
-	// Fallback to 0 if the API is unavailable on a given SDP build.
-#if defined(_NTO_TCTL_RUNMASK_GET_AND_SET)
-	unsigned runmask = 0;
-	if (ThreadCtl(_NTO_TCTL_RUNMASK_GET_AND_SET, &runmask) != -1) {
-		for (int i = 0; i < (int)sizeof(runmask) * 8; ++i) {
-			if (runmask & (1u << i))
-				return i;
-		}
-	}
-#endif
-	return 0;
+	return static_cast<int>(SchedGetCpuNum());
 }
 
 int sched_getaffinity([[maybe_unused]] pid_t pid,
