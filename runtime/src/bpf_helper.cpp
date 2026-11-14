@@ -24,6 +24,8 @@
 #endif
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include "bpf/bpf.h"
+#include "bpf/btf.h"
+#include "bpf/libbpf.h"
 #include "bpf/libbpf_common.h"
 #endif
 #include "bpftime_helper_group.hpp"
@@ -38,6 +40,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <cstring>
+#include <cstdlib>
 #include <time.h>
 #include <unistd.h>
 #include <ctime>
@@ -88,6 +91,12 @@ uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
 	va_end(args);
 	return 0;
 }
+
+uint64_t bpftime_seq_write(uint64_t, uint64_t, uint64_t)
+{
+	return -EOPNOTSUPP;
+}
+
 
 long bpftime_strncmp(const char *s1, uint64_t s1_sz, const char *s2)
 {
@@ -257,6 +266,73 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 #endif
 	return ((uint64_t)bpftime_cached_tgid << 32) | bpftime_cached_tid;
 }
+
+uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t, uint64_t,
+				  uint64_t)
+{
+#if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))
+	// Keep the per-thread task storage on the heap through a pthread key
+	// instead of a thread_local buffer. This library can be linked into a
+	// dlopen'ed module that carries initial-exec TLS; a multi-KB thread_local
+	// would land in its static TLS block and exhaust the limited static TLS
+	// surplus ("cannot allocate memory in static TLS block").
+	static const size_t task_storage_size = []() -> size_t {
+		// Covers current kernels when BTF is unavailable. A host with a
+		// larger task_struct uses its actual BTF size instead.
+		constexpr size_t fallback = 64 * 1024;
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
+		struct btf *btf = btf__parse_raw("/sys/kernel/btf/vmlinux");
+		if (btf != nullptr && libbpf_get_error(btf) == 0) {
+			int id = btf__find_by_name_kind(btf, "task_struct", BTF_KIND_STRUCT);
+			int64_t size = id > 0 ? btf__resolve_size(btf, id) : -1;
+			btf__free(btf);
+			if (size >= static_cast<int64_t>(sizeof(void *)))
+				return static_cast<size_t>(size);
+		}
+#endif
+		return fallback;
+	}();
+	static pthread_key_t task_key;
+	static const int task_key_status = pthread_key_create(&task_key, free);
+	if (task_key_status != 0)
+		return 0;
+	uint8_t *task = static_cast<uint8_t *>(pthread_getspecific(task_key));
+	if (task == nullptr) {
+		void *raw = nullptr;
+		if (posix_memalign(&raw, 64, task_storage_size) != 0)
+			return 0;
+		task = static_cast<uint8_t *>(raw);
+		memset(task, 0, task_storage_size);
+		if (pthread_setspecific(task_key, task) != 0) {
+			free(task);
+			return 0;
+		}
+	}
+	static const size_t tpbase_offset = [] {
+		const char *text =
+			getenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET");
+		if (text == nullptr)
+			return SIZE_MAX;
+		char *end = nullptr;
+		errno = 0;
+		unsigned long value = strtoul(text, &end, 0);
+		return errno == 0 && end != text && *end == '\0' &&
+				       value <= task_storage_size -
+						       sizeof(void *) ?
+			       (size_t)value :
+			       SIZE_MAX;
+	}();
+	if (tpbase_offset != SIZE_MAX) {
+		void *thread_pointer = __builtin_thread_pointer();
+		memcpy(task + tpbase_offset, &thread_pointer,
+		       sizeof(thread_pointer));
+	}
+	return (uint64_t)(uintptr_t)task;
+#else
+	return 0;
+#endif
+}
+
 
 uint64_t bpf_get_current_uid_gid(uint64_t, uint64_t, uint64_t, uint64_t,
 				 uint64_t)
@@ -1253,6 +1329,12 @@ bpftime_helper_group::get_kernel_utils_helper_group()
 			    .name = "bpf_ktime_get_boot_ns",
 			    .fn = (void *)bpftime_ktime_get_boot_ns,
 		    } },
+		  { BPF_FUNC_seq_write,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_seq_write,
+			    .name = "bpf_seq_write",
+			    .fn = (void *)bpftime_seq_write,
+		    } },
 		  { BPF_FUNC_trace_printk,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_trace_printk,
@@ -1276,6 +1358,16 @@ bpftime_helper_group::get_kernel_utils_helper_group()
 			    .index = BPF_FUNC_get_current_uid_gid,
 			    .name = "bpf_get_current_uid_gid",
 			    .fn = (void *)bpf_get_current_uid_gid } },
+		  { BPF_FUNC_get_current_task,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_get_current_task,
+			    .name = "bpf_get_current_task",
+			    .fn = (void *)bpftime_get_current_task } },
+		  { BPF_FUNC_get_current_task_btf,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_get_current_task_btf,
+			    .name = "bpf_get_current_task_btf",
+			    .fn = (void *)bpftime_get_current_task } },
 		  { BPF_FUNC_get_current_comm,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_get_current_comm,
