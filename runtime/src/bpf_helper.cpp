@@ -38,6 +38,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <cstring>
+#include <cstdlib>
 #include <time.h>
 #include <unistd.h>
 #include <ctime>
@@ -205,6 +206,42 @@ uint64_t bpftime_ktime_get_boot_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 	return spec.tv_sec * (uint64_t)1000000000 + spec.tv_nsec;
 }
 
+#if __linux__
+static int get_host_nspid(const char *procfs, const char *entry, int fallback)
+{
+	if (procfs == nullptr || procfs[0] == '\0')
+		return fallback;
+	char path[PATH_MAX];
+	int length = snprintf(path, sizeof(path), "%s/%s/status", procfs, entry);
+	if (length < 0 || static_cast<size_t>(length) >= sizeof(path))
+		return fallback;
+	FILE *file = fopen(path, "re");
+	if (file == nullptr)
+		return fallback;
+	char *line = nullptr;
+	size_t capacity = 0;
+	int result = fallback;
+	// The Groups line can be arbitrarily long and precedes NSpid in procfs.
+	// getline also avoids accepting a PID truncated at a read boundary.
+	while (getline(&line, &capacity, file) >= 0) {
+		if (strncmp(line, "NSpid:", 6) != 0)
+			continue;
+		char *end = nullptr;
+		errno = 0;
+		long value = strtol(line + 6, &end, 10);
+		if (errno == 0 && end != line + 6 && value > 0 &&
+		    value <= INT32_MAX && (*end == ' ' || *end == '\t' ||
+					  *end == '\n' || *end == '\0'))
+			result = static_cast<int>(value);
+		break;
+	}
+	free(line);
+	fclose(file);
+	return result;
+}
+static thread_local uint64_t bpftime_cached_host_identity = 0;
+#endif
+
 // bpf_get_current_pid_tgid caches the identity so it does not pay a syscall on
 // every call. The cache cannot be function-local: a forked child inherits the
 // parent's cached values, and would report the parent's pid and tid. These live
@@ -235,11 +272,14 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 {
 	// If registering the fork handler failed, the cache is still the
 	// parent's after a fork, so read the identity directly. The probe
-	// access cache above falls back the same way.
+	// access cache above falls back the same way. This exceptional path
+	// also recomputes procfs translation on each call.
 	if (bpftime_identity_atfork_status != 0) {
 #if __linux__
-		return ((uint64_t)getpid() << 32) |
-		       static_cast<uint32_t>(syscall(SYS_gettid));
+		const char *procfs = getenv("BPFTIME_HOST_PROCFS");
+		return (uint64_t(get_host_nspid(procfs, "self", getpid())) << 32) |
+		       uint32_t(get_host_nspid(procfs, "thread-self",
+					      syscall(SYS_gettid)));
 #elif __APPLE__
 		uint64_t tid = 0;
 		pthread_threadid_np(NULL, &tid);
@@ -249,13 +289,21 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 #if __linux__
 	if (bpftime_cached_tid == -1) {
 		bpftime_cached_tid = static_cast<int>(syscall(SYS_gettid));
+		const char *procfs = getenv("BPFTIME_HOST_PROCFS");
+		bpftime_cached_host_identity =
+			(uint64_t(get_host_nspid(procfs, "self", bpftime_cached_tgid)) << 32) |
+			uint32_t(get_host_nspid(procfs, "thread-self", bpftime_cached_tid));
 	}
 #elif __APPLE__
 	if (bpftime_cached_tid == UINT64_MAX) {
 		pthread_threadid_np(NULL, &bpftime_cached_tid);
 	}
 #endif
+#if __linux__
+	return bpftime_cached_host_identity;
+#else
 	return ((uint64_t)bpftime_cached_tgid << 32) | bpftime_cached_tid;
+#endif
 }
 
 uint64_t bpf_get_current_uid_gid(uint64_t, uint64_t, uint64_t, uint64_t,
