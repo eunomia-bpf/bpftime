@@ -60,13 +60,16 @@ jobs:
             -DLLVM_DIR="$(llvm-config-18 --cmakedir)"
           cmake --build build --target bpftime_runtime_tests -j2
       - name: Test runtime
-        # The gVisor sandbox offers no kernel BPF (user-to-kernel tail calls),
-        # and a uprobe that patches libc crashes there; on the same aarch64
-        # host outside the sandbox both pass, and the x86-64 runners run them.
-        # The internal-function section of the uprobe test still runs here.
+        # Left out under the gVisor sandbox, and run on the x86-64 runners:
+        # the tests that patch code at run time (frida and trap attach, all of
+        # attach_with_ebpf/), which crashed with SIGSEGV at random under the
+        # sandbox and pass on the same aarch64 host outside it, and the
+        # user-to-kernel tail call, which needs the kernel's BPF.
         run: |
-          ./build/runtime/unit-test/bpftime_runtime_tests \
-            "~Test tail calling from userspace to kernel" \
-            "~Test probing internal functions"
-          ./build/runtime/unit-test/bpftime_runtime_tests \
-            "Test probing internal functions" -c "Test probing internal functions"
+          ./build/runtime/unit-test/bpftime_runtime_tests -# \
+            "~[#test_attach_filter_with_ebpf]" \
+            "~[#test_attach_replace]" \
+            "~[#test_attach_uprobe_with_ebpf]" \
+            "~[#test_attach_uprobe_with_ebpf_trap]" \
+            "~[#test_shm_progs_attach]" \
+            "~[#test_user_to_kernel_tailcall]"
