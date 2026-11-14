@@ -372,6 +372,17 @@ int bpftime_prog::prepare_for_signal_execution()
 			return -ENOTSUP;
 		}
 	}
+#if defined(__x86_64__)
+	// The uBPF x86 JIT corrupts RAX when a fetch-ALU atomic uses r0 as
+	// its memory base. The ordinary load path falls back to the interpreter,
+	// but a trap callback must be JIT-compiled. Reject this attach rather
+	// than compiling host-crashing code in the signal-admission path.
+	if (strcmp(backend, "ubpf") == 0 &&
+	    ubpf_x86_jit_unsafe_fetch_into_r0(insns.data(), insns.size())) {
+		SPDLOG_WARN("Rejecting trap attach: uBPF x86 JIT cannot safely compile a fetch-atomic targeting r0");
+		return -ENOTSUP;
+	}
+#endif
 	if (!jitted) {
 		auto compiled = ebpf_compile(vm, &errmsg);
 		if (!compiled)
