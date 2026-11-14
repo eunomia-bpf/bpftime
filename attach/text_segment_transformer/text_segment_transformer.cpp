@@ -51,6 +51,15 @@ extern "C" void syscall_addr();
 static const int NR_syscalls = 512;
 static syscall_hooker_func_t call_hook = &call_orig_syscall;
 
+// Re-entrancy guard: rewritten syscall sites re-enter the C++ dispatcher when
+// BPF callbacks, frida or SHM code issue their own syscalls. Recursive entry
+// corrupts the dispatcher's private stack frame, which is fatal inside a
+// forked child (only the calling thread survives; worker-thread state and the
+// shared /dev/shm mappings are inherited stale) and shows up as a garbage
+// wait4 pid (ECHILD) followed by a control-flow SIGSEGV. While dispatch is
+// active on a thread, nested syscalls take the raw path until it returns.
+thread_local unsigned bpftime_syscall_dispatch_active = 0;
+
 #if defined(__x86_64__)
 // `used` keeps this function in the object under -flto: LTO sees a body whose
 // only effect is to define assembler-level labels, drops the whole function as
@@ -78,6 +87,16 @@ static syscall_hooker_func_t call_hook = &call_orig_syscall;
 		"je handle_clone\n\t"
 		"cmp $435, %rax\n\t" // SYS_clone3
 		"je handle_clone3\n\t"
+		// fork has no child stack: never run it through the C hook. The
+		// target label is the one raw-syscall site exempt from rewriting.
+		"cmp $57, %rax\n\t" // SYS_fork
+		"je syscall_addr\n\t"
+		// Nested syscall issued from inside the dispatcher stays raw so its
+		// private frame cannot be re-entered and corrupted.
+		"movq bpftime_syscall_dispatch_active@gottpoff(%rip), %rcx\n\t"
+		"cmpl $0, %fs:(%rcx)\n\t"
+		"jne syscall_addr\n\t"
+		"movl $1, %fs:(%rcx)\n\t"
 		"movq (%rsp), %rcx\n\t"
 		"pushq %rbp\n\t"
 		"movq %rsp, %rbp\n\t"
@@ -98,6 +117,8 @@ static syscall_hooker_func_t call_hook = &call_orig_syscall;
 		"movq 8(%rsp), %r9\n\t" // arg5
 		"pushq (%rsp)\n\t" // arg6
 		"call syscall_hooker_cxx\n\t"
+		"movq bpftime_syscall_dispatch_active@gottpoff(%rip), %rcx\n\t"
+		"movl $0, %fs:(%rcx)\n\t"
 		"leave\n\t"
 		"ret\n\t");
 
