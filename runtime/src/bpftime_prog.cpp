@@ -20,9 +20,38 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+
+#if defined(__x86_64__)
+// The pinned uBPF x86_64 JIT emulates fetch-ALU atomics (add/or/and/xor with
+// BPF_FETCH) with a cmpxchg retry loop. When the destination register is r0
+// (mapped to native RAX), the initial load overwrites RAX with the old memory
+// value and the retried cmpxchg dereferences that value as the address,
+// crashing the host process. The interpreter and the aarch64 JIT are correct.
+// Until the defect is fixed upstream, keep the historical fail-closed
+// contract for this single encoding by steering it to the interpreter.
+static bool
+ubpf_x86_jit_unsafe_fetch_into_r0(const struct ebpf_inst *insn, size_t cnt)
+{
+	for (size_t i = 0; i < cnt; i++) {
+		const struct ebpf_inst &in = insn[i];
+		if (in.code != EBPF_ATOMIC_OPCODE_32 &&
+		    in.code != EBPF_ATOMIC_OPCODE_64)
+			continue;
+		if (in.dst_reg != 0)
+			continue;
+		// Only fetch-ALU is affected; non-fetch, XCHG and CMPXCHG use
+		// safe single-instruction sequences.
+		if (!(in.imm & EBPF_FETCH))
+			continue;
+		if (in.imm == EBPF_XCHG || in.imm == EBPF_CMPXCHG)
+			continue;
+		return true;
+	}
+	return false;
+}
+#endif
 #include <spdlog/spdlog.h>
 #include <stdexcept>
-#include "bpftime_vm_compat.hpp"
 #include <cstdio>
 
 #define NVPTXCOMPILER_SAFE_CALL(x)                                             \
@@ -206,13 +235,28 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 		// }
 	} else {
 		if (jit) {
-			ebpf_jit_fn jit_fn = ebpf_compile(vm, &errmsg);
-			if (jit_fn == NULL) {
-				SPDLOG_WARN("JIT compilation failed ({}), falling back to interpreter", errmsg);
+#if defined(__x86_64__)
+			// The defect is in the uBPF x86_64 JIT only; the LLVM backend
+			// handles r0 atomics correctly, so do not change its path.
+			const char *cur_vm_name =
+				bpftime::bpftime_get_runtime_config()
+					.get_vm_name();
+			if (std::string(cur_vm_name) == "ubpf" &&
+			    ubpf_x86_jit_unsafe_fetch_into_r0(insns.data(),
+							      insns.size())) {
+				SPDLOG_WARN("uBPF x86_64 JIT cannot safely compile a fetch-atomic targeting r0; using the interpreter instead");
 				jitted = false;
-			} else {
-				jitted = true;
-				fn = jit_fn;
+			} else
+#endif
+			{
+				ebpf_jit_fn jit_fn = ebpf_compile(vm, &errmsg);
+				if (jit_fn == NULL) {
+					SPDLOG_WARN("JIT compilation failed ({}), falling back to interpreter", errmsg);
+					jitted = false;
+				} else {
+					jitted = true;
+					fn = jit_fn;
+				}
 			}
 		} else {
 			jitted = false;
