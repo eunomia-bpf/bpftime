@@ -4,6 +4,12 @@
  * All rights reserved.
  */
 #include "bpftime_shm.hpp"
+
+#if BPFTIME_ENABLE_MPK
+#define BPFTIME_INSTANCE_MPK_GUARD() 	mpk_instance_write_guard bpftime_mpk_instance_guard(*this)
+#else
+#define BPFTIME_INSTANCE_MPK_GUARD() ((void)0)
+#endif
 #include "handler/map_handler.hpp"
 #include "handler/memfd_handler.hpp"
 #include <ebpf-vm.h>
@@ -335,6 +341,7 @@ int bpftime_shm::bpf_map_get_next_key(int fd, const void *key, void *next_key,
 int bpftime_shm::add_kprobe(std::optional<int> fd, const char *func_name,
 			    uint64_t addr, bool retprobe, size_t ref_ctr_off)
 {
+	BPFTIME_INSTANCE_MPK_GUARD();
 	int new_fd = fd.has_value() ? *fd : open_fake_fd();
 	SPDLOG_DEBUG(
 		"Set fd {} to kprobe, func_name={},addr={:x},retprobe={},ref_ctr_off={}",
@@ -349,6 +356,7 @@ int bpftime_shm::add_kprobe(std::optional<int> fd, const char *func_name,
 int bpftime_shm::add_uprobe(int fd, int pid, const char *name, uint64_t offset,
 			    bool retprobe, size_t ref_ctr_off)
 {
+	BPFTIME_INSTANCE_MPK_GUARD();
 	if (fd < 0) {
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
@@ -365,6 +373,7 @@ int bpftime_shm::add_uprobe(int fd, int pid, const char *name, uint64_t offset,
 int bpftime_shm::add_uprobe_override(int fd, int pid, const char *name,
 				     uint64_t offset, bool is_replace)
 {
+	BPFTIME_INSTANCE_MPK_GUARD();
 	if (fd < 0) {
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
@@ -390,6 +399,7 @@ int bpftime_shm::add_uprobe_override(int fd, int pid, const char *name,
 
 int bpftime_shm::add_tracepoint(int fd, int pid, int32_t tracepoint_id)
 {
+	BPFTIME_INSTANCE_MPK_GUARD();
 	if (fd < 0) {
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
@@ -410,6 +420,7 @@ int bpftime_shm::add_software_perf_event(int cpu, int32_t sample_type,
 int bpftime_shm::add_software_perf_event(int fd, int cpu, int32_t sample_type,
 					 int64_t config)
 {
+	BPFTIME_INSTANCE_MPK_GUARD();
 	return manager->set_handler(fd,
 				    bpftime::bpf_perf_event_handler(
 					    cpu, sample_type, config, segment),
@@ -430,6 +441,7 @@ int bpftime_shm::attach_perf_to_bpf(int perf_fd, int bpf_fd,
 int bpftime_shm::add_bpf_prog_attach_target(int perf_fd, int bpf_fd,
 					    std::optional<uint64_t> cookie)
 {
+	BPFTIME_INSTANCE_MPK_GUARD();
 	SPDLOG_DEBUG("Try attaching prog fd {} to perf fd {}, with cookie = {}",
 		     bpf_fd, perf_fd, cookie.has_value());
 	if (cookie) {
@@ -546,6 +558,7 @@ int bpftime_shm::add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd,
 }
 int bpftime_shm::epoll_create()
 {
+	BPFTIME_INSTANCE_MPK_GUARD();
 	int fd = open_fake_fd();
 	if (manager->is_allocated(fd)) {
 		SPDLOG_ERROR(
@@ -694,6 +707,7 @@ int bpftime_shm::open_fake_fd()
 int bpftime_shm::add_bpf_prog(int fd, const ebpf_inst *insn, size_t insn_cnt,
 			      const char *prog_name, int prog_type)
 {
+	BPFTIME_INSTANCE_MPK_GUARD();
 	if (fd < 0) {
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
@@ -711,6 +725,7 @@ int bpftime_shm::add_bpf_prog(int fd, const ebpf_inst *insn, size_t insn_cnt,
 // add a bpf link fd
 int bpftime_shm::add_bpf_link(int fd, struct bpf_link_create_args *args)
 {
+	BPFTIME_INSTANCE_MPK_GUARD();
 	if (!args) {
 		errno = EINVAL;
 		return -1;
@@ -1051,6 +1066,7 @@ int bpftime_shm::translate_shared_map_type_to_kernel_map_type(int type)
 int bpftime_shm::add_bpf_map(int fd, const char *name,
 			     bpftime::bpf_map_attr attr)
 {
+	BPFTIME_INSTANCE_MPK_GUARD();
 	bool fd_self_allocated = false;
 	if (fd < 0) {
 		// if fd is negative, we need to create a new fd for allocating
@@ -1091,6 +1107,7 @@ int bpftime_shm::add_bpf_map(int fd, const char *name,
 
 int bpftime_shm::dup_bpf_map(int oldfd, int newfd)
 {
+	BPFTIME_INSTANCE_MPK_GUARD();
 	if (!is_map_fd(oldfd)) {
 		SPDLOG_ERROR("Expected {} to be a map fd", oldfd);
 		errno = EBADF;
@@ -1207,6 +1224,7 @@ bpftime_shm::get_software_perf_event_raw_buffer(int fd, size_t buffer_sz) const
 }
 int bpftime_shm::add_custom_perf_event(int type, const char *attach_argument)
 {
+	BPFTIME_INSTANCE_MPK_GUARD();
 	int fd = open_fake_fd();
 	if (fd < 0) {
 		SPDLOG_ERROR("Unable to allocate id for custom perf event: {}",
@@ -1301,6 +1319,7 @@ bool bpftime_shm::add_pid_into_alive_agent_set(int pid)
 	if (injected_pids == nullptr) {
 		return true;
 	}
+	BPFTIME_INSTANCE_MPK_GUARD();
 	auto update = [&]() { injected_pids->insert(pid); };
 	pid_set_scoped_lock lock(pid_set_lock);
 	if (!lock.owns_lock()) {
@@ -1314,6 +1333,7 @@ bool bpftime_shm::remove_pid_from_alive_agent_set(int pid)
 	if (injected_pids == nullptr) {
 		return true;
 	}
+	BPFTIME_INSTANCE_MPK_GUARD();
 	auto update = [&]() { injected_pids->erase(pid); };
 	pid_set_scoped_lock lock(pid_set_lock);
 	if (!lock.owns_lock()) {
@@ -1432,6 +1452,7 @@ int bpftime_shm::poll_gpu_ringbuf_map(
 #endif
 int bpftime_shm::add_memfd_handler(const char *name, int flags)
 {
+	BPFTIME_INSTANCE_MPK_GUARD();
 	int fd = open_fake_fd();
 	fd = manager->set_handler(fd, memfd_handler(name, flags, segment),
 				  segment);

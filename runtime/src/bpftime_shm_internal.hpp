@@ -17,7 +17,7 @@
 #include <handler/handler_manager.hpp>
 #include <optional>
 #include <cstdint>
-
+#include "bpftime_mpk_guard.hpp"
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 namespace bpftime
 {
@@ -178,7 +178,6 @@ class bpftime_shm {
 	bool is_map_fd(int fd) const;
 
 private:
-	// Returns the map handler for `fd`, or nullptr (with errno=ENOENT) if
 	// `fd` is not a map fd. Shared by the bpf_map_* accessors below.
 	const bpf_map_handler *try_get_map_handler(int fd) const;
 
@@ -295,6 +294,32 @@ public:
 #if BPFTIME_ENABLE_MPK
 	void enable_mpk();
 	void disable_mpk();
+
+	// Write window for THIS shm instance's own pkey. Shares the
+	// thread-local nesting depth with the global guard so an inner
+	// window never re-protects while an outer one is open.
+	class mpk_instance_write_guard
+	{
+	      public:
+		explicit mpk_instance_write_guard(bpftime_shm &shm)
+			: shm(shm)
+		{
+			if (mpk_write_window_depth++ == 0)
+				shm.disable_mpk();
+		}
+		~mpk_instance_write_guard()
+		{
+			if (--mpk_write_window_depth == 0)
+				shm.enable_mpk();
+		}
+		mpk_instance_write_guard(
+			const mpk_instance_write_guard &) = delete;
+		mpk_instance_write_guard &
+		operator=(const mpk_instance_write_guard &) = delete;
+
+	      private:
+		bpftime_shm &shm;
+	};
 #endif
 
 	// initialize the shared memory globally
