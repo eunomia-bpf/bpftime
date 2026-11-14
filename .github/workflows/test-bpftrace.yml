@@ -44,7 +44,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, vm]
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
-      options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /sys/kernel/tracing:/sys/kernel/debug/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
+      options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
 
     steps:
       - name: Checkout code
@@ -373,7 +373,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, vm]
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
-      options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /sys/kernel/tracing:/sys/kernel/debug/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
+      options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
 
     steps:
       - name: Checkout code
@@ -736,7 +736,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, vm]
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
-      options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /sys/kernel/tracing:/sys/kernel/debug/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
+      options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
 
     steps:
       - name: Checkout code
