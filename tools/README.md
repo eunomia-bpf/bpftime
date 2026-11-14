@@ -72,9 +72,10 @@ bpftime start --rocm ./hip_application
 The ROCm runtime loads the SDK and agent on its first runtime call; `rocprofv3`
 is not required. Child arguments and exit status are preserved.
 
-The agent currently observes and forwards kernel dispatches. Device eBPF
-payloads and GPU helpers/maps are not connected yet; ROCm eBPF attach requests
-return an unsupported-operation error. To inspect dispatches, explicitly set
+The experimental device eBPF path supports the restricted subset shown in
+[`example/rocm-ebpf`](../example/rocm-ebpf/README.md), including entry/return
+probes and `bpf_test_println` (helper 506). Map relocations and other helpers
+are rejected by the ROCm compiler. To inspect dispatches, explicitly set
 `BPFTIME_LOG_OUTPUT=/tmp/bpftime-rocm.log SPDLOG_LEVEL=debug` before launching.
 Without an active shared-memory session the application still runs and the
 profiler can observe dispatches; bpftime cannot attach loaded BPF programs.
