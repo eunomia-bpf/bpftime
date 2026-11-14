@@ -7,7 +7,6 @@
 
 #ifdef __linux__
 #include <asm/unistd.h>  // For architecture-specific syscall numbers
-#include <pthread.h>  // pthread_atfork
 #endif
 
 namespace bpftime
@@ -23,25 +22,15 @@ std::optional<syscall_trace_attach_impl *> global_syscall_trace_attach_impl;
 // attach state and terminates the host process (issue #165). A nested dispatch
 // therefore skips every callback and executes the original syscall only.
 //
-// initial-exec TLS is required (the same model the trap uprobe backend uses):
-// the default global-dynamic model resolves the variable through
-// __tls_get_addr on first access, and that resolver can call malloc. When
-// malloc itself is probed, the first touch from a new thread re-enters the
-// probe while TLS is being initialized and crashes. initial-exec addresses the
-// variable at a fixed thread-pointer offset with no runtime allocation, so
-// probing malloc stays safe.
-#if defined(__linux__)
-__attribute__((tls_model("initial-exec")))
-#endif
+// Use the default (global-dynamic) thread_local model, matching the existing
+// attach TLS in base_attach_impl.hpp which is already exercised on the malloc
+// uprobe path. An initial-exec model adds a static-TLS requirement to this
+// translation unit that conflicts with AddressSanitizer's TLS when the agent
+// is preloaded, and a namespace-scope pthread_atfork adds a dynamic load-time
+// constructor; neither is needed because the production dispatch path never
+// forks. Keeping only this zero-initialized POD avoids every load-time side
+// effect while still making nested dispatch deterministic.
 static thread_local int syscall_dispatch_depth = 0;
-
-#ifdef __linux__
-// A fork() that happens while a callback is dispatching would make the child
-// inherit a non-zero depth even though the parent dispatch frame never returns
-// there, which would silence all tracing in the child. Reset it after fork.
-static const int syscall_dispatch_atfork_status =
-	pthread_atfork(nullptr, nullptr, [] { syscall_dispatch_depth = 0; });
-#endif
 
 struct dispatch_depth_guard {
 	bool nested;
@@ -50,9 +39,7 @@ struct dispatch_depth_guard {
 	}
 	~dispatch_depth_guard()
 	{
-		// atfork may have reset the inherited frame in the child.
-		if (syscall_dispatch_depth > 0)
-			--syscall_dispatch_depth;
+		--syscall_dispatch_depth;
 	}
 };
 
