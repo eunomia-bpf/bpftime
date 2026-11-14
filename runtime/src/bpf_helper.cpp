@@ -838,7 +838,7 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 			  uint64_t flags, uint64_t)
 {
 	if (!(flags & BPF_F_USER_STACK)) {
-		SPDLOG_ERROR(
+		SPDLOG_DEBUG(
 			"bpftime_get_stack only supports collect user stack!");
 		return -ENOTSUP;
 	}
