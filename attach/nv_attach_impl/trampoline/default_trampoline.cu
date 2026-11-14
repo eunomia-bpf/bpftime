@@ -523,7 +523,7 @@ _bpf_helper_ext_0511(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 }
 
 extern "C" __noinline__ __device__ uint64_t
-_bpf_helper_ext_0512(uint64_t addr, uint64_t, uint64_t, uint64_t, uint64_t)
+_bpf_helper_ext_0514(uint64_t addr, uint64_t, uint64_t, uint64_t, uint64_t)
 {
 	asm volatile("prefetch.global.L2 [%0];" ::"l"(addr));
 	return 0;

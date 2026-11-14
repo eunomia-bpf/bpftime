@@ -29,7 +29,7 @@ struct {
 static const u64 (*bpf_get_block_idx)(u64 *x, u64 *y, u64 *z) = (void *)503;
 static const u64 (*bpf_get_block_dim)(u64 *x, u64 *y, u64 *z) = (void *)504;
 static const u64 (*bpf_get_thread_idx)(u64 *x, u64 *y, u64 *z) = (void *)505;
-static const u64 (*bpf_prefetch_l2)(const void *addr) = (void *)512;
+static const u64 (*bpf_prefetch_l2)(const void *addr) = (void *)514;
 
 SEC("uprobe/./prefetch_example:launch_run_seq_kernel")
 int BPF_UPROBE(uprobe_func, struct RunSeqConfig *arg1)

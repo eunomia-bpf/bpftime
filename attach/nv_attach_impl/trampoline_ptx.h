@@ -1876,19 +1876,19 @@ $L__BB11_8:
 	ret;
                                         // -- End function
 }
-	// .globl	_bpf_helper_ext_0512    // -- Begin function _bpf_helper_ext_0512
-.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0512(
-	.param .b64 _bpf_helper_ext_0512_param_0,
-	.param .b64 _bpf_helper_ext_0512_param_1,
-	.param .b64 _bpf_helper_ext_0512_param_2,
-	.param .b64 _bpf_helper_ext_0512_param_3,
-	.param .b64 _bpf_helper_ext_0512_param_4
-)                                       // @_bpf_helper_ext_0512
+	// .globl	_bpf_helper_ext_0514    // -- Begin function _bpf_helper_ext_0514
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0514(
+	.param .b64 _bpf_helper_ext_0514_param_0,
+	.param .b64 _bpf_helper_ext_0514_param_1,
+	.param .b64 _bpf_helper_ext_0514_param_2,
+	.param .b64 _bpf_helper_ext_0514_param_3,
+	.param .b64 _bpf_helper_ext_0514_param_4
+)                                       // @_bpf_helper_ext_0514
 {
 	.reg .b64 	%rd<3>;
 
 // %bb.0:
-	ld.param.u64 	%rd1, [_bpf_helper_ext_0512_param_0];
+	ld.param.u64 	%rd1, [_bpf_helper_ext_0514_param_0];
 	// begin inline asm
 	prefetch.global.L2 [%rd1];
 	// end inline asm

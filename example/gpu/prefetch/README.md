@@ -11,8 +11,9 @@ The BPF program attaches to two points:
 - `kprobe/_Z16seq_chunk_kernelPKfPfmmimi` runs on the GPU and prefetches input
   and output pages for each CUDA thread before `seq_chunk_kernel` accesses them.
 
-The prefetch helper is registered as GPU helper ID 512. Helper IDs 509, 510,
-and 511 are reserved for SM, warp, and lane ID helpers.
+The prefetch helper is registered as GPU helper ID 514. Helper IDs 509, 510,
+and 511 are reserved for SM, warp, and lane ID helpers; IDs 512 and 513
+are reserved for PTX register capture and register-count helpers.
 
 ## Build
 
