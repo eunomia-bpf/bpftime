@@ -19,7 +19,6 @@
 #include <pthread.h>
 #elif __linux__
 #include <pthread.h>
-#include <fcntl.h>
 #include <sys/syscall.h>
 #include <sys/uio.h>
 #endif
@@ -216,33 +215,28 @@ static int get_host_nspid(const char *procfs, const char *entry, int fallback)
 	int length = snprintf(path, sizeof(path), "%s/%s/status", procfs, entry);
 	if (length < 0 || static_cast<size_t>(length) >= sizeof(path))
 		return fallback;
-	int fd = open(path, O_RDONLY | O_CLOEXEC);
-	if (fd < 0)
+	FILE *file = fopen(path, "re");
+	if (file == nullptr)
 		return fallback;
-	char content[2048];
-	ssize_t size;
-	do {
-		size = read(fd, content, sizeof(content) - 1);
-	} while (size < 0 && errno == EINTR);
-	close(fd);
-	if (size <= 0)
-		return fallback;
-	content[size] = '\0';
+	char *line = nullptr;
+	size_t capacity = 0;
 	int result = fallback;
-	for (char *line = content; line != nullptr;) {
-		char *next = strchr(line, '\n');
-		if (next != nullptr)
-			*next++ = '\0';
-		if (strncmp(line, "NSpid:", 6) == 0) {
-			char *end = nullptr;
-			long value = strtol(line + 6, &end, 10);
-			if (end != line + 6 && value > 0 &&
-			    value <= 2147483647L)
-				result = static_cast<int>(value);
-			break;
-		}
-		line = next;
+	// Groups can be arbitrarily long and precedes NSpid in procfs.
+	// getline also avoids accepting a PID truncated at a read boundary.
+	while (getline(&line, &capacity, file) >= 0) {
+		if (strncmp(line, "NSpid:", 6) != 0)
+			continue;
+		char *end = nullptr;
+		errno = 0;
+		long value = strtol(line + 6, &end, 10);
+		if (errno == 0 && end != line + 6 && value > 0 &&
+		    value <= INT32_MAX && (*end == ' ' || *end == '\t' ||
+					  *end == '\n' || *end == '\0'))
+			result = static_cast<int>(value);
+		break;
 	}
+	free(line);
+	fclose(file);
 	return result;
 }
 static thread_local uint64_t bpftime_cached_host_identity = 0;

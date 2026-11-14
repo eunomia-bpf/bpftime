@@ -102,7 +102,13 @@ TEST_CASE("PID namespace identity translates on cache fill and refreshes on fork
 	BOOST_SCOPE_EXIT_ALL(=) { std::filesystem::remove_all(root); };
 	std::filesystem::create_directory(root / "self");
 	std::filesystem::create_directory(root / "thread-self");
-	std::ofstream(root / "self/status") << "Name:\ttest\nNSpid:\t40001\t1\n";
+	{
+		std::ofstream status(root / "self/status");
+		status << "Groups:";
+		for (int i = 0; i < 1024; ++i)
+			status << " 12345";
+		status << "\nNSpid:\t40001\t1\n";
+	}
 	std::ofstream(root / "thread-self/status") << "NSpid:\t40002\t2\n";
 	pid_t child = fork();
 	REQUIRE(child >= 0);
