@@ -28,6 +28,9 @@ concurrency:
 
 env:
   BPFTIME_VM_NAME: llvm
+  # Pass/compiler paths are baked into binaries; keep this absolute build
+  # prefix identical when the artifact is downloaded on another runner.
+  BPFTIME_GPU_BUILD_DIR: /tmp/bpftime-gpu-${{ github.run_id }}-${{ github.run_attempt }}
 
 jobs:
   # Runs on a generic (non-GPU) runner and decides whether the GPU jobs are
@@ -230,14 +233,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cmake -B build -S . \
+          cmake -B "$BPFTIME_GPU_BUILD_DIR" -S . \
             -DCMAKE_BUILD_TYPE=Debug \
             -DBPFTIME_LLVM_JIT=YES \
             -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
             -DBPFTIME_CUDA_ROOT="${BPFTIME_CUDA_ROOT:-/usr/local/cuda}" \
             -DLLVM_DIR="${LLVM_DIR}" \
             -G Ninja
-          cmake --build build --config Debug --target bpftime-agent bpftime-syscall-server bpftime-cli-cpp bpftimetool bpftime_text_segment_transformer nv_attach_impl_ptx_compiler ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture -j"$(nproc)"
+          cmake --build "$BPFTIME_GPU_BUILD_DIR" --config Debug --target bpftime-agent bpftime-syscall-server bpftime-cli-cpp bpftimetool bpftime_text_segment_transformer nv_attach_impl_ptx_compiler ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture -j"$(nproc)"
 
       - name: Upload bpftime build artifact
         uses: actions/upload-artifact@v4
@@ -246,12 +249,17 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           path: |
-            build/runtime/agent/libbpftime-agent.so
-            build/runtime/syscall-server/libbpftime-syscall-server.so
-            build/tools/cli/bpftime
-            build/tools/bpftimetool/bpftimetool
-            build/attach/text_segment_transformer
-            build/attach/nv_attach_impl
+            ${{ env.BPFTIME_GPU_BUILD_DIR }}/runtime/agent/libbpftime-agent.so
+            ${{ env.BPFTIME_GPU_BUILD_DIR }}/runtime/syscall-server/libbpftime-syscall-server.so
+            ${{ env.BPFTIME_GPU_BUILD_DIR }}/tools/cli/bpftime
+            ${{ env.BPFTIME_GPU_BUILD_DIR }}/tools/bpftimetool/bpftimetool
+            ${{ env.BPFTIME_GPU_BUILD_DIR }}/attach/text_segment_transformer
+            ${{ env.BPFTIME_GPU_BUILD_DIR }}/attach/nv_attach_impl
+
+      - name: Remove portable GPU artifact directory
+        if: always()
+        shell: bash
+        run: rm -rf -- "$BPFTIME_GPU_BUILD_DIR"
 
   test-gpu-examples:
     needs: [build-bpftime-gpu]
@@ -388,91 +396,21 @@ jobs:
           rm -rf third_party/bpftool/libbpf
           git submodule update --init --recursive third_party/bpftool
 
+      - name: Prepare portable GPU artifact directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$BPFTIME_GPU_BUILD_DIR"
+          ln -s "$BPFTIME_GPU_BUILD_DIR" build
+
       - name: Download bpftime build artifact
         uses: actions/download-artifact@v4
         with:
           name: bpftime-gpu-build
-          path: bpftime-artifact
+          path: ${{ env.BPFTIME_GPU_BUILD_DIR }}
           merge-multiple: true
           if-no-artifact-found: error
 
-      - name: Normalize bpftime artifact layout
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Depending on download-artifact version/config, contents may be placed under a
-          # top-level directory named after the artifact or have 'build/' stripped.
-          ART_ROOT="bpftime-artifact"
-          if [ ! -d "$ART_ROOT" ]; then
-            echo "Artifact download directory not found: $ART_ROOT"
-            ls -la
-            exit 1
-          fi
-
-          rm -rf build
-
-          if [ -d "$ART_ROOT/build" ]; then
-            mv "$ART_ROOT/build" build
-          elif [ -d "$ART_ROOT/bpftime-gpu-build/build" ]; then
-            mv "$ART_ROOT/bpftime-gpu-build/build" build
-          fi
-
-          # If upload-artifact chose 'build/' as the artifact root, downloaded files look like:
-          #   bpftime-artifact/runtime/..., bpftime-artifact/tools/..., bpftime-artifact/attach/...
-          if [ -d "$ART_ROOT/runtime" ] || [ -d "$ART_ROOT/tools" ] || [ -d "$ART_ROOT/attach" ]; then
-            mkdir -p build
-            for d in runtime tools attach; do
-              if [ -d "$ART_ROOT/$d" ]; then
-                mkdir -p "build/$d"
-                cp -a "$ART_ROOT/$d/." "build/$d/"
-              fi
-            done
-          fi
-
-          # Directory inputs can also be extracted without the leading attach/
-          # component. Put those directories back where the GPU tests expect them.
-          for d in text_segment_transformer nv_attach_impl; do
-            if [ -d "$ART_ROOT/$d" ]; then
-              mkdir -p "build/attach/$d"
-              cp -a "$ART_ROOT/$d/." "build/attach/$d/"
-            fi
-          done
-
-          if [ -d build ]; then
-            echo "Found build/ in workspace."
-            exit 0
-          fi
-
-          # Fallback: search for a known file and infer BUILD_DIR inside artifact root.
-          AGENT_PATH="$(find "$ART_ROOT" -maxdepth 10 -type f -path "*/runtime/agent/libbpftime-agent.so" -print -quit || true)"
-          if [ -n "$AGENT_PATH" ]; then
-            BUILD_DIR="$(cd "$(dirname "$AGENT_PATH")/../.." && pwd)"
-            # If BUILD_DIR ends with /runtime, go one level up.
-            if [ "$(basename "$BUILD_DIR")" = "runtime" ]; then
-              BUILD_DIR="$(cd "$BUILD_DIR/.." && pwd)"
-            fi
-            mkdir -p build
-            # Copy runtime/tools/attach from inferred root if present.
-            for d in runtime tools attach; do
-              if [ -d "$BUILD_DIR/$d" ]; then
-                mkdir -p "build/$d"
-                cp -a "$BUILD_DIR/$d/." "build/$d/"
-              fi
-            done
-          fi
-
-          if [ ! -d build ]; then
-            echo "Downloaded artifact but could not locate a build/ directory."
-            echo "Artifact root entries:"; ls -la "$ART_ROOT" || true
-            echo "Artifact tree (depth=4):"; find "$ART_ROOT" -maxdepth 4 -mindepth 1 -print || true
-            echo "Search for key files (depth=10):"
-            find "$ART_ROOT" -maxdepth 10 -type f \( \
-              -name 'libbpftime-agent.so' -o \
-              -name 'libbpftime-syscall-server.so' -o \
-              -name 'bpftimetool' \
-            \) -print || true
-            exit 1
-          fi
 
       - name: Detect CUDA root and export env
         shell: bash
@@ -888,3 +826,8 @@ jobs:
             server.log
             client.log
             tool.log
+
+      - name: Remove portable GPU artifact directory
+        if: always()
+        shell: bash
+        run: rm -rf -- "$BPFTIME_GPU_BUILD_DIR"
