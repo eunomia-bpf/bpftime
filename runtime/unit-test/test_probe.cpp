@@ -320,7 +320,7 @@ TEST_CASE("Probe reads preserve default host signal dispositions", "[probe-defau
 		if (setenv("BPFTIME_PROBE_DISPOSITION_TEST_CHILD", "1", 1) != 0)
 			_exit(5);
 		execl("/proc/self/exe", "probe-disposition-test",
-		      "[probe-default-signal-disposition]", (char *)nullptr);
+		      "Probe reads preserve default host signal dispositions", (char *)nullptr);
 		_exit(6);
 	}
 	int status = 0;
