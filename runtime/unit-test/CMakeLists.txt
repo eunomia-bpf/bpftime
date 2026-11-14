@@ -36,6 +36,7 @@ set(TEST_SOURCES
     test_probe.cpp
     test_get_current_pid_tgid.cpp
     test_get_stack.cpp
+    test_tracepoint_id.cpp
     test_config.cpp
     test_shm_allocation_failure.cpp
     test_software_perf_event.cpp
@@ -69,6 +70,12 @@ option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_sources(bpftime_runtime_tests PRIVATE
+        ../syscall-server/syscall_server_utils.cpp
+        ../syscall-server/syscall_context.cpp)
+    target_include_directories(bpftime_runtime_tests PRIVATE ../syscall-server)
+    target_link_libraries(bpftime_runtime_tests PRIVATE bpftime_syscall_trace_attach_impl ${CMAKE_DL_LIBS})
+    target_link_options(bpftime_runtime_tests PRIVATE -Wl,--wrap=dlsym)
     target_sources(bpftime_runtime_tests PRIVATE
         test_get_current_uid_gid.cpp
         test_get_current_comm.cpp)
