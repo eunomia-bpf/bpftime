@@ -62,6 +62,11 @@ jobs:
           linux-headers-generic linux-tools-generic \
           $(apt-cache show linux-headers-$(uname -r) >/dev/null 2>&1 && echo linux-headers-$(uname -r)) \
           libelf-dev procps gnupg gnupg-agent pinentry-curses dirmngr
+          # bpftrace 0.14 here takes tracepoint argument types from kernel headers;
+          # without headers for the running kernel it reads the generic ones above.
+          if [ ! -d "/lib/modules/$(uname -r)/build" ]; then
+            echo "BPFTRACE_KERNEL_SOURCE=$(ls -d /usr/src/linux-headers-*-generic | sort -V | tail -n 1)" >> "$GITHUB_ENV"
+          fi
 
           mkdir -p ~/.gnupg
           echo "allow-loopback-pinentry" > ~/.gnupg/gpg-agent.conf
@@ -391,6 +396,11 @@ jobs:
             linux-headers-generic linux-tools-generic \
             $(apt-cache show linux-headers-$(uname -r) >/dev/null 2>&1 && echo linux-headers-$(uname -r)) \
             libelf-dev libssl-dev procps gnupg gnupg-agent pinentry-curses dirmngr
+          # bpftrace 0.14 here takes tracepoint argument types from kernel headers;
+          # without headers for the running kernel it reads the generic ones above.
+          if [ ! -d "/lib/modules/$(uname -r)/build" ]; then
+            echo "BPFTRACE_KERNEL_SOURCE=$(ls -d /usr/src/linux-headers-*-generic | sort -V | tail -n 1)" >> "$GITHUB_ENV"
+          fi
 
           # Setup GPG agent for Codecov
           mkdir -p ~/.gnupg
@@ -754,6 +764,11 @@ jobs:
             linux-headers-generic linux-tools-generic \
             $(apt-cache show linux-headers-$(uname -r) >/dev/null 2>&1 && echo linux-headers-$(uname -r)) \
             libelf-dev procps gnupg gnupg-agent pinentry-curses dirmngr
+          # bpftrace 0.14 here takes tracepoint argument types from kernel headers;
+          # without headers for the running kernel it reads the generic ones above.
+          if [ ! -d "/lib/modules/$(uname -r)/build" ]; then
+            echo "BPFTRACE_KERNEL_SOURCE=$(ls -d /usr/src/linux-headers-*-generic | sort -V | tail -n 1)" >> "$GITHUB_ENV"
+          fi
 
           echo "==== System Information ===="; uname -a && cat /etc/os-release
           echo "==== Checking bpftrace ===="
