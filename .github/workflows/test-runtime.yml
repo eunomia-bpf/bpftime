@@ -190,9 +190,16 @@ jobs:
           echo "ASAN_SONAME=$ASAN_SONAME" >> "$LOG"
           SRV_PRELOAD="$SERVER_LIB"
           VICT_PRELOAD="$AGENT_LIB"
+          # Match GCC sanitizer preloading to each produced ELF's dependencies.
+          SRV_DEPS=$(readelf -d "$SERVER_LIB")
+          VICT_DEPS=$(readelf -d "$AGENT_LIB")
           if [ -n "${ASAN_SONAME:-}" ] && [ -f "$ASAN_SONAME" ]; then
-            SRV_PRELOAD="$ASAN_SONAME:$SRV_PRELOAD"
-            VICT_PRELOAD="$ASAN_SONAME:$VICT_PRELOAD"
+            if grep -q '(NEEDED).*\[libasan\.so' <<< "$SRV_DEPS"; then
+              SRV_PRELOAD="$ASAN_SONAME:$SRV_PRELOAD"
+            fi
+            if grep -q '(NEEDED).*\[libasan\.so' <<< "$VICT_DEPS"; then
+              VICT_PRELOAD="$ASAN_SONAME:$VICT_PRELOAD"
+            fi
           fi
           echo "SERVER LD_PRELOAD=$SRV_PRELOAD" >> "$LOG"
           echo "VICTIM LD_PRELOAD=$VICT_PRELOAD" >> "$LOG"
