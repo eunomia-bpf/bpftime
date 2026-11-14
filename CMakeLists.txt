@@ -162,11 +162,8 @@ if(NOT DEFINED SPDLOG_ACTIVE_LEVEL)
   # development, while optimized builds drop DEBUG/TRACE from hot paths (BPF
   # program execution, syscall/attach callbacks), where formatting the log
   # arguments would otherwise run on every event even when logging is off.
-  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE)
-  else()
-    set(SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_INFO)
-  endif()
+  set(SPDLOG_ACTIVE_LEVEL
+      "$<IF:$<CONFIG:Debug>,SPDLOG_LEVEL_TRACE,SPDLOG_LEVEL_INFO>")
   message(STATUS "Setting SPDLOG_ACTIVE_LEVEL to ${SPDLOG_ACTIVE_LEVEL}")
 endif()
 add_compile_definitions(SPDLOG_ACTIVE_LEVEL=${SPDLOG_ACTIVE_LEVEL})
