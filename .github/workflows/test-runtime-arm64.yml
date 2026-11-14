@@ -1,0 +1,75 @@
+name: Build and test runtime on arm64
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["master"]
+    paths: &runtime_paths
+      - ".github/workflows/test-runtime-arm64.yml"
+      - "attach/**"
+      - "runtime/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
+  pull_request:
+    branches: ["master"]
+    paths: *runtime_paths
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  BPFTIME_VM_NAME: llvm
+
+jobs:
+  runtime-arm64:
+    # An ephemeral arm64 runner in a gVisor sandbox (Ubuntu 24.04 image): the
+    # build and the runtime unit tests run natively on aarch64. The sandbox
+    # has no tracefs, kprobes, uprobes or kernel BPF; jobs that need them run
+    # on the x86-64 VM runners.
+    runs-on: [self-hosted, linux, arm64, sandbox]
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            build-essential cmake ninja-build pkg-config git python3 \
+            llvm-18-dev clang-18 libelf-dev zlib1g-dev libzstd-dev \
+            libboost-all-dev libssl-dev
+      - name: Enlarge /dev/shm
+        # boost.interprocess maps the runtime's shared memory here. The runner
+        # provides a large /dev/shm; remount only one smaller than 1 GiB.
+        run: |
+          if [ "$(df -k --output=size /dev/shm | tail -1)" -lt 1048576 ]; then
+            sudo mount -o remount,size=1G /dev/shm
+          fi
+          df -h /dev/shm
+      - name: Build runtime tests
+        run: |
+          cmake -G Ninja -B build \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES \
+            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF -DBUILD_BPFTIME_DAEMON=OFF \
+            -DLLVM_DIR="$(llvm-config-18 --cmakedir)"
+          cmake --build build --target bpftime_runtime_tests -j2
+      - name: Test runtime
+        # Left out under the gVisor sandbox, and run on the x86-64 runners:
+        # the tests that patch code at run time (frida and trap attach, all of
+        # attach_with_ebpf/), which crashed with SIGSEGV at random under the
+        # sandbox and pass on the same aarch64 host outside it, and the
+        # user-to-kernel tail call, which needs the kernel's BPF.
+        run: |
+          ./build/runtime/unit-test/bpftime_runtime_tests -# \
+            "~[#test_attach_filter_with_ebpf]" \
+            "~[#test_attach_replace]" \
+            "~[#test_attach_uprobe_with_ebpf]" \
+            "~[#test_attach_uprobe_with_ebpf_trap]" \
+            "~[#test_shm_progs_attach]" \
+            "~[#test_user_to_kernel_tailcall]"
