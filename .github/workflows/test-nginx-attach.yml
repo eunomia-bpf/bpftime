@@ -31,7 +31,9 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    # Job containers run --privileged with the kernel's tracefs; every vm
+    # runner is its own VM, so they touch only that VM's kernel.
+    runs-on: [self-hosted, linux, x64, vm]
     container:
       image: debian:12
       options: --privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw

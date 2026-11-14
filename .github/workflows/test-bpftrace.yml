@@ -39,7 +39,9 @@ env:
 
 jobs:
   build-and-run-syscall-tracing-load-start-test:
-    runs-on: ubuntu-22.04
+    # Job containers run --privileged with the kernel's tracefs; every vm
+    # runner is its own VM, so they touch only that VM's kernel.
+    runs-on: [self-hosted, linux, x64, vm]
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
       options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
@@ -364,7 +366,9 @@ jobs:
           verbose: true
 
   build-and-run-malloc-example-test:
-    runs-on: ubuntu-22.04
+    # Job containers run --privileged with the kernel's tracefs; every vm
+    # runner is its own VM, so they touch only that VM's kernel.
+    runs-on: [self-hosted, linux, x64, vm]
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
       options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
@@ -723,7 +727,9 @@ jobs:
           verbose: true
 
   build-and-run-one-liners-test:
-    runs-on: ubuntu-22.04
+    # Job containers run --privileged with the kernel's tracefs; every vm
+    # runner is its own VM, so they touch only that VM's kernel.
+    runs-on: [self-hosted, linux, x64, vm]
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
       options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"

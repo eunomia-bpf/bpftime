@@ -36,7 +36,9 @@ jobs:
         container:
           - ubuntu-2204
           - fedora-39
-    runs-on: ubuntu-latest
+    # Job containers run --privileged with the kernel's tracefs; every vm
+    # runner is its own VM, so they touch only that VM's kernel.
+    runs-on: [self-hosted, linux, x64, vm]
     container:
       image: "manjusakalza/bpftime-base-image:${{matrix.container}}"
       options: --privileged
