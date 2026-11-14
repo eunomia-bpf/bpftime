@@ -620,28 +620,6 @@ std::optional<CUfunction> nv_attach_impl::find_patched_kernel_function(
 	return itr->second;
 }
 
-std::optional<CUfunction> nv_attach_impl::find_single_patched_kernel_function()
-	const
-{
-	std::lock_guard<std::mutex> guard(cuda_symbol_map_mutex);
-	if (patched_kernel_by_name.empty())
-		return std::nullopt;
-	CUfunction only = nullptr;
-	for (const auto &[_, func] : patched_kernel_by_name) {
-		if (func == nullptr)
-			continue;
-		if (only == nullptr) {
-			only = func;
-			continue;
-		}
-		if (only != func)
-			return std::nullopt;
-	}
-	if (only == nullptr)
-		return std::nullopt;
-	return only;
-}
-
 void nv_attach_impl::record_original_cufunction_name(
 	CUfunction function, const std::string &kernel_name)
 {
