@@ -144,3 +144,21 @@ TEST_CASE("get_stack rejects skips beyond the available trace")
 	REQUIRE(std::all_of(buffer.begin(), buffer.end(),
 			    [](uint64_t value) { return value == 0; }));
 }
+
+#include <boost/scope_exit.hpp>
+#include <spdlog/sinks/ostream_sink.h>
+#include <spdlog/spdlog.h>
+#include <sstream>
+
+TEST_CASE("get_stack unsupported kernel stacks do not log errors")
+{
+	std::ostringstream output;
+	auto previous = spdlog::default_logger();
+	BOOST_SCOPE_EXIT_ALL(=) { spdlog::set_default_logger(previous); };
+	auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(output);
+	auto logger = std::make_shared<spdlog::logger>("get_stack_test", sink);
+	logger->set_level(spdlog::level::err);
+	spdlog::set_default_logger(logger);
+	REQUIRE(bpftime_get_stack(0, 0, 0, 0, 0) == -ENOTSUP);
+	REQUIRE(output.str().empty());
+}
