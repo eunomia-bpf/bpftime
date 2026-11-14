@@ -43,6 +43,15 @@ static void poll_callback(const void *data, uint64_t size, void *ctx)
 {
 	struct state *state = (struct state *)ctx;
 	const struct data *event = data;
+	/* Keep the per-event "Thread (...)" line: the README and the two-process
+	 * CI grep for this contract. The aggregated count/nonzero statistics are
+	 * still accumulated and printed from main, so this does not revert the
+	 * sampling feature. Flush because stdout is fully buffered to a file and
+	 * the process may end on SIGKILL without normal cleanup. */
+	printf("Thread (%lu, %lu, %lu) timestamp: %lu\n",
+	       event->block_x, event->block_y, event->block_z,
+	       event->timestamp);
+	fflush(stdout);
 	state->count += 1;
 	state->nonzero_timestamps += event->timestamp != 0;
 }
