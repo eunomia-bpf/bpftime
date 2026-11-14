@@ -173,7 +173,7 @@ The runtime uses CMake with several build options:
    - Check helper function registration
    - Verify VM backend availability
 
-## PID namespace identity
+### PID namespace identity
 
 `bpf_get_current_pid_tgid` normally reports the calling process and thread IDs.
 Set `BPFTIME_HOST_PROCFS` to a procfs mount from the host PID namespace to
