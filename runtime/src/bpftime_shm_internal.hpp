@@ -180,12 +180,13 @@ class bpftime_shm {
 	std::uint64_t read_stable_epoch_seq(int max_tries = 200) const;
 	void lock_bpf_cpu(int cpu);
 	void unlock_bpf_cpu(int cpu);
-	// Bounded, exception-safe per-CPU lock used on the BPF hot path. Returns
-	// true when the lock was acquired within the deadline. On timeout or a
-	// shared-memory/locking error it returns false so the caller can degrade
-	// to skipping BPF execution instead of blocking forever
-	// or letting an exception escape into the host.
-	bool try_lock_bpf_cpu(int cpu);
+	// Blocking, exception-safe per-CPU lock used on the BPF hot path. It
+	// preserves the serialization semantics of lock() (waits through normal
+	// contention) but catches locking exceptions, returning false instead of
+	// letting one propagate through the Frida C trampoline into
+	// std::terminate. The caller skips BPF execution only on a locking
+	// error, never on ordinary contention.
+	bool acquire_bpf_cpu(int cpu);
 
 	const handler_variant &get_handler(int fd) const;
 	bool is_epoll_fd(int fd) const;

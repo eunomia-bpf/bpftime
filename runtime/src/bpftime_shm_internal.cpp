@@ -1026,35 +1026,30 @@ void bpftime_shm::unlock_bpf_cpu(int cpu)
 	}
 }
 
-bool bpftime_shm::try_lock_bpf_cpu(int cpu)
+bool bpftime_shm::acquire_bpf_cpu(int cpu)
 {
 	if (cpu_exec_locks == nullptr || cpu < 0 ||
 	    cpu >= BPFTIME_MAX_CPU_COUNT)
 		return false;
-	// The cross-process mutex is not robust and a plain lock() blocks
-	// indefinitely (and can throw) if the owning process died holding it.
-	// Bound the wait and surface failure so the hot path degrades instead
-	// of hanging the host thread or terminating it.
-	const auto deadline =
-		std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
-	do {
-		try {
-			if (cpu_exec_locks->locks[cpu].try_lock())
-				return true;
-		} catch (const std::exception &ex) {
-			SPDLOG_WARN("Unable to lock bpftime cpu {}: {}", cpu,
-				    ex.what());
-			return false;
-		} catch (...) {
-			SPDLOG_WARN("Unable to lock bpftime cpu {}", cpu);
-			return false;
-		}
-		std::this_thread::sleep_for(std::chrono::milliseconds(1));
-	} while (std::chrono::steady_clock::now() < deadline);
-	SPDLOG_WARN(
-		"Timed out locking bpftime cpu {}; skipping BPF execution",
-		cpu);
-	return false;
+	// Preserve the blocking serialization semantics of lock(): per-CPU
+	// correctness requires waiting for a normally-held lock even under
+	// contention, so a fixed timeout would spuriously skip valid BPF
+	// execution. The host-safety fix here is to contain locking
+	// exceptions, which otherwise propagate through the Frida C trampoline
+	// into std::terminate. A non-robust mutex whose owner died while
+	// holding it is a separate robustness concern that needs a robust
+	// mutex, not a timeout that also breaks ordinary contention.
+	try {
+		cpu_exec_locks->locks[cpu].lock();
+		return true;
+	} catch (const std::exception &ex) {
+		SPDLOG_WARN("Unable to lock bpftime cpu {}: {}", cpu,
+			    ex.what());
+		return false;
+	} catch (...) {
+		SPDLOG_WARN("Unable to lock bpftime cpu {}", cpu);
+		return false;
+	}
 }
 
 std::uint64_t bpftime_shm::read_stable_epoch_seq(int max_tries) const

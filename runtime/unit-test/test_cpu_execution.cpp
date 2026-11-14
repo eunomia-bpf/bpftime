@@ -123,7 +123,7 @@ TEST_CASE("BPF executions on one CPU are serialized", "[percpu][execution]")
 	REQUIRE(maximum_active_helpers == 0);
 }
 
-TEST_CASE("Per-CPU try-lock degrades instead of hanging or throwing",
+TEST_CASE("Per-CPU lock blocks through contention and releases cleanly",
 	  "[percpu][locking]")
 {
 	const std::string shm_name = "bpftime_cpu_lock_test_" +
@@ -146,21 +146,33 @@ TEST_CASE("Per-CPU try-lock degrades instead of hanging or throwing",
 	constexpr int cpu = 0;
 
 	// Uncontended acquisition succeeds and releases cleanly.
-	REQUIRE(shm.try_lock_bpf_cpu(cpu));
+	REQUIRE(shm.acquire_bpf_cpu(cpu));
 	shm.unlock_bpf_cpu(cpu);
 
-	// Hold the slot on this thread; a concurrent bounded attempt must give
-	// up (return false) rather than block forever or throw into the host.
+	// Under contention the lock must preserve per-CPU serialization: the
+	// contender blocks until the holder releases, then acquires it instead
+	// of spuriously skipping BPF execution on normal contention.
 	shm.lock_bpf_cpu(cpu);
-	std::atomic<bool> acquired{ true };
+	std::atomic<bool> contender_started{ false };
+	std::atomic<bool> contender_holds_lock{ false };
 	std::thread contender([&] {
-		acquired = shm.try_lock_bpf_cpu(cpu);
+		contender_started.store(true);
+		bool got = shm.acquire_bpf_cpu(cpu);
+		if (got) {
+			contender_holds_lock.store(true);
+			shm.unlock_bpf_cpu(cpu);
+		}
 	});
-	contender.join();
-	REQUIRE_FALSE(acquired.load());
+	while (!contender_started.load())
+		std::this_thread::yield();
+	// Give the contender time to block on the held lock.
+	std::this_thread::sleep_for(std::chrono::milliseconds(50));
+	REQUIRE_FALSE(contender_holds_lock.load());
 	shm.unlock_bpf_cpu(cpu);
+	contender.join();
+	REQUIRE(contender_holds_lock.load());
 
-	// After release the bounded lock is obtainable again.
-	REQUIRE(shm.try_lock_bpf_cpu(cpu));
+	// After handoff the slot is obtainable again.
+	REQUIRE(shm.acquire_bpf_cpu(cpu));
 	shm.unlock_bpf_cpu(cpu);
 }

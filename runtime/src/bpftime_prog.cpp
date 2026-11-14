@@ -67,7 +67,7 @@ class bpf_cpu_execution_guard {
 			});
 			return;
 		}
-		if (!shm_holder.global_shared_memory.try_lock_bpf_cpu(cpu)) {
+		if (!shm_holder.global_shared_memory.acquire_bpf_cpu(cpu)) {
 			const int cpu_for_log = cpu;
 			warn_throttled([cpu_for_log] {
 				SPDLOG_WARN(
