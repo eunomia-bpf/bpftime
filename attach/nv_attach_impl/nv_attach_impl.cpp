@@ -468,32 +468,8 @@ nv_attach_impl::nv_attach_impl()
 		(gpointer)&cuda_runtime_function__cudaMemcpyFromSymbolAsync,
 		hook_state.orig_cuda_memcpy_from_symbol_async);
 	gum_interceptor_end_transaction(interceptor);
-	} catch (...) {
-		// A hook registration or replacement failed mid-transaction.
-		// Leaving the Frida transaction open makes the next transaction
-		// assert (SIGTRAP with a core dump, the host crash in issue
-		// #409). Close the transaction and detach every hook installed
-		// through this listener, then mark the instance inert and
-		// rethrow so the agent boundary fails open without terminating
-		// the host.
-		enabled.store(false, std::memory_order_release);
-		try {
-			if (transaction_open) {
-				gum_interceptor_end_transaction(interceptor);
-				gum_interceptor_begin_transaction(interceptor);
-				gum_interceptor_detach(
-					interceptor,
-					(GumInvocationListener *)listener);
-				gum_interceptor_end_transaction(interceptor);
-			}
-		} catch (...) {
-		}
-		g_object_unref(listener);
-		frida_listener = nullptr;
-		throw;
-	}
+	transaction_open = false;
 
-	nv_attach_set_active_impl(this);
 	this->original_cuda_launch_kernel =
 		hook_state.orig_cuda_launch_kernel.load(
 			std::memory_order_acquire);
@@ -585,9 +561,30 @@ nv_attach_impl::nv_attach_impl()
 				handle));
 	}
 	{
-		this->ptx_compiler = *load_nv_attach_impl_ptx_compiler(
+		auto compiler = load_nv_attach_impl_ptx_compiler(
 			DEFAULT_PTX_COMPILER_SHARED_LIB,
 			this->ptx_compiler_dl_handle);
+		if (!compiler)
+			throw std::runtime_error("Unable to load PTX compiler");
+		this->ptx_compiler = *compiler;
+	}
+	nv_attach_set_active_impl(this);
+	} catch (...) {
+		// Initialization may fail after hooks were committed. Detach the
+		// listener before constructor unwinding destroys its contexts.
+		enabled.store(false, std::memory_order_release);
+		try {
+			if (transaction_open)
+				gum_interceptor_end_transaction(interceptor);
+			gum_interceptor_begin_transaction(interceptor);
+			gum_interceptor_detach(
+				interceptor, (GumInvocationListener *)listener);
+			gum_interceptor_end_transaction(interceptor);
+		} catch (...) {
+		}
+		g_object_unref(listener);
+		frida_listener = nullptr;
+		throw;
 	}
 }
 
