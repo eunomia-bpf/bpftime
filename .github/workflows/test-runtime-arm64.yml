@@ -65,5 +65,8 @@ jobs:
         # host outside the sandbox both pass, and the x86-64 runners run them.
         # The internal-function section of the uprobe test still runs here.
         run: |
-          ./build/runtime/unit-test/bpftime_runtime_tests             "~Test tail calling from userspace to kernel"             "~Test probing internal functions"
-          ./build/runtime/unit-test/bpftime_runtime_tests             "Test probing internal functions" -c "Test probing internal functions"
+          ./build/runtime/unit-test/bpftime_runtime_tests \
+            "~Test tail calling from userspace to kernel" \
+            "~Test probing internal functions"
+          ./build/runtime/unit-test/bpftime_runtime_tests \
+            "Test probing internal functions" -c "Test probing internal functions"
