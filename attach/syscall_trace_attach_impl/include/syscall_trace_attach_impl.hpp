@@ -49,6 +49,24 @@ struct syscall_trace_attach_entry {
 extern std::optional<class syscall_trace_attach_impl *>
 	global_syscall_trace_attach_impl;
 
+// Re-entrancy depth for syscall dispatch. A userspace program that attaches
+// its own tracepoint issues bpf()/tracepoint syscalls from inside the process
+// whose syscalls are already dispatched; this thread-local depth lets the
+// nested dispatch skip the callbacks and run only the original syscall.
+//
+// It is an `inline thread_local` with the initial-exec TLS model, identical to
+// current_signal_callback/signal_handler_depth in base_attach_impl.hpp. That
+// folds to a direct %fs (static-TLS) access at link time, so the per-syscall
+// hot path makes no __tls_get_addr call. A dynamic-TLS call at this frequency
+// (the bpftrace raw_syscalls tracepoint on a tight read/write loop) crashes
+// inside the dlmopen link namespace used by the text segment transformer.
+// initial-exec is proven safe on this exact load path by the two existing
+// base_attach_impl variables that ship in the same agent shared object.
+#if defined(__linux__)
+__attribute__((tls_model("initial-exec")))
+#endif
+inline thread_local int syscall_dispatch_depth = 0;
+
 // Used by text segment transformer to setup syscall callback
 // Text segment transformer should provide a pointer to its syscall executor
 // function. syscall trace attach impl will save the original syscall function,

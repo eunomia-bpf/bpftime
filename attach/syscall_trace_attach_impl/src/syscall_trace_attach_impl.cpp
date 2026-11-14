@@ -15,22 +15,10 @@ namespace attach
 {
 std::optional<syscall_trace_attach_impl *> global_syscall_trace_attach_impl;
 
-// Dispatch depth of the current thread. A userspace program that loads and
-// attaches its own eBPF program issues the bpf()/tracepoint syscalls from the
-// same process whose syscalls are already being dispatched. Re-entering the
-// callback machinery from such a nested syscall recurses into half-initialized
-// attach state and terminates the host process (issue #165). A nested dispatch
-// therefore skips every callback and executes the original syscall only.
-//
-// Use the default (global-dynamic) thread_local model, matching the existing
-// attach TLS in base_attach_impl.hpp which is already exercised on the malloc
-// uprobe path. An initial-exec model adds a static-TLS requirement to this
-// translation unit that conflicts with AddressSanitizer's TLS when the agent
-// is preloaded, and a namespace-scope pthread_atfork adds a dynamic load-time
-// constructor; neither is needed because the production dispatch path never
-// forks. Keeping only this zero-initialized POD avoids every load-time side
-// effect while still making nested dispatch deterministic.
-static thread_local int syscall_dispatch_depth = 0;
+// syscall_dispatch_depth is an inline thread_local declared in the header so
+// it is folded to a direct %fs access at link time, with no per-syscall
+// __tls_get_addr call in this hot path. See the header declaration for the
+// full rationale (issue #165 nested dispatch).
 
 struct dispatch_depth_guard {
 	bool nested;
