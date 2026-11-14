@@ -242,18 +242,23 @@ static void start_go_seccomp_workers()
 		std::thread([] {
 			int listener;
 			while ((listener = go_seccomp_listener.load(
-					std::memory_order_acquire)) < 0)
+					std::memory_order_acquire)) < 0) {
+				if (listener == -2)
+					return; // installation failed before publishing a listener
 				std::this_thread::yield();
+			}
 			for (;;) {
+				struct seccomp_notif request = {};
+				struct seccomp_notif_resp response = {};
+				bool received = false;
 				try {
-					struct seccomp_notif request = {};
-					struct seccomp_notif_resp response = {};
 					if (ioctl(listener, SECCOMP_IOCTL_NOTIF_RECV,
 						  &request) < 0) {
 						if (errno == EINTR || errno == ENOENT)
 							continue;
 						return;
 					}
+					received = true;
 					int64_t args[] = {
 						(int64_t)request.data.nr,
 						(int64_t)request.data.args[0],
@@ -282,18 +287,18 @@ static void start_go_seccomp_workers()
 							break;
 						}
 					}
-				} catch (const std::exception &ex) {
-					// dispatch_seccomp_syscall allocates; an escaping
-					// exception would terminate the host. Exit this worker
-					// cleanly instead; the remaining workers keep serving.
-					SPDLOG_ERROR(
-						"seccomp worker exiting after exception: {}",
-						ex.what());
-					return;
 				} catch (...) {
-					SPDLOG_ERROR(
-						"seccomp worker exiting after unknown exception");
-					return;
+					// An acquired notification still blocks its host thread.
+					// If emulation fails, ask the kernel to run the original
+					// syscall instead of abandoning that thread indefinitely.
+					if (received) {
+						response = {};
+						response.id = request.id;
+						response.flags = SECCOMP_USER_NOTIF_FLAG_CONTINUE;
+						while (ioctl(listener, SECCOMP_IOCTL_NOTIF_SEND,
+							     &response) < 0 && errno == EINTR) {
+						}
+					}
 				}
 			}
 		}).detach();
@@ -343,12 +348,16 @@ static bool setup_go_seccomp_tracer()
 		.len = (unsigned short)(sizeof(filter) / sizeof(filter[0])),
 		.filter = filter,
 	};
-	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0)
+	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0) {
+		go_seccomp_listener.store(-2, std::memory_order_release);
 		return false;
+	}
 	int listener = (int)syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER,
 				    SECCOMP_FILTER_FLAG_NEW_LISTENER, &program);
-	if (listener < 0)
+	if (listener < 0) {
+		go_seccomp_listener.store(-2, std::memory_order_release);
 		return false;
+	}
 	go_seccomp_listener.store(listener, std::memory_order_release);
 	SPDLOG_INFO("Using rootless seccomp notification for Go syscalls");
 	return true;
