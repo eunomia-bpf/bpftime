@@ -44,8 +44,13 @@ jobs:
             llvm-18-dev clang-18 libelf-dev zlib1g-dev libzstd-dev \
             libboost-all-dev libssl-dev
       - name: Enlarge /dev/shm
-        # boost.interprocess maps the runtime's shared memory here.
-        run: sudo mount -o remount,size=1G /dev/shm
+        # boost.interprocess maps the runtime's shared memory here. The runner
+        # provides a large /dev/shm; remount only one smaller than 1 GiB.
+        run: |
+          if [ "$(df -k --output=size /dev/shm | tail -1)" -lt 1048576 ]; then
+            sudo mount -o remount,size=1G /dev/shm
+          fi
+          df -h /dev/shm
       - name: Build runtime tests
         run: |
           cmake -G Ninja -B build \
