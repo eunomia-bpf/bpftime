@@ -226,8 +226,11 @@ jobs:
           fi
 
           # Execute command
-          sudo -E $LD_PRELOAD_CMD cat build/install_manifest.txt | tee "$CLIENT_LOG"
-          CAT_EXIT_CODE=$?
+          # Capture the real client status: without this, a pipeline to tee
+          # makes $? reflect tee (0 when tee itself succeeds), masking a crashing client.
+          CAT_EXIT_CODE=0
+          sudo -E $LD_PRELOAD_CMD cat build/install_manifest.txt > "$CLIENT_LOG" 2>&1 || CAT_EXIT_CODE=$?
+          cat "$CLIENT_LOG"
 
           # Wait for server to process events
           echo "Waiting for server to process events..."
@@ -588,8 +591,11 @@ jobs:
 
           # Execute victim program, using timeout command to limit running time to 5 seconds
           echo "Running victim program with 5 second timeout..."
-          sudo -E timeout 5s $LD_PRELOAD_CMD ./example/malloc/victim | tee "$CLIENT_LOG"
-          VICTIM_EXIT_CODE=$?
+          # Same pipeline-masking fix: read timeout/victim's own status, not
+          # tee's, so the expected 124 (and any real crash) is observed.
+          VICTIM_EXIT_CODE=0
+          sudo -E timeout 5s $LD_PRELOAD_CMD ./example/malloc/victim > "$CLIENT_LOG" 2>&1 || VICTIM_EXIT_CODE=$?
+          cat "$CLIENT_LOG"
 
           # Check exit code, timeout command returns 124 when terminating program after timeout
           if [ $VICTIM_EXIT_CODE -eq 124 ]; then
