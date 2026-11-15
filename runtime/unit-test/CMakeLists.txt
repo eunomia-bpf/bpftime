@@ -47,6 +47,7 @@ set(TEST_SOURCES
     test_epoll.cpp
     test_unregistered_helper.cpp
     test_xdp_adjust_head.cpp
+    test_stack_snapshot.cpp
 
     attach_with_ebpf/test_attach_uprobe_with_ebpf_trap.cpp
     attach_with_ebpf/test_helpers.cpp
@@ -100,6 +101,10 @@ endif()
 
 if(ENABLE_PROBE_WRITE_CHECK)
     target_compile_definitions(bpftime_runtime_tests PRIVATE ENABLE_PROBE_WRITE_CHECK=1)
+endif()
+
+if(ENABLE_STACK_SNAPSHOT)
+    target_compile_definitions(bpftime_runtime_tests PRIVATE BPFTIME_PROBE_STACK_SNAPSHOT=1)
 endif()
 
 if(UNIX AND NOT APPLE)

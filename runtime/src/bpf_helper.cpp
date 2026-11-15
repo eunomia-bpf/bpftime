@@ -32,6 +32,7 @@
 #ifdef ENABLE_BPFTIME_VERIFIER
 #include "bpftime-verifier.hpp"
 #endif
+#include "stack_snapshot.hpp"
 
 #include "platform_utils.hpp"
 #include "spdlog/spdlog.h"
@@ -132,6 +133,16 @@ int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
 		SPDLOG_ERROR("Invalid size: {}", size);
 		return -EFAULT;
 	}
+#if BPFTIME_HAVE_STACK_SNAPSHOT
+	switch (bpftime::stack_snapshot::try_read(
+		reinterpret_cast<void *>(dst), ptr,
+		static_cast<size_t>(size))) {
+	case bpftime::stack_snapshot::snapshot_read_result::ok:
+		return 0;
+	case bpftime::stack_snapshot::snapshot_read_result::fallback:
+		break;
+	}
+#endif
 #ifdef ENABLE_PROBE_READ_CHECK
 	return probe_read_memory((void *)dst, (void *)ptr, (size_t)size) ?
 		       0 :

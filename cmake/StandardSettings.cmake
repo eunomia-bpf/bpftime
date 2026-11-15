@@ -110,3 +110,18 @@ option(BPFTIME_BUILD_WITH_LIBBPF "Whether to build with libbpf and other linux h
 option(ENABLE_PROBE_READ_CHECK "Whether to enable probe read check" ON)
 # whether to enable probe write check
 option(ENABLE_PROBE_WRITE_CHECK "Whether to enable probe write check" ON)
+
+# whether to enable the bounded fault-safe stack snapshot backend for probe
+# reads (one process_vm_readv per BPF event instead of one per frame read);
+# runtime opt-in via BPFTIME_EXPERIMENT_STACK_SNAPSHOT. Only supported on
+# Linux x86_64/aarch64 where a hardware stack pointer can be sampled.
+option(ENABLE_STACK_SNAPSHOT
+       "Whether to enable the bounded stack snapshot probe-read backend" ON)
+if(ENABLE_STACK_SNAPSHOT AND NOT
+   (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
+    (CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64" OR
+     CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")))
+  message(WARNING
+    "ENABLE_STACK_SNAPSHOT is only supported on Linux x86_64/aarch64; disabling")
+  set(ENABLE_STACK_SNAPSHOT OFF)
+endif()

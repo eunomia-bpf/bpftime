@@ -88,6 +88,10 @@ set(sources
   extension/extension_helper.cpp
 )
 
+if(ENABLE_STACK_SNAPSHOT)
+  list(APPEND sources src/stack_snapshot.cpp)
+endif()
+
 if(${BPFTIME_ENABLE_CUDA_ATTACH})
   list(APPEND sources src/attach/bpf_attach_ctx_cuda.cpp)
   list(APPEND sources src/bpf_map/gpu/nv_gpu_gdrcopy.cpp)
