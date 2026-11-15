@@ -6,7 +6,7 @@
 #include <handler/epoll_handler.hpp>
 #if __linux__
 #include <sys/epoll.h>
-#elif __APPLE__
+#elif defined(__APPLE__) || defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
 #include "bpftime_epoll.h"
 #endif
 namespace bpftime

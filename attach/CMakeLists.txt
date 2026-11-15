@@ -10,7 +10,9 @@ if(UNIX AND NOT APPLE AND BPFTIME_ENABLE_TRAP_UPROBE)
   add_subdirectory(trap_uprobe_attach_impl)
 endif()
 add_subdirectory(simple_attach_impl)
-if(UNIX AND NOT APPLE)
+
+# Linux-only attach backends (syscall rewrite / CUDA). QNX phase-1 is uprobe only.
+if(UNIX AND NOT APPLE AND NOT BPFTIME_TARGET_QNX)
   add_subdirectory(syscall_trace_attach_impl)
   # seccomp USER_NOTIF capture moved into runtime/syscall-server; the rootless
   # path must not pull in this attach tree (frida/capstone). See
@@ -22,5 +24,4 @@ if(UNIX AND NOT APPLE)
   if(${BPFTIME_ENABLE_CUDA_ATTACH})
     add_subdirectory(nv_attach_impl)
   endif()
-  
 endif()
