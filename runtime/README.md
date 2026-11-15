@@ -173,6 +173,16 @@ The runtime uses CMake with several build options:
    - Check helper function registration
    - Verify VM backend availability
 
+### PID namespace identity
+
+`bpf_get_current_pid_tgid` normally reports the calling process and thread IDs.
+Set `BPFTIME_HOST_PROCFS` to a procfs mount from the host PID namespace to
+translate them to the first `NSpid` value in `self/status` and
+`thread-self/status`. Missing or invalid entries retain the local ID. Each
+thread caches the translation on its first call; later calls do no procfs I/O
+or identity syscalls. A forked child refills the cache. If registering the
+fork handler fails, each call resolves the identity directly instead.
+
 ### Performance Optimization
 
 1. **Map Selection**
