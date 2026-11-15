@@ -820,11 +820,18 @@ long bpftime_xdp_adjust_head(struct xdp_md_userspace *xdp, int offset)
 	if (unlikely(data > xdp->data_end - ETH_HLEN) || data > xdp->buffer_end)
 		return -EINVAL;
 	if (data < xdp->buffer_start) {
-		// move the data so the buffer can place the new header
-		memmove(reinterpret_cast<void *>(xdp->buffer_start +
-						 (xdp->buffer_start - data)),
-			reinterpret_cast<void *>(xdp->data),
-			xdp->data_end - xdp->data);
+		// The requested head is before the buffer, so the head can only
+		// move as far as buffer_start. Move the packet there so that the
+		// bytes xdp->data is about to point at are the packet, and so the
+		// move stays inside [buffer_start, buffer_end): the old form
+		// computed the destination as
+		// buffer_start + (buffer_start - data), which both lands past the
+		// requested head and can run beyond buffer_end.
+		uint64_t len = xdp->data_end - xdp->data;
+		if (len > xdp->buffer_end - xdp->buffer_start)
+			return -EINVAL;
+		memmove(reinterpret_cast<void *>(xdp->buffer_start),
+			reinterpret_cast<void *>(xdp->data), len);
 		data = xdp->buffer_start;
 	}
 	xdp->data = data;
