@@ -31,6 +31,7 @@ set(TEST_SOURCES
 
     maps/test_lru_var_hash_map.cpp
     maps/test_lru_hash_map.cpp
+    maps/test_map_flags_enforcement.cpp
 
     test_bpftime_shm_json.cpp
     test_probe.cpp

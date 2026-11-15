@@ -58,6 +58,7 @@ class lru_var_hash_map_impl {
 	size_t key_size;
 	size_t value_size;
 	size_t max_entries;
+	uint32_t map_flags;
 	bytes_vec key_vec;
 	bytes_vec value_vec;
 
@@ -77,14 +78,19 @@ class lru_var_hash_map_impl {
 	const static bool should_lock = true;
 	lru_var_hash_map_impl(boost::interprocess::managed_shared_memory &memory,
 			      size_t key_size, size_t value_size,
-			      size_t max_entries);
-	void *elem_lookup(const void *key);
+			      size_t max_entries, uint32_t map_flags);
+	// from_syscall distinguishes fd-based syscall access (true) from BPF
+	// helper access (false). BPF_F_RDONLY/BPF_F_WRONLY only restrict the
+	// syscall path, mirroring the kernel fd-mode checks.
+	void *elem_lookup(const void *key, bool from_syscall = false);
 
-	long elem_update(const void *key, const void *value, uint64_t flags);
+	long elem_update(const void *key, const void *value, uint64_t flags,
+			 bool from_syscall = false);
 
-	long elem_delete(const void *key);
+	long elem_delete(const void *key, bool from_syscall = false);
 
-	int map_get_next_key(const void *key, void *next_key);
+	int map_get_next_key(const void *key, void *next_key,
+			     bool from_syscall = false);
 };
 } // namespace bpftime
 

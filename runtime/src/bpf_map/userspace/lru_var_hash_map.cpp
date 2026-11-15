@@ -12,9 +12,10 @@ static bool is_good_update_flag(uint64_t flags)
 
 lru_var_hash_map_impl::lru_var_hash_map_impl(
 	boost::interprocess::managed_shared_memory &memory, size_t key_size,
-	size_t value_size, size_t max_entries)
+	size_t value_size, size_t max_entries, uint32_t map_flags)
 	: map_impl(max_entries, memory.get_segment_manager()),
 	  key_size(key_size), value_size(value_size), max_entries(max_entries),
+	  map_flags(map_flags),
 	  key_vec(key_size, memory.get_segment_manager()),
 	  value_vec(value_size, memory.get_segment_manager()),
 	  memory_allocator(memory.get_allocator<void>()),
@@ -24,8 +25,14 @@ lru_var_hash_map_impl::lru_var_hash_map_impl(
 	memory.get_segment_manager();
 }
 
-void *lru_var_hash_map_impl::elem_lookup(const void *key)
+void *lru_var_hash_map_impl::elem_lookup(const void *key, bool from_syscall)
 {
+	// BPF_F_WRONLY only blocks fd-based syscall reads; BPF helpers keep
+	// full access (program-side access uses the separate *_PROG flags).
+	if (from_syscall && (map_flags & BPF_F_WRONLY)) {
+		errno = EPERM;
+		return nullptr;
+	}
 	SPDLOG_TRACE("Peform elem lookup of lru var hash map");
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
 	if (auto itr = map_impl.find(key_vec); itr != map_impl.end()) {
@@ -41,8 +48,16 @@ void *lru_var_hash_map_impl::elem_lookup(const void *key)
 }
 
 long lru_var_hash_map_impl::elem_update(const void *key, const void *value,
-					uint64_t flags)
+					uint64_t flags, bool from_syscall)
 {
+	// A BPF_F_RDONLY map can never be modified through a syscall, whether
+	// the element already exists or not. The kernel rejects every write
+	// to a read-only map fd with EPERM before any existence check. BPF
+	// helpers (from_syscall == false) are unaffected.
+	if (from_syscall && (map_flags & BPF_F_RDONLY)) {
+		errno = EPERM;
+		return -1;
+	}
 	SPDLOG_DEBUG("Running lru hash update: key {:x}, value {:x}, flags {}",
 		     (uintptr_t)key, (uintptr_t)value, flags);
 	// Check flags
@@ -89,8 +104,12 @@ long lru_var_hash_map_impl::elem_update(const void *key, const void *value,
 	return 0;
 }
 
-long lru_var_hash_map_impl::elem_delete(const void *key)
+long lru_var_hash_map_impl::elem_delete(const void *key, bool from_syscall)
 {
+	if (from_syscall && (map_flags & BPF_F_RDONLY)) {
+		errno = EPERM;
+		return -1;
+	}
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
 	auto itr = map_impl.find(key_vec);
 	if (itr == map_impl.end()) {
@@ -102,8 +121,13 @@ long lru_var_hash_map_impl::elem_delete(const void *key)
 	return 0;
 }
 
-int lru_var_hash_map_impl::map_get_next_key(const void *key, void *next_key)
+int lru_var_hash_map_impl::map_get_next_key(const void *key, void *next_key,
+					    bool from_syscall)
 {
+	if (from_syscall && (map_flags & BPF_F_WRONLY)) {
+		errno = EPERM;
+		return -1;
+	}
 	if (key == nullptr) {
 		// nullptr means the first key
 		auto itr = map_impl.begin();
@@ -121,7 +145,7 @@ int lru_var_hash_map_impl::map_get_next_key(const void *key, void *next_key)
 	auto itr = map_impl.find(key_vec);
 	if (itr == map_impl.end()) {
 		// not found, should be refer to the first key
-		return map_get_next_key(nullptr, next_key);
+		return map_get_next_key(nullptr, next_key, from_syscall);
 	}
 	itr++;
 	if (itr == map_impl.end()) {
