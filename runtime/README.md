@@ -204,6 +204,18 @@ The runtime uses CMake with several build options:
    - Monitor syscall interception
    - Profile map operations
 
+## Synthetic task helpers
+
+`bpf_get_current_task` and `bpf_get_current_task_btf` return a zero-filled,
+per-thread userspace allocation, not a kernel task snapshot. The first call
+reads the host BTF at `/sys/kernel/btf/vmlinux` to size it for `task_struct`;
+without usable BTF, it reserves 64 KiB per calling thread, several times the
+size of current kernel task structures. This one-time BTF read and allocation
+can add latency to the first helper call. Storage is released at thread exit.
+`BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET` optionally writes the userspace thread
+pointer at a byte offset, provided the whole pointer fits in that storage.
+`bpf_seq_write` is registered but returns `-EOPNOTSUPP` in userspace.
+
 ## Host memory access safety (probe read/write backends)
 
 All BPF helpers that dereference a host-supplied pointer converge on a single

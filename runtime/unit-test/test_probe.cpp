@@ -1,3 +1,10 @@
+#if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))
+#include <bpf/btf.h>
+#include <bpf/libbpf.h>
+#include <malloc.h>
+#endif
+#include "bpftime_helper_group.hpp"
+#include <algorithm>
 #include "catch2/catch_test_macros.hpp"
 #include "spdlog/spdlog.h"
 #include <cerrno>
@@ -252,3 +259,79 @@ TEST_CASE("Test default SIGSEGV handler is preserved")
 	REQUIRE(WIFEXITED(status));
 	REQUIRE(WEXITSTATUS(status) == 0);
 }
+
+extern "C" uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t,
+	uint64_t, uint64_t);
+extern "C" uint64_t bpftime_seq_write(uint64_t, uint64_t, uint64_t);
+
+TEST_CASE("Task and seq_write helpers are registered")
+{
+	auto ids = bpftime::bpftime_helper_group::get_kernel_utils_helper_group().get_helper_ids();
+	for (int id : { 35, 127, 158 })
+		REQUIRE(std::find(ids.begin(), ids.end(), id) != ids.end());
+	REQUIRE(static_cast<int64_t>(bpftime_seq_write(0, 0, 0)) == -EOPNOTSUPP);
+}
+
+#if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))
+
+static bool task_test_no_btf = false;
+extern "C" struct btf *__real_btf__parse_raw(const char *);
+extern "C" struct btf *__wrap_btf__parse_raw(const char *path)
+{
+	return task_test_no_btf ? nullptr : __real_btf__parse_raw(path);
+}
+
+TEST_CASE("Task storage covers host BTF and the no-BTF fallback")
+{
+	bool no_btf = false;
+	SECTION("host BTF") {}
+	SECTION("no BTF") { no_btf = true; }
+	pid_t child = fork();
+	REQUIRE(child >= 0);
+	if (child == 0) {
+		size_t expected = 64 * 1024;
+		if (!no_btf) {
+			struct btf *btf = __real_btf__parse_raw("/sys/kernel/btf/vmlinux");
+			if (btf != nullptr && libbpf_get_error(btf) == 0) {
+				int id = btf__find_by_name_kind(btf, "task_struct", BTF_KIND_STRUCT);
+				int64_t size = id > 0 ? btf__resolve_size(btf, id) : -1;
+				if (size > 0)
+					expected = size;
+				btf__free(btf);
+			}
+		}
+		task_test_no_btf = no_btf;
+		const size_t offset = expected - sizeof(void *);
+		const std::string text = std::to_string(offset);
+		setenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET", text.c_str(), 1);
+		auto *task = reinterpret_cast<uint8_t *>(bpftime_get_current_task(0, 0, 0, 0, 0));
+		if (task == nullptr || malloc_usable_size(task) < expected ||
+		    reinterpret_cast<uintptr_t>(task) % 64 != 0)
+			_exit(1);
+		void *observed = nullptr;
+		memcpy(&observed, task + offset, sizeof(observed));
+		if (observed != __builtin_thread_pointer())
+			_exit(2);
+		// Check late fields before the thread-pointer slot without reading
+		// beyond the allocation, including with the old 4 KiB buffer.
+		if (!std::all_of(task, task + offset, [](uint8_t b) { return b == 0; }))
+			_exit(3);
+		if (task != reinterpret_cast<uint8_t *>(bpftime_get_current_task(0, 0, 0, 0, 0)))
+			_exit(4);
+		bool separate = false;
+		std::thread worker([&] {
+			auto *other = reinterpret_cast<uint8_t *>(bpftime_get_current_task(0, 0, 0, 0, 0));
+			void *tp = nullptr;
+			if (other && malloc_usable_size(other) >= expected)
+				memcpy(&tp, other + offset, sizeof(tp));
+			separate = other != task && tp == __builtin_thread_pointer();
+		});
+		worker.join();
+		_exit(separate ? 0 : 5);
+	}
+	int status = 0;
+	REQUIRE(waitpid(child, &status, 0) == child);
+	REQUIRE(WIFEXITED(status));
+	REQUIRE(WEXITSTATUS(status) == 0);
+}
+#endif
