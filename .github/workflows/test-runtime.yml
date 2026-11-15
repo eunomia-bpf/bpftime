@@ -79,6 +79,19 @@ jobs:
         # So we remount it to make it larger
         run: |
           mount -o remount,size=1G /dev/shm
+          # Verify the remount really took effect. On a congested or
+          # privilege-restricted container the remount can silently no-op,
+          # leaving the default 64M tmpfs; boost.interprocess does not
+          # notice and the shm-backed tests then fail with an unexplained
+          # SIGSEGV/SIGBUS. Fail here with an explicit, correctly-attributed
+          # environment error instead of a misleading product-code crash.
+          AVAIL_KB=$(df -k --output=avail /dev/shm | tail -n 1 | tr -d ' ')
+          if [ "${AVAIL_KB:-0}" -lt 900000 ]; then
+            echo "::error::/dev/shm remount to 1G ineffective (avail=${AVAIL_KB}KiB)"
+            df -h /dev/shm
+            exit 1
+          fi
+          df -h /dev/shm
       - name: Setup conda
         if: matrix.container != 'openeuler-2403sp2'
         uses: conda-incubator/setup-miniconda@v3
