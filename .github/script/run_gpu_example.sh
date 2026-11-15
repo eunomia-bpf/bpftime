@@ -3,7 +3,8 @@
 # direct run, or late attach) and checks its output. Called by
 # run_gpu_examples.py for each example from the repository root, with
 # GPU_EXAMPLE_NAME, GPU_EXAMPLE_PATH, GPU_EXAMPLE_EXECUTABLE,
-# GPU_EXAMPLE_VICTIM, GPU_EXAMPLE_EXPECTED and GPU_EXAMPLE_MODE set and
+# GPU_EXAMPLE_VICTIM, GPU_EXAMPLE_EXPECTED, GPU_EXAMPLE_MODE and
+# GPU_EXAMPLE_VERIFIER_LEVEL set and
 # bpftime built in build/. Writes server.log, client.log and tool.log in
 # the repository root.
 set -euo pipefail
@@ -17,11 +18,13 @@ VICTIM_REL="${GPU_EXAMPLE_VICTIM}"
 EXPECTED="${GPU_EXAMPLE_EXPECTED}"
 EXAMPLE_NAME="${GPU_EXAMPLE_NAME}"
 EXAMPLE_MODE="${GPU_EXAMPLE_MODE}"
+VERIFIER_LEVEL="${GPU_EXAMPLE_VERIFIER_LEVEL:-STRICT}"
 CLIENT_TIMEOUT=30
 BPFTIME_CLI="$BUILD_DIR/tools/cli/bpftime"
 BPFTIMETOOL="$BUILD_DIR/tools/bpftimetool/bpftimetool"
 export SPDLOG_LEVEL=info
 export BPFTIME_LOG_LEVEL=INFO
+export BPFTIME_VERIFIER_LEVEL="$VERIFIER_LEVEL"
 export CUDA_LAUNCH_BLOCKING=0
 export CUDA_MODULE_LOADING=LAZY
 export BPFTIME_GLOBAL_SHM_NAME="bpftime_maps_shm_${EXAMPLE_NAME}"

@@ -705,6 +705,17 @@ static bool parse_force_reinit(const gchar *data)
 	return false;
 }
 
+static void refresh_attach_ctx()
+{
+	const int res = ctx_holder.ctx.init_attach_ctx_from_handlers(
+		bpftime_get_runtime_config());
+	if (res != 0) {
+		SPDLOG_ERROR(
+			"Auto-refresh: init_attach_ctx_from_handlers failed: {}",
+			res);
+	}
+}
+
 static int refresh_attach_session(const gchar *data)
 {
 	if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) != AGENT_READY) {
@@ -779,8 +790,7 @@ static int refresh_attach_session(const gchar *data)
 				std::this_thread::sleep_for(
 					std::chrono::milliseconds(auto_refresh_ms));
 				try {
-					ctx_holder.ctx.init_attach_ctx_from_handlers(
-						bpftime_get_runtime_config());
+					refresh_attach_ctx();
 				} catch (const std::exception &ex) {
 					SPDLOG_DEBUG(
 						"Auto-refresh: init_attach_ctx_from_handlers failed: {}",
@@ -1164,9 +1174,7 @@ static void bpftime_agent_main_impl(const gchar *data,
 								std::chrono::milliseconds(
 									auto_refresh_ms));
 							try {
-								ctx_holder.ctx
-									.init_attach_ctx_from_handlers(
-										bpftime_get_runtime_config());
+								refresh_attach_ctx();
 							} catch (const std::exception &ex) {
 								SPDLOG_DEBUG(
 									"Auto-refresh: init_attach_ctx_from_handlers failed: {}",

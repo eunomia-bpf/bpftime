@@ -11,6 +11,7 @@ on:
       - ".github/script/run_gpu_example.sh"
       - ".github/script/run_gpu_examples.py"
       - "attach/**"
+      - "bpftime-verifier/**"
       - "benchmark/gpu/**"
       - "example/gpu/**"
       - "runtime/**"
@@ -54,12 +55,13 @@ jobs:
           rm -rf third_party/bpftool/libbpf
           git submodule update --init --recursive third_party/bpftool
 
-      - name: Initialize ubpf submodules (bpf_conformance)
+      - name: Initialize nested submodules
         shell: bash
         run: |
           set -euo pipefail
           rm -rf third_party/ubpf/external/bpf_conformance
-          git submodule update --init --recursive third_party/ubpf
+          git submodule update --init --recursive third_party/ubpf bpftime-verifier/ebpf-verifier
+
       - name: Enable ccache
         uses: ./.github/actions/ccache
         with:
@@ -113,7 +115,7 @@ jobs:
           $SUDO apt-get install -y --no-install-recommends \
             build-essential ca-certificates curl git pkg-config xz-utils \
             cmake ninja-build \
-            libboost-all-dev libdw-dev libedit-dev libelf-dev libffi-dev libssl-dev libzstd-dev zlib1g-dev \
+            libboost-all-dev libdw-dev libedit-dev libelf-dev libffi-dev libssl-dev libyaml-cpp-dev libzstd-dev zlib1g-dev \
             libcurl4-openssl-dev
 
           # Ensure LLVM >= 15 for vm/llvm-jit (find_package(LLVM)).
@@ -205,6 +207,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DBPFTIME_LLVM_JIT=YES \
             -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
+            -DENABLE_EBPF_VERIFIER=YES \
             -DBPFTIME_CUDA_ROOT="${BPFTIME_CUDA_ROOT:-/usr/local/cuda}" \
             -DLLVM_DIR="${LLVM_DIR}" \
             -G Ninja
