@@ -25,6 +25,8 @@
 #endif
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include "bpf/bpf.h"
+#include "bpf/btf.h"
+#include "bpf/libbpf.h"
 #include "bpf/libbpf_common.h"
 #endif
 #include "bpftime_helper_group.hpp"
@@ -321,12 +323,26 @@ uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t, uint64_t,
 	// dlopen'ed module that carries initial-exec TLS; a multi-KB thread_local
 	// would land in its static TLS block and exhaust the limited static TLS
 	// surplus ("cannot allocate memory in static TLS block").
-	constexpr size_t task_storage_size = 4096;
-	static pthread_key_t task_key = [] {
-		pthread_key_t key;
-		pthread_key_create(&key, [](void *p) { free(p); });
-		return key;
+	static const size_t task_storage_size = []() -> size_t {
+		// Covers current kernels when BTF is unavailable. A host with a
+		// larger task_struct uses its actual BTF size instead.
+		constexpr size_t fallback = 64 * 1024;
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
+		struct btf *btf = btf__parse_raw("/sys/kernel/btf/vmlinux");
+		if (btf != nullptr && libbpf_get_error(btf) == 0) {
+			int id = btf__find_by_name_kind(btf, "task_struct", BTF_KIND_STRUCT);
+			int64_t size = id > 0 ? btf__resolve_size(btf, id) : -1;
+			btf__free(btf);
+			if (size >= static_cast<int64_t>(sizeof(void *)))
+				return static_cast<size_t>(size);
+		}
+#endif
+		return fallback;
 	}();
+	static pthread_key_t task_key;
+	static const int task_key_status = pthread_key_create(&task_key, free);
+	if (task_key_status != 0)
+		return 0;
 	uint8_t *task = static_cast<uint8_t *>(pthread_getspecific(task_key));
 	if (task == nullptr) {
 		void *raw = nullptr;
@@ -334,7 +350,10 @@ uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t, uint64_t,
 			return 0;
 		task = static_cast<uint8_t *>(raw);
 		memset(task, 0, task_storage_size);
-		pthread_setspecific(task_key, task);
+		if (pthread_setspecific(task_key, task) != 0) {
+			free(task);
+			return 0;
+		}
 	}
 	static const size_t tpbase_offset = [] {
 		const char *text =
