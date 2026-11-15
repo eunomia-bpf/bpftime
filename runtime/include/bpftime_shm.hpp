@@ -234,6 +234,13 @@ void bpftime_protect_enable();
 // disable memory protect
 void bpftime_protect_disable();
 
+// JSON operations require quiescent handler state (no concurrent readers or
+// writers). Import/load also require process-local map callback registration to
+// remain unchanged. The format stores definitions, not map values or live queues.
+// Import/load reject occupied descriptors and leave existing handlers unchanged
+// on failure. Export commits a regular-file replacement only after encoding and
+// writing succeed. These functions return 0 on success and -1 on failure; no
+// C++ exception crosses this API.
 // import the global shared memory from json file
 int bpftime_import_global_shm_from_json(const char *filename);
 // export the global shared memory to json file

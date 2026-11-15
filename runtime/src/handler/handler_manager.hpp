@@ -16,6 +16,7 @@
 #include <iostream>
 #include <sched.h>
 #include <variant>
+#include <vector>
 #include <boost/interprocess/containers/vector.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
@@ -128,6 +129,19 @@ class handler_manager {
 	handler_manager &operator=(handler_manager &&) noexcept = default;
 
     private:
+	friend class shm_json_import;
+	// Publish already initialized, caller-owned handlers into empty slots.
+	// Requires unique fd values and a quiescent registry. The importer
+	// supplies each fd once from its map of definitions. On failure no slot
+	// is changed; moved map implementations are reclaimed.
+	int install_prepared_handlers(
+		std::vector<std::pair<int, handler_variant>> &prepared,
+		managed_shared_memory &memory);
+
+	// Remove only this handler, without following links. The caller must
+	// own the handler and must ensure no surviving handler depends on it.
+	void discard_handler(int fd, managed_shared_memory &memory);
+
 	handler_variant_vector handlers;
 };
 
