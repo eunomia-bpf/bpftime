@@ -160,7 +160,7 @@ syscall_hooker_cxx(int64_t sys_nr, int64_t arg1, int64_t arg2, int64_t arg3,
 	return call_hook(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
-static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
+static inline bool rewrite_segment(uint8_t *code, size_t len, int perm)
 {
 	// Set the pages to be writable
 	if (int err = mprotect(code, len, PROT_READ | PROT_WRITE | PROT_EXEC);
@@ -168,7 +168,7 @@ static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
 		SPDLOG_ERROR(
 			"Failed to change the protect status of the rewriting page {:x}",
 			(uintptr_t)code);
-		exit(1);
+		return false;
 	}
 	csh cs_handle;
 	cs_err ret;
@@ -176,7 +176,12 @@ static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
 	if (ret != CS_ERR_OK) {
 		SPDLOG_ERROR("Failed to open capstone instance: {}, {}",
 			      (int)ret, cs_strerror(ret));
-		exit(1);
+		if (mprotect(code, len, perm) < 0) {
+			SPDLOG_ERROR(
+				"Failed to restore the protect status of the rewriting page {:x}",
+				(uintptr_t)code);
+		}
+		return false;
 	}
 	const uint8_t *curr_code = code;
 	size_t size = len;
@@ -207,8 +212,9 @@ static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
 		SPDLOG_ERROR(
 			"Failed to change the protect status of the rewriting page {:x}",
 			(uintptr_t)code);
-		exit(1);
+		return false;
 	}
+	return true;
 }
 
 struct MapEntry {
@@ -238,7 +244,7 @@ void set_call_hook(syscall_hooker_func_t hook)
 	call_hook = hook;
 }
 
-void setup_syscall_tracer()
+bool setup_syscall_tracer()
 {
 	// Setup page mappings
 
@@ -248,7 +254,7 @@ void setup_syscall_tracer()
 	    mmap_addr == MAP_FAILED) {
 		SPDLOG_ERROR("Failed to perform mmap: errno={}, message={}",
 			      errno, strerror(errno));
-		exit(1);
+		return false;
 	}
 	// Setup jumpings
 	for (int i = 0; i < NR_syscalls; i++) {
@@ -288,7 +294,12 @@ void setup_syscall_tracer()
 		SPDLOG_ERROR(
 			"Failed to set execute only of 0-started page: {}",
 			errno);
-		exit(1);
+		if (munmap(0, 0x1000) < 0) {
+			SPDLOG_ERROR(
+				"Failed to unmap the 0-started trampoline page: {}",
+				errno);
+		}
+		return false;
 	}
 
 	SPDLOG_INFO("Page zero setted up..");
@@ -329,10 +340,20 @@ void setup_syscall_tracer()
 			}
 			SPDLOG_DEBUG("Rewriting segment from {:x} to {:x}",
 				      map.begin, map.end);
-			rewrite_segment((uint8_t *)(uintptr_t)(map.begin),
-					map.end - map.begin, map.get_perm());
+			if (!rewrite_segment(
+				    (uint8_t *)(uintptr_t)(map.begin),
+				    map.end - map.begin,
+				    map.get_perm())) {
+				// Fail open: leave this segment untraced
+				// rather than terminating the host. Its
+				// syscalls keep executing normally.
+				SPDLOG_ERROR(
+					"Skipping syscall rewrite of segment {:x}-{:x}",
+					map.begin, map.end);
+			}
 		}
 	}
+	return true;
 }
 
 } // namespace bpftime

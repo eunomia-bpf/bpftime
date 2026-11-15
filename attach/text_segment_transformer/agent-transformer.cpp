@@ -71,19 +71,24 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	}
 	SPDLOG_DEBUG("Using agent {}", agent_so);
 	cs_arch_register_x86();
-	bpftime::setup_syscall_tracer();
+	if (!bpftime::setup_syscall_tracer()) {
+		SPDLOG_ERROR(
+			"Failed to setup the syscall tracer; leaving the host process running without syscall tracing");
+		return;
+	}
 	SPDLOG_DEBUG("Loading dynamic library..");
 	auto next_handle = dlmopen(LM_ID_NEWLM, agent_so, RTLD_NOW | RTLD_LOCAL);
 	if (next_handle == nullptr) {
 		SPDLOG_ERROR("Failed to open agent: {}", dlerror());
-		exit(1);
+		return;
 	}
 	// Set the flag `injected_with_frida` for agent
 	bool *injected_with_frida__agent =
 		(bool *)dlsym(next_handle, "injected_with_frida");
 	if (!injected_with_frida__agent) {
-		SPDLOG_WARN(
-			"Agent does not expose a symbol named injected_with_frida, so we can't let agent know whether it was loaded using frida");
+		SPDLOG_ERROR(
+			"Agent does not expose a symbol named injected_with_frida; aborting agent activation without terminating the host");
+		return;
 	}
 	*injected_with_frida__agent = injected_with_frida;
 	auto entry_func = (void (*)(syscall_hooker_func_t *))dlsym(

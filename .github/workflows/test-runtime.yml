@@ -36,6 +36,9 @@ jobs:
   build:
     runs-on: "ubuntu-latest"
     strategy:
+      # Let every OS finish even if one fails, so an openEuler-specific issue
+      # does not cancel the ubuntu/fedora jobs and hide their real results.
+      fail-fast: false
       matrix:
         include:
           - container: ubuntu-2204
@@ -79,6 +82,19 @@ jobs:
         # So we remount it to make it larger
         run: |
           mount -o remount,size=1G /dev/shm
+          # Verify the remount really took effect. On a congested or
+          # privilege-restricted container the remount can silently no-op,
+          # leaving the default 64M tmpfs; boost.interprocess does not
+          # notice and the shm-backed tests then fail with an unexplained
+          # SIGSEGV/SIGBUS. Fail here with an explicit, correctly-attributed
+          # environment error instead of a misleading product-code crash.
+          AVAIL_KB=$(df -k --output=avail /dev/shm | tail -n 1 | tr -d ' ')
+          if [ "${AVAIL_KB:-0}" -lt 900000 ]; then
+            echo "::error::/dev/shm remount to 1G ineffective (avail=${AVAIL_KB}KiB)"
+            df -h /dev/shm
+            exit 1
+          fi
+          df -h /dev/shm
       - name: Setup conda
         if: matrix.container != 'openeuler-2403sp2'
         uses: conda-incubator/setup-miniconda@v3
@@ -190,9 +206,16 @@ jobs:
           echo "ASAN_SONAME=$ASAN_SONAME" >> "$LOG"
           SRV_PRELOAD="$SERVER_LIB"
           VICT_PRELOAD="$AGENT_LIB"
+          # Match GCC sanitizer preloading to each produced ELF's dependencies.
+          SRV_DEPS=$(readelf -d "$SERVER_LIB")
+          VICT_DEPS=$(readelf -d "$AGENT_LIB")
           if [ -n "${ASAN_SONAME:-}" ] && [ -f "$ASAN_SONAME" ]; then
-            SRV_PRELOAD="$ASAN_SONAME:$SRV_PRELOAD"
-            VICT_PRELOAD="$ASAN_SONAME:$VICT_PRELOAD"
+            if grep -q '(NEEDED).*\[libasan\.so' <<< "$SRV_DEPS"; then
+              SRV_PRELOAD="$ASAN_SONAME:$SRV_PRELOAD"
+            fi
+            if grep -q '(NEEDED).*\[libasan\.so' <<< "$VICT_DEPS"; then
+              VICT_PRELOAD="$ASAN_SONAME:$VICT_PRELOAD"
+            fi
           fi
           echo "SERVER LD_PRELOAD=$SRV_PRELOAD" >> "$LOG"
           echo "VICTIM LD_PRELOAD=$VICT_PRELOAD" >> "$LOG"
