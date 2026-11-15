@@ -7,19 +7,11 @@
 using namespace bpftime::attach;
 
 #if defined(__linux__) && defined(__x86_64__)
-// This marker must stay ret-first (first byte 0xc3) so Frida-Gum rejects it.
-// CET-enabled toolchains (e.g. Fedora GCC 13, Ubuntu GCC 12, Clang with
-// -fcf-protection=full) otherwise prefix endbr64, which Frida-Gum accepts,
-// breaking the rejection assertion. CET is disabled for this translation unit
-// via a scoped -fcf-protection=none in this directory's CMakeLists.txt; that
-// is deterministic across GCC/Clang point releases, whereas a per-symbol
-// nocf_check attribute is not honored uniformly on naked functions by GCC.
-extern "C" __attribute__((naked, noinline, aligned(8))) void
-__bpftime_test_empty_marker_target()
-{
-	asm volatile("ret\n\t"
-		     "nop; nop; nop; nop; nop; nop; nop\n\t");
-}
+// The ret-first (0xc3) empty-marker target is defined in hand-written
+// assembly (empty_marker_x86_64.S) so its bytes are independent of compiler
+// CET instrumentation; see that file for why a compiled naked function is not
+// reliable across GCC point releases.
+extern "C" void __bpftime_test_empty_marker_target();
 
 TEST_CASE("Unsupported empty markers leave host text unchanged",
 	  "[frida][short-uprobe]")
