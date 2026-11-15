@@ -1,5 +1,8 @@
 #include "catch2/catch_test_macros.hpp"
 #include "nv_attach_impl.hpp"
+#ifdef ENABLE_EBPF_VERIFIER
+#include "nv_attach_private_data.hpp"
+#endif
 
 using namespace bpftime;
 using namespace attach;
@@ -83,3 +86,36 @@ TEST_CASE("Test string replace")
 	REQUIRE(replaced.find(".extern .func") == std::string::npos);
 	REQUIRE(replaced.find(".visible .func bpf_main") == std::string::npos);
 }
+
+#ifdef ENABLE_EBPF_VERIFIER
+TEST_CASE("GPU verifier mode controls attach rejection", "[gpu][verifier]")
+{
+	nv_attach_impl impl;
+	nv_attach_private_data data;
+	data.code_addr_or_func_name = "verifier_mode_test";
+	data.program_name = "cuda__verifier_mode_test";
+	int shared_mem_marker = 0;
+	data.comm_shared_mem = reinterpret_cast<uintptr_t>(&shared_mem_marker);
+
+	ebpf_inst unsupported_call{};
+	unsupported_call.opcode = EBPF_OP_CALL;
+	unsupported_call.imm = 7;
+	ebpf_inst exit{};
+	exit.opcode = EBPF_OP_EXIT;
+	data.instructions = { unsupported_call, exit };
+
+	const auto attach = [&](bpftime_verifier_mode mode) {
+		data.verifier_mode = mode;
+		return impl.create_attach_with_ebpf_callback(
+			ebpf_run_callback{}, data, ATTACH_CUDA_PROBE);
+	};
+
+	REQUIRE(attach(BPFTIME_VERIFIER_STRICT) == GPU_VERIFIER_REJECTED);
+	const int warning_id = attach(BPFTIME_VERIFIER_WARNING);
+	REQUIRE(warning_id == 1);
+	REQUIRE(impl.detach_by_id(warning_id) == 0);
+	const int no_verify_id = attach(BPFTIME_NO_VERIFY);
+	REQUIRE(no_verify_id == 2);
+	REQUIRE(impl.detach_by_id(no_verify_id) == 0);
+}
+#endif
