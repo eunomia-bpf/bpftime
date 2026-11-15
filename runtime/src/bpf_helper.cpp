@@ -83,8 +83,7 @@ uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
 	va_list args;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#pragma GCC diagnostic ignored "-Wvarargs"
-	va_start(args, fmt_str);
+	va_start(args, fmt_size);
 	long ret = vprintf(fmt_str, args);
 #pragma GCC diagnostic pop
 	va_end(args);
