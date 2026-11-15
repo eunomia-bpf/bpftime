@@ -70,7 +70,7 @@ all: $(APPS) vec_add
 
 vec_add: vec_add.cu
 	@if command -v nvcc >/dev/null 2>&1; then \
-		nvcc -cudart shared vec_add.cu -o vec_add -g; \
+		nvcc -cudart shared -gencode arch=compute_52,code=compute_52 -gencode arch=compute_86,code=compute_86 vec_add.cu -o vec_add -g; \
 	else \
 		echo "Warning: CUDA not found, skipping vec_add build"; \
 	fi

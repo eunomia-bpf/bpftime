@@ -17,7 +17,9 @@ import sys
 import time
 
 EXAMPLES = [
-    dict(name="atomizer", path="atomizer", executable="./atomizer", victim="./vec_add", expected="Exited _Z9vectorAdd", mode="two-process"),
+    # client_env reaches only the victim process; atomizer's victim checks
+    # that the kernel really ran with the patched argument values.
+    dict(name="atomizer", path="atomizer", executable="./atomizer", victim="./vec_add", expected="Exited _Z9vectorAdd", mode="two-process", client_env="BPFTIME_EXPECT_PATCHED=1"),
     dict(name="kernel_trace", path="kernel_trace", executable="./kernel_trace", victim="./vec_add", expected="total events:", mode="two-process"),
     dict(name="gpu_shared_map", path="gpu_shared_map", executable="./gpu_shared_map", victim="./vec_add", expected="counter[0]=", mode="two-process"),
     dict(name="threadscheduling", path="threadscheduling", executable="./threadscheduling", victim="./vec_add", expected="SM Utilization Histogram", mode="two-process"),
@@ -66,7 +68,8 @@ def main() -> int:
                            GPU_EXAMPLE_EXECUTABLE=ex["executable"],
                            GPU_EXAMPLE_VICTIM=ex["victim"],
                            GPU_EXAMPLE_EXPECTED=ex["expected"],
-                           GPU_EXAMPLE_MODE=ex["mode"])
+                           GPU_EXAMPLE_MODE=ex["mode"],
+                           GPU_EXAMPLE_CLIENT_ENV=ex.get("client_env", ""))
             ok = subprocess.run(
                 ["bash", os.path.join(root, ".github/script/run_gpu_example.sh")],
                 env=run_env).returncode == 0

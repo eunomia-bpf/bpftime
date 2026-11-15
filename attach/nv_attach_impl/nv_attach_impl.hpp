@@ -18,6 +18,7 @@
 #include <cuda.h>
 #include <optional>
 #include <set>
+#include <shared_mutex>
 #include <string>
 #include <unordered_map>
 #include <sys/ptrace.h>
@@ -177,7 +178,9 @@ class nv_attach_impl final : public base_attach_impl {
 	void record_patched_kernel_function(const std::string &kernel_name,
 					    CUfunction function);
 	std::optional<CUfunction>
-	find_patched_kernel_function(const std::string &kernel_name) const;
+	find_patched_kernel_function(const std::string &kernel_name);
+	std::optional<variable_info>
+	find_patched_global(const std::string &symbol_name);
 	// Notify nv_attach_impl that a patched kernel launch was enqueued on a
 	// stream. Used to coordinate detach with in-flight patched kernels so we
 	// don't tear down loader-owned CUDA IPC buffers prematurely.
@@ -199,18 +202,21 @@ class nv_attach_impl final : public base_attach_impl {
 		std::optional<std::string> resolve_host_function_symbol(void *addr);
 	// Whether nv_attach is currently enabled (can be disabled by detach).
 	bool is_enabled() const noexcept;
+	std::shared_lock<std::shared_mutex> lock_patched_state() const
+	{
+		return std::shared_lock(patched_state_mutex);
+	}
 	std::vector<std::unique_ptr<fatbin_record>> fatbin_records;
+	std::size_t late_bootstrap_generation = 0;
 	fatbin_record *current_fatbin = nullptr;
 	std::map<void *, fatbin_record *> symbol_address_to_fatbin;
 	uintptr_t shared_mem_ptr;
 	std::optional<std::vector<MapBasicInfo>> map_basic_info;
 	void *ptx_compiler_dl_handle = nullptr;
 	nv_attach_impl_ptx_compiler_handler ptx_compiler;
-	/// SHA256 of ELF -> PTX module
-	std::shared_ptr<std::map<std::string, std::shared_ptr<ptx_in_module>>>
-		module_pool;
 	/// SHA256 of PTX -> ELF
 	std::shared_ptr<std::map<std::string, std::vector<uint8_t>>> ptx_pool;
+	std::mutex ptx_cache_mutex;
 
 	// Original function pointers for Frida replace hooks (trampolines)
 	// They are set by gum_interceptor_replace(...) and must be used to call
@@ -234,23 +240,27 @@ class nv_attach_impl final : public base_attach_impl {
 		void clear_patched_state_for_next_session();
 
 		void bootstrap_existing_fatbins();
+		std::vector<fatbin_record *> active_fatbin_records();
 		void reset_late_bootstrap_state_for_next_attach();
 		void build_host_symbol_cache_once();
-		void prefill_patched_kernel_functions_from_loaded_fatbins();
-		std::vector<std::string> collect_all_kernels_to_patch() const;
 
 	void *frida_interceptor;
 	void *frida_listener;
 	std::vector<std::unique_ptr<CUDARuntimeFunctionHookerContext>>
 		hooker_contexts;
+	mutable std::mutex patched_state_writer_mutex;
+	mutable std::shared_mutex patched_state_mutex;
+	mutable std::mutex hook_entries_mutex;
 	std::map<int, nv_attach_entry> hook_entries;
 	// discovered pass definitions
 	std::vector<std::unique_ptr<pass_cfg_with_exec_path>>
 		pass_configurations;
 	std::map<std::string, ptxpass::runtime_response::RuntimeResponse>
 		patch_cache;
+	std::mutex patch_cache_mutex;
 	mutable std::mutex cuda_symbol_map_mutex;
-	std::unordered_map<std::string, CUfunction> patched_kernel_by_name;
+	std::map<std::pair<CUcontext, std::string>, CUfunction>
+		patched_kernel_by_context;
 	std::unordered_map<CUfunction, std::string> kernel_name_by_cufunction;
 
 			std::atomic<bool> enabled{ true };
@@ -273,11 +283,13 @@ class nv_attach_impl final : public base_attach_impl {
 	std::vector<host_symbol_range> host_symbol_ranges;
 
 		mutable std::mutex patched_global_cache_mutex;
-		std::unordered_map<std::string, std::pair<CUdeviceptr, size_t>>
-			patched_global_by_name;
+		std::map<std::pair<CUcontext, std::string>,
+			 std::pair<CUdeviceptr, size_t>>
+			patched_global_by_context;
 
 		mutable std::mutex launch_event_mutex;
-		std::unordered_map<CUstream, CUevent> pending_launch_events_by_stream;
+		std::map<std::pair<CUcontext, CUstream>, CUevent>
+			pending_launch_events;
 	};
 
 std::string add_semicolon_for_variable_lines(std::string input);
