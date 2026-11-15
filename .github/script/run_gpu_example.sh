@@ -17,6 +17,7 @@ VICTIM_REL="${GPU_EXAMPLE_VICTIM}"
 EXPECTED="${GPU_EXAMPLE_EXPECTED}"
 EXAMPLE_NAME="${GPU_EXAMPLE_NAME}"
 EXAMPLE_MODE="${GPU_EXAMPLE_MODE}"
+CLIENT_ENV="${GPU_EXAMPLE_CLIENT_ENV:-}"
 CLIENT_TIMEOUT=30
 BPFTIME_CLI="$BUILD_DIR/tools/cli/bpftime"
 BPFTIMETOOL="$BUILD_DIR/tools/bpftimetool/bpftimetool"
@@ -201,7 +202,7 @@ else
   # binary. Run it in the background and bound the window ourselves so
   # an exit-137 caused by an external OOM kill (before the window
   # elapses) is distinguishable from our own timeout teardown.
-  env BPFTIME_LOG_OUTPUT=console bash -lc "LD_PRELOAD=\"$AGENT_SO\" exec $VICTIM_REL" > "$ROOT_DIR/client.log" 2>&1 &
+  env $CLIENT_ENV BPFTIME_LOG_OUTPUT=console bash -lc "LD_PRELOAD=\"$AGENT_SO\" exec $VICTIM_REL" > "$ROOT_DIR/client.log" 2>&1 &
   CLIENT_PID=$!
   CLIENT_KILLED_INTENTIONALLY=0
   for ((elapsed = 0; elapsed < CLIENT_TIMEOUT; ++elapsed)); do
@@ -269,6 +270,13 @@ else
   EXAMPLE_NAME="${GPU_EXAMPLE_NAME}"
   FOUND=1
   case "$EXAMPLE_NAME" in
+    atomizer)
+      # The victim only accepts the patched values and prints its own
+      # confirmation once every visible GPU has been checked.
+      if grep -Fq "$EXPECTED" server.log client.log && grep -Fq "Validated all visible GPUs" client.log; then
+        FOUND=0
+      fi
+      ;;
     directly_run_on_gpu)
       # For GEMM, expect a non-zero fixed-point value after bpftimetool ran.
       if grep -Eq "GEMM C\\[0\\]=[1-9]" server.log; then
