@@ -1,4 +1,5 @@
 #include "bpftime_internal.h"
+#include "ebpf_inst.h"
 #if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
 #include "trap_uprobe_attach_impl.hpp"
 #include "trap_attach_utils.hpp"
@@ -165,6 +166,51 @@ TEST_CASE("Trap BPF admission rejects unaudited helper implementations")
 		REQUIRE(ret == 123);
 	}
 }
+
+#if defined(__x86_64__) && BPFTIME_UBPF_JIT && !BPFTIME_ENABLE_MPK
+TEST_CASE("uBPF x86 r0 fetch atomic falls back and cannot enter a trap JIT")
+{
+	const ebpf_inst code[] = {
+		{ .code = EBPF_OP_MOV64_REG, .dst_reg = 0, .src_reg = 1 },
+		{ .code = EBPF_OP_MOV64_IMM, .dst_reg = 2, .imm = 1 },
+		{ .code = EBPF_ATOMIC_OPCODE_64, .dst_reg = 0, .src_reg = 2,
+		  .imm = EBPF_ATOMIC_ADD | EBPF_FETCH },
+		{ .code = EBPF_OP_MOV64_REG, .dst_reg = 0, .src_reg = 2 },
+		{ .code = EBPF_OP_EXIT },
+	};
+	runtime_config config;
+	config.set_vm_name("ubpf");
+	bpftime_prog prog(code, sizeof(code) / sizeof(code[0]), "unsafe_r0_fetch", config);
+	// A normal JIT request must fail over to the safe interpreter.
+	REQUIRE(prog.bpftime_prog_load(true) == 0);
+	// Trap admission must not invoke the same known-unsafe JIT compile site.
+	REQUIRE(prog.prepare_for_signal_execution() == -ENOTSUP);
+	uint64_t cell = 41, previous = 0;
+	REQUIRE(prog.bpftime_prog_exec(&cell, sizeof(cell), &previous) == 0);
+	REQUIRE(cell == 42);
+	REQUIRE(previous == 41);
+}
+
+TEST_CASE("uBPF x86 non-r0 fetch atomic remains eligible for trap JIT")
+{
+	const ebpf_inst code[] = {
+		{ .code = EBPF_OP_MOV64_IMM, .dst_reg = 2, .imm = 1 },
+		{ .code = EBPF_ATOMIC_OPCODE_64, .dst_reg = 1, .src_reg = 2,
+		  .imm = EBPF_ATOMIC_ADD | EBPF_FETCH },
+		{ .code = EBPF_OP_MOV64_REG, .dst_reg = 0, .src_reg = 2 },
+		{ .code = EBPF_OP_EXIT },
+	};
+	runtime_config config;
+	config.set_vm_name("ubpf");
+	bpftime_prog prog(code, sizeof(code) / sizeof(code[0]), "safe_r1_fetch", config);
+	REQUIRE(prog.bpftime_prog_load(false) == 0);
+	REQUIRE(prog.prepare_for_signal_execution() == 0);
+	uint64_t cell = 41, previous = 0;
+	REQUIRE(prog.bpftime_prog_exec(&cell, sizeof(cell), &previous) == 0);
+	REQUIRE(cell == 42);
+	REQUIRE(previous == 41);
+}
+#endif
 
 TEST_CASE("Trap runtime links reject unsafe programs before patching code")
 {
