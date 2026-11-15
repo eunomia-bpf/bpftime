@@ -11,6 +11,9 @@
 #include <cstring>
 #include <stdexcept>
 #include <algorithm>
+#if __APPLE__
+#include "spinlock_wrapper.hpp"
+#endif
 // #include <vector>
 
 namespace bpftime
