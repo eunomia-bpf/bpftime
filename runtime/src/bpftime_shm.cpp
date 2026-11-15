@@ -61,46 +61,64 @@ int sigtimedwait(const sigset_t *set, siginfo_t *info,
 
 using namespace bpftime;
 
+// With MPK the shared memory is writable only inside bpftime code. Every
+// entry point below may write it (creating objects, updating maps, the LRU
+// bookkeeping of a lookup), so each runs with the write window open and gives
+// the caller's rights back on return.
+#if BPFTIME_ENABLE_MPK
+#define BPFTIME_SHM_WRITE_SCOPE()                                              	bpftime::shm_write_window_guard bpftime_shm_write_scope_
+#else
+#define BPFTIME_SHM_WRITE_SCOPE() static_cast<void>(0)
+#endif
+
 int bpftime_find_minimal_unused_fd()
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.find_minimal_unused_fd();
 }
 
 int bpftime_link_create(int fd, struct bpf_link_create_args *args)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.add_bpf_link(fd, args);
 }
 
 int bpftime_progs_create(int fd, const ebpf_inst *insn, size_t insn_cnt,
 			 const char *prog_name, int prog_type)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.add_bpf_prog(
 		fd, insn, insn_cnt, prog_name, prog_type);
 }
 
 int bpftime_maps_create(int fd, const char *name, bpftime::bpf_map_attr attr)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.add_bpf_map(fd, name, attr);
 }
 
 int bpftime_translate_shared_map_type_to_kernel_map_type(int ty)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory
 		.translate_shared_map_type_to_kernel_map_type(ty);
 }
 
 int bpftime_maps_dup(int oldfd, int newfd)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.dup_bpf_map(oldfd, newfd);
 }
 
 uint32_t bpftime_map_value_size_from_syscall(int fd)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.bpf_map_value_size(fd);
 }
 
 int bpftime_helper_map_get_next_key(int fd, const void *key, void *next_key)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	try {
 		return shm_holder.global_shared_memory.bpf_map_get_next_key(
 			fd, key, next_key, false);
@@ -115,6 +133,7 @@ int bpftime_helper_map_get_next_key(int fd, const void *key, void *next_key)
 const void *bpftime_map_lookup_elem_with_origin(int fd, const void *key,
 						bool from_syscall)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	try {
 		return shm_holder.global_shared_memory.bpf_map_lookup_elem(
 			fd, key, from_syscall);
@@ -135,6 +154,7 @@ long bpftime_map_update_elem_with_origin(int fd, const void *key,
 					 const void *value, uint64_t flags,
 					 bool from_syscall)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	try {
 		return shm_holder.global_shared_memory.bpf_map_update_elem(
 			fd, key, value, flags, from_syscall);
@@ -155,6 +175,7 @@ long bpftime_map_update_elem(int fd, const void *key, const void *value,
 long bpftime_map_delete_elem_with_origin(int fd, const void *key,
 					 bool from_syscall)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	try {
 		return shm_holder.global_shared_memory.bpf_delete_elem(
 			fd, key, from_syscall);
@@ -173,6 +194,7 @@ long bpftime_map_delete_elem(int fd, const void *key)
 
 long bpftime_map_lookup_and_delete_elem(int fd, const void *key, void *value)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	try {
 		return shm_holder.global_shared_memory
 			.bpf_map_lookup_and_delete_elem(fd, key, value, true);
@@ -186,6 +208,7 @@ long bpftime_map_lookup_and_delete_elem(int fd, const void *key, void *value)
 
 long bpftime_map_push_elem(int fd, const void *value, uint64_t flags)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	try {
 		return shm_holder.global_shared_memory.bpf_map_push_elem(
 			fd, value, flags, true);
@@ -199,6 +222,7 @@ long bpftime_map_push_elem(int fd, const void *value, uint64_t flags)
 
 long bpftime_map_pop_elem(int fd, void *value)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	try {
 		return shm_holder.global_shared_memory.bpf_map_pop_elem(
 			fd, value, true);
@@ -212,6 +236,7 @@ long bpftime_map_pop_elem(int fd, void *value)
 
 long bpftime_map_peek_elem(int fd, void *value)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	try {
 		return shm_holder.global_shared_memory.bpf_map_peek_elem(
 			fd, value, true);
@@ -225,6 +250,7 @@ long bpftime_map_peek_elem(int fd, void *value)
 
 int bpftime_map_get_next_key(int fd, const void *key, void *next_key)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	try {
 		return shm_holder.global_shared_memory.bpf_map_get_next_key(
 			fd, key, next_key, true);
@@ -239,6 +265,7 @@ int bpftime_map_get_next_key(int fd, const void *key, void *next_key)
 int bpftime_uprobe_create(int fd, int pid, const char *name, uint64_t offset,
 			  bool retprobe, size_t ref_ctr_off)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.add_uprobe(
 		fd, pid, name, offset, retprobe, ref_ctr_off);
 }
@@ -246,27 +273,32 @@ int bpftime_uprobe_create(int fd, int pid, const char *name, uint64_t offset,
 int bpftime_kprobe_create(int fd, const char *func_name, uint64_t addr,
 			  bool retprobe, size_t ref_ctr_off)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.add_kprobe(
 		fd == -1 ? std::optional<int>() : fd, func_name, addr, retprobe,
 		ref_ctr_off);
 }
 int bpftime_tracepoint_create(int fd, int pid, int32_t tp_id)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.add_tracepoint(fd, pid, tp_id);
 }
 
 int bpftime_perf_event_enable(int fd)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.perf_event_enable(fd);
 }
 
 int bpftime_perf_event_disable(int fd)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.perf_event_disable(fd);
 }
 
 int bpftime_attach_perf_to_bpf(int perf_fd, int bpf_fd)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.attach_perf_to_bpf(perf_fd,
 								  bpf_fd, {});
 }
@@ -274,6 +306,7 @@ int bpftime_attach_perf_to_bpf(int perf_fd, int bpf_fd)
 int bpftime_attach_perf_to_bpf_with_cookie(int perf_fd, int bpf_fd,
 					   uint64_t cookie)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.attach_perf_to_bpf(
 		perf_fd, bpf_fd, cookie);
 }
@@ -289,12 +322,14 @@ int bpftime_get_current_thread_cookie(uint64_t *out)
 int bpftime_add_ringbuf_fd_to_epoll(int ringbuf_fd, int epoll_fd,
 				    epoll_data_t extra_data)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.add_ringbuf_to_epoll(
 		ringbuf_fd, epoll_fd, extra_data);
 }
 
 int bpftime_epoll_create()
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.epoll_create();
 }
 
@@ -305,12 +340,14 @@ int bpftime_epoll_create_at(int fd)
 
 void bpftime_close(int fd)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	shm_holder.global_shared_memory.close_fd(fd);
 }
 
 int bpftime_map_get_info(int fd, bpftime::bpf_map_attr *out_attr,
 			 const char **out_name, bpftime::bpf_map_type *type)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	if (!shm_holder.global_shared_memory.is_map_fd(fd)) {
 		errno = ENOENT;
 		return -1;
@@ -331,6 +368,7 @@ int bpftime_map_get_info(int fd, bpftime::bpf_map_attr *out_attr,
 
 int bpftime_is_ringbuf_map(int fd)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.is_ringbuf_map_fd(fd);
 }
 
@@ -350,26 +388,31 @@ void bpftime_protect_disable()
 
 int bpftime_is_map_fd(int fd)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.is_map_fd(fd);
 }
 
 int bpftime_is_perf_event_fd(int fd)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.is_perf_event_handler_fd(fd);
 }
 
 int bpftime_is_prog_fd(int fd)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.is_prog_fd(fd);
 }
 
 int bpftime_is_array_map(int fd)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.is_array_map_fd(fd);
 }
 
 void *bpftime_get_array_map_raw_data(int fd)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	if (auto array_impl =
 		    shm_holder.global_shared_memory.try_get_array_map_impl(fd);
 	    array_impl.has_value()) {
@@ -383,6 +426,7 @@ void *bpftime_get_array_map_raw_data(int fd)
 
 void *bpftime_get_ringbuf_consumer_page(int ringbuf_fd)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	auto &shm = shm_holder.global_shared_memory;
 	if (auto ret = shm.try_get_ringbuf_map_impl(ringbuf_fd);
 	    ret.has_value()) {
@@ -397,6 +441,7 @@ void *bpftime_get_ringbuf_consumer_page(int ringbuf_fd)
 
 void *bpftime_get_ringbuf_producer_page(int ringbuf_fd)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	auto &shm = shm_holder.global_shared_memory;
 	if (auto ret = shm.try_get_ringbuf_map_impl(ringbuf_fd);
 	    ret.has_value()) {
@@ -411,6 +456,7 @@ void *bpftime_get_ringbuf_producer_page(int ringbuf_fd)
 
 void *bpftime_ringbuf_reserve(int fd, uint64_t size)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	auto &shm = shm_holder.global_shared_memory;
 	if (auto ret = shm.try_get_ringbuf_map_impl(fd); ret.has_value()) {
 		auto impl = ret.value();
@@ -424,6 +470,7 @@ void *bpftime_ringbuf_reserve(int fd, uint64_t size)
 
 void bpftime_ringbuf_submit(int fd, void *data, int discard)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	auto &shm = shm_holder.global_shared_memory;
 	if (auto ret = shm.try_get_ringbuf_map_impl(fd); ret.has_value()) {
 		auto impl = ret.value();
@@ -436,12 +483,14 @@ void bpftime_ringbuf_submit(int fd, void *data, int discard)
 
 int bpftime_is_epoll_handler(int fd)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.is_epoll_fd(fd);
 }
 
 int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 		       int timeout)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	if (timeout < -1) {
 		SPDLOG_ERROR(
 			"bpftime_epoll_wait only accepts timeout=-1 when negative");
@@ -606,6 +655,7 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 				    int64_t config)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	auto &shm = shm_holder.global_shared_memory;
 	return shm.add_software_perf_event(cpu, sample_type, config);
 }
@@ -620,6 +670,7 @@ int bpftime_add_software_perf_event_at(int fd, int cpu, int32_t sample_type,
 int bpftime_add_ureplace_or_override(int fd, int pid, const char *name,
 				     uint64_t offset, bool is_replace)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	auto &shm = shm_holder.global_shared_memory;
 	return shm.add_uprobe_override(fd, pid, name, offset, is_replace);
 }
@@ -627,18 +678,21 @@ int bpftime_add_ureplace_or_override(int fd, int pid, const char *name,
 int bpftime_add_software_perf_event_fd_to_epoll(int swpe_fd, int epoll_fd,
 						epoll_data_t extra_data)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.add_software_perf_event_to_epoll(
 		swpe_fd, epoll_fd, extra_data);
 }
 
 int bpftime_is_software_perf_event(int fd)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.is_software_perf_event_handler_fd(
 		fd);
 }
 
 void *bpftime_get_software_perf_event_raw_buffer(int fd, size_t expected_size)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory
 		.get_software_perf_event_raw_buffer(fd, expected_size)
 		.value_or(nullptr);
@@ -646,6 +700,7 @@ void *bpftime_get_software_perf_event_raw_buffer(int fd, size_t expected_size)
 
 int bpftime_perf_event_output(int fd, const void *buf, size_t sz)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	auto &shm = shm_holder.global_shared_memory;
 	if (!shm.is_perf_event_handler_fd(fd)) {
 		SPDLOG_ERROR("Expected fd {} to be a perf event handler", fd);
@@ -670,6 +725,7 @@ int bpftime_perf_event_output(int fd, const void *buf, size_t sz)
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	SPDLOG_DEBUG("Output data into shared perf event array fd {}", map_fd);
 	auto &shm = shm_holder.global_shared_memory;
 	if (!shm.is_shared_perf_event_array_map_fd(map_fd)) {
@@ -699,6 +755,7 @@ int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz)
 
 int bpftime_is_prog_array(int fd)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.is_prog_array_map_fd(fd);
 }
 
@@ -706,6 +763,7 @@ const uint64_t INVALID_MAP_PTR = ((uint64_t)0 - 1);
 
 extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	SPDLOG_DEBUG("Call map_ptr_by_fd with fd={}", fd);
 	if (!shm_holder.global_shared_memory.get_manager() ||
 	    !shm_holder.global_shared_memory.is_map_fd(fd)) {
@@ -721,6 +779,7 @@ extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 
 extern "C" uint64_t map_val(uint64_t map_ptr)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	SPDLOG_DEBUG("Call map_val with map_ptr={:x}", map_ptr);
 	int fd = (int)map_ptr;
 	if (!shm_holder.global_shared_memory.get_manager() ||
@@ -745,6 +804,7 @@ extern "C" uint64_t map_val(uint64_t map_ptr)
 
 int bpftime_add_custom_perf_event(int type, const char *attach_argument)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	return shm_holder.global_shared_memory.add_custom_perf_event(
 		type, attach_argument);
 }
@@ -752,6 +812,7 @@ int bpftime_add_custom_perf_event(int type, const char *attach_argument)
 int bpftime_poll_from_ringbuf(int rb_fd, void *ctx,
 			      int (*cb)(void *, void *, size_t))
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	auto &shm = shm_holder.global_shared_memory;
 	if (auto ret = shm.try_get_ringbuf_map_impl(rb_fd); ret.has_value()) {
 		auto impl = ret.value();
@@ -767,6 +828,7 @@ int bpftime_poll_from_ringbuf(int rb_fd, void *ctx,
 int bpftime_poll_gpu_ringbuf_map(int mapfd, void *ctx,
 				 void (*fn)(const void *, uint64_t, void *))
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	auto &shm = shm_holder.global_shared_memory;
 	shm.poll_gpu_ringbuf_map(mapfd, [=](const void *buf, uint64_t size) {
 		fn(buf, size, ctx);
@@ -777,6 +839,7 @@ int bpftime_poll_gpu_ringbuf_map(int mapfd, void *ctx,
 
 int bpftime_add_memfd_handler(const char *name, int flags)
 {
+	BPFTIME_SHM_WRITE_SCOPE();
 	auto &shm = shm_holder.global_shared_memory;
 	return shm.add_memfd_handler(name, flags);
 }

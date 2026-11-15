@@ -12,6 +12,7 @@
 #include <asm-generic/unistd.h>
 #endif
 #include <boost/interprocess/exceptions.hpp>
+#include "bpftime_shm.hpp"
 #include <cstdio>
 #if __linux__
 #include "linux/bpf.h"
@@ -264,6 +265,9 @@ auto call_with_context(F &&f, Fallback &&fallback) noexcept
 {
 	if (!initialize_ctx())
 		return fallback();
+	// Every interposed call is bpftime code that may write the shared
+	// memory.
+	bpftime::shm_write_window_guard shm_window;
 	return handle_exceptions(std::forward<F>(f),
 				 std::forward<Fallback>(fallback));
 }

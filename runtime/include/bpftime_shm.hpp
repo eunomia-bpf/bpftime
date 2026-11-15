@@ -239,6 +239,15 @@ void bpftime_protect_enable();
 // disable memory protect
 void bpftime_protect_disable();
 
+// With MPK the shared memory is writable only inside bpftime code. Open the
+// write window for this thread and get the rights to hand back to
+// bpftime_protect_restore, so nested windows (a helper calling back into the
+// runtime while a program runs) keep the outer one open. Without MPK both
+// are no-ops.
+int bpftime_protect_open_write_window();
+
+void bpftime_protect_restore(int saved);
+
 // import the global shared memory from json file
 int bpftime_import_global_shm_from_json(const char *filename);
 // export the global shared memory to json file
@@ -454,5 +463,25 @@ int bpftime_add_memfd_handler(const char *name, int flags);
 int bpftime_translate_shared_map_type_to_kernel_map_type(int ty);
 
 }
+
+namespace bpftime
+{
+// Keeps the shared-memory write window open for a scope of bpftime code and
+// gives the caller's rights back when it ends (see
+// bpftime_protect_open_write_window). A no-op without MPK.
+class shm_write_window_guard {
+	int saved = bpftime_protect_open_write_window();
+
+    public:
+	shm_write_window_guard() = default;
+	shm_write_window_guard(const shm_write_window_guard &) = delete;
+	shm_write_window_guard &
+	operator=(const shm_write_window_guard &) = delete;
+	~shm_write_window_guard()
+	{
+		bpftime_protect_restore(saved);
+	}
+};
+} // namespace bpftime
 
 #endif // BPFTIME_SHM_CPP_H

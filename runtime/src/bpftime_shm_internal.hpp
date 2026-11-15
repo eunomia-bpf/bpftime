@@ -329,6 +329,10 @@ public:
 #if BPFTIME_ENABLE_MPK
 	void enable_mpk();
 	void disable_mpk();
+	// Give this thread write access to the shared memory and return the
+	// rights it had, for restore_mpk_rights; -1 when MPK is not active.
+	int open_mpk_write_window();
+	void restore_mpk_rights(int saved);
 #endif
 
 	// initialize the shared memory globally

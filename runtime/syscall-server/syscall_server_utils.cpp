@@ -230,6 +230,7 @@ static void remove_syscall_server_global_shm() noexcept
 		}
 		return;
 	}
+	shm_write_window_guard shm_window;
 	if (getpid() != g_syscall_server_shm_owner_pid) {
 		try {
 			shm_holder.global_shared_memory
@@ -330,6 +331,8 @@ void start_up(syscall_context &ctx)
 				g_syscall_server_shm_name.c_str());
 			g_syscall_server_owns_shm =
 				initialize_global_shm_with_ownership();
+			// The rest of start-up writes the shared memory.
+			shm_write_window_guard shm_window;
 			std::atexit(remove_syscall_server_global_shm);
 			if (!shm_holder.global_shared_memory
 				     .add_pid_into_alive_syscall_server_set(

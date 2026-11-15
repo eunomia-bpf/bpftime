@@ -61,6 +61,10 @@ struct parent_shm_guard {
 			return;
 		}
 		if (pid_added) {
+			// The test plays a peer server or agent, which
+			// writes its pid inside the shared-memory write
+			// window.
+			bpftime::shm_write_window_guard shm_window;
 			if (added_as_syscall_server) {
 				bpftime::shm_holder.global_shared_memory
 					.remove_pid_from_alive_syscall_server_set(
@@ -234,10 +238,12 @@ helper_result run_waiting_helper_with_live_pid(const std::string &shm_name,
 	bpftime_initialize_global_shm(bpftime::shm_open_type::SHM_OPEN_ONLY);
 	parent_shm.initialized = true;
 	if (set_name == live_pid_set::syscall_server) {
+		bpftime::shm_write_window_guard shm_window;
 		bpftime::shm_holder.global_shared_memory
 			.add_pid_into_alive_syscall_server_set(getpid());
 		parent_shm.added_as_syscall_server = true;
 	} else {
+		bpftime::shm_write_window_guard shm_window;
 		bpftime::shm_holder.global_shared_memory
 			.add_pid_into_alive_agent_set(getpid());
 	}

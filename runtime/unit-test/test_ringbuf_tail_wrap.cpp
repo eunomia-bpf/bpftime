@@ -76,10 +76,14 @@ TEST_CASE("ringbuf keeps tail-straddling records contiguous and consumable",
 	for (uint64_t seq = 0; seq < 200; ++seq) {
 		auto *payload = bpftime_ringbuf_reserve(rb_fd, sizeof(rec));
 		REQUIRE(payload != nullptr);
+		// The test fills the record as a running program would, inside
+		// the shared-memory write window.
+		const int saved_protect = bpftime_protect_open_write_window();
 		auto *r = static_cast<rec *>(payload);
 		r->seq = seq;
 		for (auto &b : r->pad)
 			b = 0;
+		bpftime_protect_restore(saved_protect);
 		bpftime_ringbuf_submit(rb_fd, payload, 0);
 
 		const int drained =

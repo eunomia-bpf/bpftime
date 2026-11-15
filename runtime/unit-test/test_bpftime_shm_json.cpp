@@ -59,6 +59,19 @@ const unsigned char bpf_add_mem_64_bit_minimal[] =
 TEST_CASE("Test bpftime shm json import/export")
 {
 	bpftime_shm shm(SHM_NAME, shm_open_type::SHM_REMOVE_AND_CREATE);
+#if BPFTIME_ENABLE_MPK
+	// The test fills the instance through its internal methods, as the
+	// runtime does inside a write window.
+	const int saved_protect = shm.open_mpk_write_window();
+	struct restore_protect {
+		bpftime_shm &shm;
+		int saved;
+		~restore_protect()
+		{
+			shm.restore_mpk_rights(saved);
+		}
+	} restore{ shm, saved_protect };
+#endif
 
 	SECTION("Test shm json export")
 	{
