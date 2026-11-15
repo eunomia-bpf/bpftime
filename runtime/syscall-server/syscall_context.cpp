@@ -100,6 +100,18 @@ std::string resolve_uprobe_map_file(const char *name)
 	return mapped_path.string();
 }
 
+[[noreturn]] void
+exit_for_startup_allocation_failure(const std::exception &error)
+{
+	auto config = bpftime::construct_runtime_config_from_env();
+	SPDLOG_CRITICAL(
+		"Unable to initialize bpftime shared memory ({} MiB, {} fd slots): {}",
+		config.shm_memory_size, config.max_fd_count, error.what());
+	SPDLOG_CRITICAL(
+		"Increase BPFTIME_SHM_MEMORY_MB or decrease BPFTIME_MAX_FD_COUNT");
+	std::exit(EXIT_FAILURE);
+}
+
 void set_mock_fd_cloexec(int fd)
 {
 	int flags = fcntl(fd, F_GETFD);
@@ -214,8 +226,8 @@ std::string format_verifier_program_dump(const uint64_t *instructions,
 		uint64_t inst = instructions[i];
 		fmt_lib::format_to(std::back_inserter(buffer), "{:03}: ", i);
 		for (int j = 0; j < 8; j++) {
-			fmt_lib::format_to(std::back_inserter(buffer), "{:02X} ",
-					   inst & 0xff);
+			fmt_lib::format_to(std::back_inserter(buffer),
+					   "{:02X} ", inst & 0xff);
 			inst >>= 8;
 		}
 		fmt_lib::format_to(std::back_inserter(buffer), "\n");
@@ -338,8 +350,9 @@ syscall_context::syscall_context()
 	init_original_functions();
 	enable_mock.store(false, std::memory_order_relaxed);
 	const char *logger_target = getenv("BPFTIME_LOG_OUTPUT");
-	bpftime_set_logger(logger_target == nullptr ? DEFAULT_LOGGER_OUTPUT_PATH :
-						     logger_target);
+	bpftime_set_logger(logger_target == nullptr ?
+				   DEFAULT_LOGGER_OUTPUT_PATH :
+				   logger_target);
 	SPDLOG_DEBUG("Resolved original libc function pointers");
 	// FIXME: merge this into the runtime config
 	load_config_from_env();
@@ -957,8 +970,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 					simple_section_name.value());
 				if (result.has_value()) {
 					auto message = fmt_lib::format(
-						"{}{}",
-						*result,
+						"{}{}", *result,
 						format_verifier_program_dump(
 							(uint64_t *)(uintptr_t)
 								attr->insns,
@@ -975,7 +987,8 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 						errno = EINVAL;
 						return -1;
 					} else {
-						// WARNING mode: log warning but continue
+						// WARNING mode: log warning but
+						// continue
 						SPDLOG_WARN(
 							"Userspace verifier warning for program `{}`: {}\n"
 							"The program will still be loaded. "
@@ -1022,7 +1035,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		int id = bpftime_link_create(
 			reserved_fd,
 			(bpf_link_create_args *)&attr->link_create);
-		SPDLOG_DEBUG("Created link {}", id);
+		SPDLOG_DEBUG("syscall-server: Created link {}", id);
 		if (id < 0 && bpftime_is_prog_fd(prog_fd) &&
 		    bpftime_is_perf_event_fd(target_fd) &&
 		    attach_type == BPF_PERF_EVENT) {
@@ -1078,8 +1091,9 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 						       &map_attr, &map_name,
 						       &map_type);
 			if (res < 0) {
-				// bpftime_map_get_info already set errno (ENOENT);
-				// don't overwrite it with the -1 return value.
+				// bpftime_map_get_info already set errno
+				// (ENOENT); don't overwrite it with the -1
+				// return value.
 				return -1;
 			}
 			auto ptr = (bpf_map_info *)((uintptr_t)attr->info.info);
@@ -1176,10 +1190,11 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 			name, addr, is_ret_probe, ref_ctr_off, attr->config);
 		int new_fd = -1;
 		std::string new_probe_name = name;
-		// When running with kernel, probe names started with `cuda_` will be treated as cuda probe
+		// When running with kernel, probe names started with `cuda_`
+		// will be treated as cuda probe
 		if (name.starts_with("cuda_") && run_with_kernel) {
 			auto new_attr = *attr;
-			new_attr.config1 = (uintptr_t)"do_exit";
+			new_attr.config1 = (uintptr_t) "do_exit";
 			new_attr.config2 = 0;
 			new_fd = orig_syscall_fn(__NR_perf_event_open,
 						 (uint64_t)(uintptr_t)&new_attr,

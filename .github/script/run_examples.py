@@ -34,6 +34,7 @@ EXAMPLES = [
     dict(name="sigsnoop", path="tracing/sigsnoop", executable="./sigsnoop", victim="./victim", syscall_trace=True, expected="victim           0         -1      0"),
     dict(name="tailcall_minimal", path="bpf_features/tailcall_minimal", executable="./tailcall_minimal", victim="./victim", syscall_trace=False, expected="See /sys/kernel/debug/tracing/trace_pipe for output (5)", privileged=True),
     dict(name="usdt_minimal", path="minimal/usdt_minimal", executable="./usdt_minimal", victim="./victim", syscall_trace=False, expected="bpf:"),
+    dict(name="uprobe_multi", path="uprobe_multi", executable="./uprobe_multi", victim="./victim", syscall_trace=False, expected="Uretprobe triggered:"),
     dict(name="get_stack_id_example", path="bpf_features/get_stack_id_example", executable="./get_stack_id_example", victim="./victim", syscall_trace=False, expected="Function: malloc enter"),
     dict(name="bloom_filter_demo", path="bpf_features/bloom_filter_demo", executable="./uprobe_bloom_filter", victim="./target", syscall_trace=False, expected="Bloom Filter Real-time Monitoring Statistics"),
     dict(name="lpm_trie_demo", path="bpf_features/lpm_trie_demo", executable="./file_access_monitor", victim="./file_access_target", syscall_trace=False, expected="All tests passed! bpftime LPM Trie working correctly"),

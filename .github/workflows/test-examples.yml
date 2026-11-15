@@ -167,7 +167,7 @@ jobs:
 
           # Special handling groups no longer needed; all examples build local libbpf now
           GLOBAL_LIBBPF_EXAMPLES=""
-          LOCAL_LIBBPF_EXAMPLES="bpf_features/bloom_filter_demo minimal malloc tracing/opensnoop tracing/sslsniff bpf_features/tailcall_minimal minimal/usdt_minimal bpf_features/get_stack_id_example bpf_features/lpm_trie_demo bpf_features/queue_demo xdp-counter"
+          LOCAL_LIBBPF_EXAMPLES="bpf_features/bloom_filter_demo minimal malloc tracing/opensnoop tracing/sslsniff bpf_features/tailcall_minimal minimal/usdt_minimal bpf_features/get_stack_id_example bpf_features/lpm_trie_demo bpf_features/queue_demo xdp-counter uprobe_multi"
 
           # Build examples that use global libbpf first (need build/libbpf/libbpf.a)
           for example_name in $GLOBAL_LIBBPF_EXAMPLES; do
