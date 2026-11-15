@@ -36,6 +36,9 @@ jobs:
   build:
     runs-on: "ubuntu-latest"
     strategy:
+      # Let every OS finish even if one fails, so an openEuler-specific issue
+      # does not cancel the ubuntu/fedora jobs and hide their real results.
+      fail-fast: false
       matrix:
         include:
           - container: ubuntu-2204
