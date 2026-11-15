@@ -11,6 +11,7 @@
 #include <vector>
 #if defined(__linux__)
 #include <dlfcn.h>
+#include <link.h>
 #include "ptxpass_test_paths.hpp"
 #include <sys/wait.h>
 #include <unistd.h>
@@ -252,7 +253,11 @@ static int run_missing_kernel_pass(const char *path)
 		return status;
 	}
 
+#if defined(__GLIBC__)
+	void *handle = dlmopen(LM_ID_NEWLM, path, RTLD_NOW | RTLD_LOCAL);
+#else
 	void *handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+#endif
 	if (handle == nullptr)
 		_exit(2);
 	using process_input_fn = int (*)(const char *, int, char *);

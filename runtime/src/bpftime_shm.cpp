@@ -469,29 +469,37 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 		// iteration, so the signal stayed pending and was never
 		// delivered, leaving the process unresponsive to SIGINT/SIGTERM.
 		// Poll for a pending blocked signal here so it is honored
-		// regardless of event readiness. A zero timeout makes this a
-		// non-blocking consume, so it never stalls the ready path.
+		// regardless of event readiness. sigpending is a cheap
+		// non-consuming probe; only when it reports a pending SIGINT/
+		// SIGTERM do we take the heavier sigtimedwait path to dequeue and
+		// dispatch it, keeping the common no-signal ready path inexpensive.
 		{
-			siginfo_t sig_info;
-			const timespec nonblock{ .tv_sec = 0, .tv_nsec = 0 };
-			if (int sig = sigtimedwait(&to_block, &sig_info,
-						   &nonblock);
-			    sig > 0) {
-				SPDLOG_DEBUG(
-					"epoll_wait interrupted by pending signal {}",
-					sig);
-				// Invoke the original signal handler
-				struct sigaction act;
-				sigaction(sig, nullptr, &act);
-				if ((act.sa_flags & SA_SIGINFO) &&
-				    act.sa_sigaction) {
-					act.sa_sigaction(sig, &sig_info,
-							 nullptr);
-				} else if (auto f = act.sa_handler) {
-					f(sig);
+			sigset_t pending_now;
+			if (sigpending(&pending_now) == 0 &&
+			    (sigismember(&pending_now, SIGINT) ||
+			     sigismember(&pending_now, SIGTERM))) {
+				siginfo_t sig_info;
+				const timespec nonblock{ .tv_sec = 0,
+							 .tv_nsec = 0 };
+				if (int sig = sigtimedwait(&to_block, &sig_info,
+							   &nonblock);
+				    sig > 0) {
+					SPDLOG_DEBUG(
+						"epoll_wait interrupted by pending signal {}",
+						sig);
+					// Invoke the original signal handler
+					struct sigaction act;
+					sigaction(sig, nullptr, &act);
+					if ((act.sa_flags & SA_SIGINFO) &&
+					    act.sa_sigaction) {
+						act.sa_sigaction(sig, &sig_info,
+								 nullptr);
+					} else if (auto f = act.sa_handler) {
+						f(sig);
+					}
+					failed_with_intr = true;
+					break;
 				}
-				failed_with_intr = true;
-				break;
 			}
 		}
 

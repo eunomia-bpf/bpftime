@@ -24,7 +24,8 @@ static const u64 (*bpf_get_block_dim)(u64 *x, u64 *y, u64 *z) = (void *)504;
 static const u64 (*bpf_get_thread_idx)(u64 *x, u64 *y, u64 *z) = (void *)505;
 
 struct data {
-	u64 x, y, z;
+	u64 block_x, block_y, block_z;
+	u64 thread_x, thread_y, thread_z;
 	u64 timestamp;
 };
 
@@ -33,7 +34,8 @@ int cuda__retprobe()
 {
 	struct data data;
 
-	bpf_get_thread_idx(&data.x, &data.y, &data.z);
+	bpf_get_block_idx(&data.block_x, &data.block_y, &data.block_z);
+	bpf_get_thread_idx(&data.thread_x, &data.thread_y, &data.thread_z);
 	data.timestamp = bpf_get_globaltimer();
 	bpf_perf_event_output(NULL, &rb, 0, &data, sizeof(struct data));
 	return 0;
