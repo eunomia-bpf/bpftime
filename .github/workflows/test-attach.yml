@@ -31,7 +31,9 @@ concurrency:
 
 jobs:
   build_and_test_attach:
-    runs-on: "ubuntu-latest"
+    # Job containers run --privileged with the kernel's tracefs; every vm
+    # runner is its own VM, so they touch only that VM's kernel.
+    runs-on: [self-hosted, linux, x64, vm]
     strategy:
       matrix:
         container:

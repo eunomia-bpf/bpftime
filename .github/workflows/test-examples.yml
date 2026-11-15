@@ -66,7 +66,9 @@ jobs:
             name: ubuntu
           - image: fedora-39
             name: fedora
-    runs-on: ubuntu-22.04
+    # Job containers run --privileged with the kernel's tracefs; every vm
+    # runner is its own VM, so they touch only that VM's kernel.
+    runs-on: [self-hosted, linux, x64, vm]
     container:
       image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
       options: --privileged
@@ -216,7 +218,9 @@ jobs:
             ~/.bpftime
 
   build-and-test:
-    runs-on: ubuntu-22.04
+    # Job containers run --privileged with the kernel's tracefs; every vm
+    # runner is its own VM, so they touch only that VM's kernel.
+    runs-on: [self-hosted, linux, x64, vm]
     needs: [build-runtime]
     container:
       image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"

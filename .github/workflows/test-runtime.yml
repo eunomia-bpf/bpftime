@@ -34,7 +34,9 @@ env:
 
 jobs:
   build:
-    runs-on: "ubuntu-latest"
+    # Job containers run --privileged with the kernel's tracefs; every vm
+    # runner is its own VM, so they touch only that VM's kernel.
+    runs-on: [self-hosted, linux, x64, vm]
     strategy:
       # Let every OS finish even if one fails, so an openEuler-specific issue
       # does not cancel the ubuntu/fedora jobs and hide their real results.
