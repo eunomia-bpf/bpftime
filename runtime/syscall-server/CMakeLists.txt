@@ -154,3 +154,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     endforeach()
   endforeach()
 endif()
+
+if(${BPFTIME_ENABLE_ROCM_ATTACH})
+  target_compile_definitions(bpftime-syscall-server PRIVATE BPFTIME_ENABLE_ROCM_ATTACH=1)
+endif()

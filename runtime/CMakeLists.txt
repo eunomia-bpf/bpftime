@@ -60,7 +60,7 @@ set(sources
   src/handler/prog_handler.cpp
   src/handler/epoll_handler.cpp
   src/handler/memfd_handler.cpp
-  
+
   src/bpftime_shm.cpp
   src/bpftime_shm_internal.cpp
   src/bpftime_shm_json.cpp
@@ -88,6 +88,10 @@ set(sources
   extension/extension_helper.cpp
 )
 
+if(BPFTIME_ENABLE_CUDA_ATTACH OR BPFTIME_ENABLE_ROCM_ATTACH)
+  list(APPEND sources src/attach/bpf_attach_ctx_gpu.cpp)
+endif()
+
 if(${BPFTIME_ENABLE_CUDA_ATTACH})
   list(APPEND sources src/attach/bpf_attach_ctx_cuda.cpp)
   list(APPEND sources src/bpf_map/gpu/nv_gpu_gdrcopy.cpp)
@@ -96,7 +100,7 @@ if(${BPFTIME_ENABLE_CUDA_ATTACH})
   list(APPEND sources src/bpf_map/gpu/nv_gpu_shared_array_map.cpp)
   list(APPEND sources src/bpf_map/gpu/nv_gpu_ringbuf_map.cpp)
   list(APPEND sources src/bpf_map/gpu_kernel_shared/array_map_kernel_gpu.cpp)
-  list(APPEND sources src/bpf_map/gpu/nv_gpu_shared_hash_map.cpp)    
+  list(APPEND sources src/bpf_map/gpu/nv_gpu_shared_hash_map.cpp)
   # HOST-based GPU maps (for Tegra/platforms without CUDA IPC)
   list(APPEND sources src/bpf_map/gpu/nv_gpu_array_host_map.cpp)
   list(APPEND sources src/bpf_map/gpu/nv_gpu_shared_array_host_map.cpp)
@@ -186,6 +190,19 @@ if(${BPFTIME_ENABLE_CUDA_ATTACH})
   target_link_libraries(${PROJECT_NAME} PUBLIC bpftime_vm_compat llvmbpf_vm bpftime_nv_attach_impl)
   target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../vm/llvm-jit/include)
 endif()
+if(${BPFTIME_ENABLE_ROCM_ATTACH})
+  include(../cmake/rocm.cmake)
+  find_rocm()
+  message(STATUS "runtime rocm libs= ${ROCM_LIBS}")
+  target_include_directories(${PROJECT_NAME} PUBLIC ${ROCM_INCLUDE_PATH} ${ROCM_ATTACH_IMPL_INCLUDE})
+  target_link_directories(${PROJECT_NAME} PUBLIC ${ROCM_LIBRARY_PATH})
+  target_link_libraries(${PROJECT_NAME} PUBLIC ${ROCM_LIBS} bpftime_rocm_attach_impl)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC BPFTIME_ENABLE_ROCM_ATTACH=1)
+  add_dependencies(${PROJECT_NAME} bpftime_vm_compat llvmbpf_vm bpftime_rocm_attach_impl)
+  target_link_libraries(${PROJECT_NAME} PUBLIC bpftime_vm_compat llvmbpf_vm bpftime_rocm_attach_impl)
+  target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../vm/llvm-jit/include)
+endif()
+
 set(RUNTIME_DEPS bpftime_vm spdlog::spdlog bpftime_base_attach_impl)
 if(BPFTIME_ENABLE_FRIDA)
   list(APPEND RUNTIME_DEPS FridaGum)

@@ -339,7 +339,11 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 	// provides the actual implementations (e.g. _bpf_helper_ext_0503).
 	// This VM is only used here to produce that device code, so the
 	// host-side audit does not apply.
-	if (!is_cuda()) {
+	//
+	// ROCm programs are exempt for the same reason: attach/rocm_attach_impl
+	// compiles the device code from its own VM with helper 506 registered, so
+	// neither this host VM nor its helper table sees them.
+	if (!is_cuda() && !is_rocm()) {
 		for (size_t i = 0; i < insns.size(); ++i) {
 			const struct ebpf_inst &inst = insns[i];
 			if (inst.code == 0x18) {
@@ -360,9 +364,10 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 			}
 		}
 	}
-	// CUDA programs never reach the jitted fn (execute throws, signal exec
-	// returns ENOTSUP); keep the pre-cleanup guard to avoid compiling them.
-	if (jit && !is_cuda()) {
+	// CUDA and ROCm programs never reach the jitted fn (execute throws,
+	// signal exec returns ENOTSUP); keep the pre-cleanup guard to avoid
+	// compiling them.
+	if (jit && !is_cuda() && !is_rocm()) {
 #if defined(__x86_64__)
 		// The defect is in the uBPF x86_64 JIT only; the LLVM backend
 		// handles r0 atomics correctly, so do not change its path.
@@ -417,7 +422,7 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 		*return_val = fn(memory, memory_size);
 		return 0;
 	}
-	// Publish the caller-provided context pointer and size so helpers
+// Publish the caller-provided context pointer and size so helpers
 	// that copy the context (e.g. bpftime_tail_call) can tell the
 	// host-owned entry context from a program-built replacement context.
 	// Tail calls run nested exec calls, so save and restore the outer
@@ -436,8 +441,8 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 			current_thread_exec_ctx = saved_ctx;
 		}
 	} exec_ctx_guard(memory, memory_size);
-	if (is_cuda()) {
-		throw std::runtime_error("Unable to execute CUDA program");
+	if (is_cuda() || is_rocm()) {
+		throw std::runtime_error("Unable to execute CUDA/ROCm program");
 	}
 	uint64_t val = 0;
 	int res = 0;
@@ -495,7 +500,7 @@ int bpftime_prog::prepare_for_signal_execution()
 	// The MPK access transition has not been audited for signal callbacks.
 	return -ENOTSUP;
 #endif
-	if (is_cuda() || loaded_from_aot)
+	if (is_cuda() || is_rocm() || loaded_from_aot)
 		return -ENOTSUP;
 	const char *backend = ebpf_get_vm_name(vm);
 	if (strcmp(backend, "llvm") != 0 && strcmp(backend, "ubpf") != 0)

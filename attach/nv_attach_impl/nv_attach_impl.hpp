@@ -42,15 +42,7 @@ std::string filter_compiled_ptx_for_ebpf_program(std::string input,
 
 constexpr int ATTACH_CUDA_PROBE = 8;
 constexpr int ATTACH_CUDA_RETPROBE = 9;
-struct MapBasicInfo {
-	bool enabled;
-	int key_size;
-	int value_size;
-	int max_entries;
-	int map_type;
-	void *extra_buffer;
-	uint64_t max_thread_count;
-};
+
 struct nv_hooker_func_t {
 	void *func;
 };

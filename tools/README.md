@@ -52,6 +52,8 @@ bpftime start [OPTIONS] <COMMAND> [ARGS...]
 
 **Options**:
 - `-s, --enable-syscall-trace`: Enable syscall tracing functionality
+- `--rocm`: Load the agent through ROCprofiler SDK. Requires
+  `BPFTIME_ENABLE_ROCM_ATTACH=ON`; cannot be combined with `-s`.
 
 **Examples**:
 ```bash
@@ -60,7 +62,23 @@ bpftime start ./target_application
 
 # With syscall tracing enabled
 bpftime start -s ./target_application
+
+# ROCm kernel dispatch interception
+bpftime start --rocm ./hip_application
 ```
+
+`--rocm` sets `BPFTIME_ROCM_ATTACH=1` and adds the agent's absolute path to
+`ROCP_TOOL_LIBRARIES`, preserving existing profiler tools and `LD_PRELOAD`.
+The ROCm runtime loads the SDK and agent on its first runtime call; `rocprofv3`
+is not required. Child arguments and exit status are preserved.
+
+The experimental device eBPF path supports the restricted subset shown in
+[`example/rocm-ebpf`](../example/rocm-ebpf/README.md), including entry/return
+probes and `bpf_test_println` (helper 506). Map relocations and other helpers
+are rejected by the ROCm compiler. To inspect dispatches, explicitly set
+`BPFTIME_LOG_OUTPUT=/tmp/bpftime-rocm.log SPDLOG_LEVEL=debug` before launching.
+Without an active shared-memory session the application still runs and the
+profiler can observe dispatches; bpftime cannot attach loaded BPF programs.
 
 #### `attach` - Inject bpftime agent to running process
 Dynamically attaches the bpftime agent to an already running process using Frida injection.
