@@ -70,6 +70,7 @@ long per_cpu_hash_map_impl::elem_update(const void *key, const void *value,
 {
 	if (!check_update_flags(flags))
 		return -1;
+	flags &= 0xFFFFFFFFULL;
 	int cpu = my_sched_getcpu();
 	SPDLOG_DEBUG(
 		"Per cpu update, key {}, value {}",
@@ -83,7 +84,23 @@ long per_cpu_hash_map_impl::elem_update(const void *key, const void *value,
 	bytes_vec &value_vec = this->single_value_templates[cpu];
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
 	value_vec.assign((uint8_t *)value, (uint8_t *)value + value_size);
-	if (auto itr = impl.find(key_vec); itr != impl.end()) {
+	auto itr = impl.find(key_vec);
+	bool elem_exists = itr != impl.end();
+	// Enforce BPF update-flag and capacity semantics, matching the
+	// userspace and var-size hash implementations.
+	if (flags == BPF_NOEXIST && elem_exists) {
+		errno = EEXIST;
+		return -1;
+	}
+	if (flags == BPF_EXIST && !elem_exists) {
+		errno = ENOENT;
+		return -1;
+	}
+	if (!elem_exists && impl.size() == _max_entries) {
+		errno = E2BIG;
+		return -1;
+	}
+	if (elem_exists) {
 		std::copy(value_vec.begin(), value_vec.end(),
 			  itr->second.begin() + cpu * value_size);
 	} else {
@@ -103,10 +120,15 @@ long per_cpu_hash_map_impl::elem_delete(const void *key)
 	SPDLOG_DEBUG("Run per cpu hash delete at cpu {}", cpu);
 	bytes_vec &key_vec = this->key_templates[cpu];
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
-	if (auto itr = impl.find(key_vec); itr != impl.end()) {
-		std::fill(itr->second.begin(),
-			  itr->second.begin() + cpu * value_size, 0);
+	auto itr = impl.find(key_vec);
+	if (itr == impl.end()) {
+		errno = ENOENT;
+		return -1;
 	}
+	// bpf_map_delete_elem removes the whole element regardless of the
+	// current cpu slot; the old per-cpu fill targeted the wrong range and
+	// left the key lookupable.
+	impl.erase(itr);
 	return 0;
 }
 
