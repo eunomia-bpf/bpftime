@@ -27,6 +27,7 @@ set(TEST_SOURCES
     test/test_base_attach_impl.cpp
     test/test_back_trace.cpp
     test/test_register_conversion.cpp
+    test/test_short_uprobe_reclaim.cpp
 )
 option(TEST_LCOV "option for lcov" OFF)
 add_library(bpftime_frida_stripped_backtrace_fixture SHARED
@@ -40,6 +41,18 @@ target_compile_options(bpftime_frida_stripped_backtrace_fixture PRIVATE
     -fno-unwind-tables
     -fno-optimize-sibling-calls)
 add_executable(bpftime_frida_uprobe_attach_tests ${TEST_SOURCES})
+
+# Keep the empty-marker fixture ret-first (0xc3): CET instrumentation would
+# insert endbr64 and make Frida-Gum accept a marker the test must reject.
+# Scoped to this one translation unit (the fixture itself is #if-gated to
+# Linux x86_64) and the GNU/Clang compilers that understand the flag.
+if(NOT APPLE
+   AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$"
+   AND CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang)$")
+    set_source_files_properties(
+        test/test_short_uprobe_reclaim.cpp
+        PROPERTIES COMPILE_OPTIONS "-fcf-protection=none")
+endif()
 
 if (${TEST_LCOV}) 
     target_compile_options(bpftime_frida_uprobe_attach_tests PRIVATE -fprofile-arcs -ftest-coverage -fprofile-update=atomic)

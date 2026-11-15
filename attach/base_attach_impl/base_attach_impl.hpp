@@ -21,6 +21,29 @@ inline thread_local std::optional<override_return_set_callback>
 // Function address exposed while an attach callback is running.
 inline thread_local uintptr_t current_thread_attach_func_ip = 0;
 
+inline thread_local unsigned current_thread_attach_callback_depth = 0;
+inline thread_local bool current_thread_attach_callbacks_suppressed = false;
+
+class attach_callback_scope {
+    public:
+	attach_callback_scope()
+		: active(!current_thread_attach_callbacks_suppressed &&
+			 current_thread_attach_callback_depth == 0)
+	{
+		if (active)
+			current_thread_attach_callback_depth++;
+	}
+	~attach_callback_scope()
+	{
+		if (active)
+			current_thread_attach_callback_depth--;
+	}
+	bool entered() const { return active; }
+
+    private:
+	bool active;
+};
+
 // A signal backend supplies already allocated callback state. Keep only a
 // trivially initialized pointer in static TLS: accessing this path must not
 // call __tls_get_addr or register a TLS destructor after late dlopen.
@@ -38,25 +61,20 @@ __attribute__((tls_model("initial-exec")))
 #endif
 inline thread_local unsigned signal_handler_depth = 0;
 
-inline thread_local unsigned current_thread_attach_callback_depth = 0;
-
-class attach_callback_scope {
+class attach_callback_suppression_scope {
     public:
-	attach_callback_scope()
-		: active(current_thread_attach_callback_depth == 0)
+	attach_callback_suppression_scope()
+		: previous(current_thread_attach_callbacks_suppressed)
 	{
-		if (active)
-			current_thread_attach_callback_depth++;
+		current_thread_attach_callbacks_suppressed = true;
 	}
-	~attach_callback_scope()
+	~attach_callback_suppression_scope()
 	{
-		if (active)
-			current_thread_attach_callback_depth--;
+		current_thread_attach_callbacks_suppressed = previous;
 	}
-	bool entered() const { return active; }
 
     private:
-	bool active;
+	bool previous;
 };
 
 // A wrapper function for an entry function of an ebpf program
