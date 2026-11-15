@@ -30,6 +30,12 @@ enum {
 	BPF_F_WRONLY = (1U << 4),
 };
 
+// Ring buffer flags, absent from the libbpf-free fallback above
+enum {
+	BPF_RB_NO_WAKEUP = 1,
+	BPF_RB_FORCE_WAKEUP = 2,
+};
+
 // Stack trace flags
 enum {
 	BPF_F_SKIP_FIELD_MASK = 0xffULL,
