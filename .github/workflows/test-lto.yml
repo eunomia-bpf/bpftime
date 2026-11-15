@@ -1,0 +1,81 @@
+name: Link with LTO
+
+# Issue #83: the syscall trampoline is written in inline assembly, and with
+# BPFTIME_ENABLE_LTO=ON link-time optimization dropped the labels with the
+# function that emits them. Everything else in CI builds LTO off, so a
+# regression would only show up in a user's optimized build.
+on:
+  workflow_dispatch:
+  push:
+    branches: ["master"]
+    paths:
+      - ".github/workflows/test-lto.yml"
+      - "attach/text_segment_transformer/**"
+      - "cmake/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
+  pull_request:
+    branches: ["master"]
+    paths:
+      - ".github/workflows/test-lto.yml"
+      - "attach/text_segment_transformer/**"
+      - "cmake/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  lto-link-check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - name: Initialize bpftool submodules (libbpf)
+        run: |
+          rm -rf third_party/bpftool/libbpf
+          git submodule update --init --recursive third_party/bpftool
+
+      - name: Initialize ubpf submodules (bpf_conformance)
+        run: |
+          rm -rf third_party/ubpf/external/bpf_conformance
+          git submodule update --init --recursive third_party/ubpf
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake make libboost-dev libncurses-dev pkg-config libelf-dev zlib1g-dev libssl-dev flex bison clang llvm
+
+      - name: Configure with LTO
+        run: |
+          cmake -S . -B build-lto \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBPFTIME_ENABLE_LTO=ON \
+            -DBPFTIME_LLVM_JIT=OFF \
+            -DBPFTIME_BUILD_WITH_LIBBPF=ON \
+            -DBUILD_BPFTIME_DAEMON=OFF \
+            -DBPFTIME_ENABLE_UNIT_TESTING=OFF \
+            -DENABLE_EBPF_VERIFIER=OFF
+
+      - name: Confirm LTO is really on
+        run: |
+          grep -q -- "-flto" build-lto/attach/text_segment_transformer/CMakeFiles/bpftime_lto_link_check.dir/flags.make
+
+      - name: Build and run the trampoline link check
+        run: |
+          cmake --build build-lto -j$(nproc) --target bpftime_lto_link_check
+          ./build-lto/attach/text_segment_transformer/bpftime_lto_link_check
+
+      - name: Build the transformer under LTO
+        run: |
+          cmake --build build-lto -j$(nproc) --target bpftime_text_segment_transformer
+          SO=build-lto/attach/text_segment_transformer/libbpftime-agent-transformer.so
+          nm "$SO" | grep -E " [Tt] (syscall_addr|syscall_hooker_asm|syscall_hooker_cxx)$"
+          # All three symbols must be present: grep succeeds on a single
+          # surviving label, which is exactly the half-fixed state.
+          test "$(nm "$SO" | grep -cE " [Tt] (syscall_addr|syscall_hooker_asm|syscall_hooker_cxx)$")" -eq 3
