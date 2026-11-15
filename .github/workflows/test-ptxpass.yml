@@ -31,7 +31,9 @@ concurrency:
 
 jobs:
   test-ptxpass:
-    runs-on: eunomia-gpu
+    # GPU runners in eunomia-bpf carry self-hosted, linux, x64, gpu, nvidia and
+    # a label naming the card model (rtx5090 on the lab runners).
+    runs-on: [self-hosted, linux, x64, gpu]
     steps:
       - uses: actions/checkout@v4
         with:
