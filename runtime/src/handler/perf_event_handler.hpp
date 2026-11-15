@@ -239,6 +239,12 @@ struct bpf_perf_event_handler {
 			       boost::interprocess::managed_shared_memory &mem);
 };
 
+#if defined(BPFTIME_UNIT_TESTING)
+// Number of live entries in this thread's software perf shard cache. Exists so
+// the unit tests can tell a round-robin replacement from a clear-all eviction.
+size_t cached_software_perf_event_shard_count();
+#endif
+
 } // namespace bpftime
 
 #endif
