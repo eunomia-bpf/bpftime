@@ -624,26 +624,22 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 			"Unable to get current cpu when running perf event output");
 		return (uint64_t)-1;
 	}
-	cpu_set_t mask, orig;
-	CPU_ZERO(&mask);
-	CPU_SET(current_cpu, &mask);
-	if (sched_getaffinity(0, sizeof(orig), &orig) < 0)
-		return (uint64_t)-1;
-	// Bind to the current cpu
-	if (sched_setaffinity(0, sizeof(mask), &mask) < 0) {
-		SPDLOG_ERROR("Failed to set cpu affinity: {}", errno);
-		errno = EINVAL;
-		return (uint64_t)(-1);
-	}
+	// Software perf events are sharded by (pid, tid) and the consumer polls
+	// every slot, so no per-cpu invariant has to be emulated in userspace.
+	// Pinning the thread to the current cpu around each output cost three
+	// scheduler syscalls (getaffinity + two setaffinity) and forced two
+	// migrations per event for no correctness benefit. The cpu index comes
+	// from the vDSO via my_sched_getcpu(); a thread migrating between calls
+	// only selects a different array slot, which the consumer already
+	// enumerates.
 	int fd = (int)map;
 	// Check map type. userspace perf event array, or shared perf event
 	// array?
 	bpftime::bpf_map_type map_ty;
-	int ret = -1;
 	if (int err = bpftime_map_get_info(fd, nullptr, nullptr, &map_ty);
 	    err < 0) {
 		SPDLOG_ERROR("Unable to query map type of fd {}", fd);
-		goto restore_affinity;
+		return (uint64_t)-1;
 	}
 	if (map_ty == bpftime::bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY) {
 		const int32_t *val_ptr =
@@ -654,33 +650,25 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 			SPDLOG_ERROR("Invalid map fd for perf event output: {}",
 				     fd);
 			errno = EINVAL;
-			goto restore_affinity;
+			return (uint64_t)-1;
 		}
 		int32_t perf_handler_fd = *val_ptr;
-		ret = bpftime_perf_event_output(perf_handler_fd,
-						(const void *)(uintptr_t)data,
-						(size_t)size);
+		return (uint64_t)bpftime_perf_event_output(
+			perf_handler_fd, (const void *)(uintptr_t)data,
+			(size_t)size);
 	}
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 	else if (map_ty == bpftime::bpf_map_type::
 				   BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY) {
-		ret = bpftime_shared_perf_event_output(
+		return (uint64_t)bpftime_shared_perf_event_output(
 			fd, (const void *)(uintptr_t)data, (size_t)size);
 	}
 #endif
 	else {
 		SPDLOG_ERROR(
 			"Attempting to run perf_output on a non-perf array map");
-		ret = -1;
-	}
-
-restore_affinity:
-	// Cleanup must not overwrite an error from the output operation.
-	const int saved_errno = errno;
-	if (sched_setaffinity(0, sizeof(orig), &orig) < 0 && ret >= 0)
 		return (uint64_t)-1;
-	errno = saved_errno;
-	return (uint64_t)ret;
+	}
 }
 
 // Tail-call targets always receive a 64-byte context buffer.
