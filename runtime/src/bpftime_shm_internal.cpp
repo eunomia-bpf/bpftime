@@ -162,7 +162,12 @@ public:
 		if (locked && mutex != nullptr) {
 			try {
 				mutex->unlock();
+			} catch (const std::exception &ex) {
+				SPDLOG_WARN(
+					"Unable to unlock bpftime pid set: {}",
+					ex.what());
 			} catch (...) {
+				SPDLOG_WARN("Unable to unlock bpftime pid set");
 			}
 		}
 	}
