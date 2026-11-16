@@ -4,6 +4,7 @@
 #include <malloc.h>
 #endif
 #include "bpftime_helper_group.hpp"
+#include "base_attach_impl.hpp"
 #include <algorithm>
 #include "catch2/catch_test_macros.hpp"
 #include "spdlog/spdlog.h"
@@ -13,6 +14,8 @@
 #include <sys/resource.h>
 #include <sys/wait.h>
 #include <thread>
+#include <atomic>
+#include <vector>
 #include <unistd.h>
 #include <signal.h>
 
@@ -334,4 +337,265 @@ TEST_CASE("Task storage covers host BTF and the no-BTF fallback")
 	REQUIRE(WIFEXITED(status));
 	REQUIRE(WEXITSTATUS(status) == 0);
 }
+
+#if defined(__linux__) && defined(ENABLE_PROBE_READ_CHECK)
+namespace
+{
+static void fill_rolling_pattern(uint8_t *p, size_t n)
+{
+	for (size_t i = 0; i < n; i++)
+		p[i] = static_cast<uint8_t>(i * 31 + 7);
+}
+} // namespace
+
+TEST_CASE("Test probe read-ahead serves overlapping reads in one event")
+{
+	const long page_size = sysconf(_SC_PAGESIZE);
+	REQUIRE(page_size > 0);
+	auto *page = static_cast<uint8_t *>(
+		mmap(nullptr, (size_t)page_size, PROT_READ | PROT_WRITE,
+		     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+	REQUIRE(page != MAP_FAILED);
+	fill_rolling_pattern(page, (size_t)page_size);
+
+	uint8_t dst[32] = {};
+	{
+		bpftime::attach::attach_callback_scope scope;
+		REQUIRE(scope.entered());
+		// First read populates the widened window.
+		REQUIRE(bpftime_probe_read((uint64_t)dst, 16, (uint64_t)page, 0,
+					   0) == 0);
+		REQUIRE(std::memcmp(dst, page, 16) == 0);
+		// Overlapping read is served from the captured window.
+		std::memset(dst, 0, sizeof(dst));
+		REQUIRE(bpftime_probe_read((uint64_t)dst, 16,
+					   (uint64_t)(page + 8), 0, 0) == 0);
+		REQUIRE(std::memcmp(dst, page + 8, 16) == 0);
+		// Adjacent read inside the same page also hits the window.
+		std::memset(dst, 0, sizeof(dst));
+		REQUIRE(bpftime_probe_read((uint64_t)dst, 8,
+					   (uint64_t)(page + 24), 0, 0) == 0);
+		REQUIRE(std::memcmp(dst, page + 24, 8) == 0);
+	}
+	// Outside an event the helper keeps its direct path and fresh data.
+	page[0] ^= 0x5A;
+	std::memset(dst, 0, sizeof(dst));
+	REQUIRE(bpftime_probe_read((uint64_t)dst, 8, (uint64_t)page, 0, 0) == 0);
+	REQUIRE(dst[0] == page[0]);
+	REQUIRE(munmap(page, (size_t)page_size) == 0);
+}
+
+TEST_CASE("Test probe read-ahead keeps one coherent view per event")
+{
+	uint64_t src[4] = { 1, 2, 3, 4 };
+	uint64_t dst[4] = {};
+	{
+		bpftime::attach::attach_callback_scope scope;
+		REQUIRE(scope.entered());
+		REQUIRE(bpftime_probe_read((uint64_t)dst, sizeof(src),
+					   (uint64_t)src, 0, 0) == 0);
+		REQUIRE(dst[0] == 1);
+		// A same-thread store during the event cannot change bytes the
+		// window already captured: the event observes one coherent view.
+		src[0] = 99;
+		std::memset(dst, 0, sizeof(dst));
+		REQUIRE(bpftime_probe_read((uint64_t)dst, sizeof(src),
+					   (uint64_t)src, 0, 0) == 0);
+		REQUIRE(dst[0] == 1);
+	}
+	// A new event re-reads the current memory.
+	std::memset(dst, 0, sizeof(dst));
+	REQUIRE(bpftime_probe_read((uint64_t)dst, sizeof(src), (uint64_t)src, 0,
+				   0) == 0);
+	REQUIRE(dst[0] == 99);
+}
+
+TEST_CASE("Test probe read-ahead is fresh across separate events")
+{
+	uint64_t src[4] = { 1, 2, 3, 4 };
+	uint64_t dst[4] = {};
+	// First event populates the window for this address.
+	{
+		bpftime::attach::attach_callback_scope scope;
+		REQUIRE(scope.entered());
+		REQUIRE(bpftime_probe_read((uint64_t)dst, sizeof(src),
+					   (uint64_t)src, 0, 0) == 0);
+		REQUIRE(dst[0] == 1);
+	}
+	// The target changes after the event finished.
+	src[0] = 77;
+	// A new event at the same overlapping address must observe the new
+	// bytes, not the previous event's cached snapshot.
+	{
+		bpftime::attach::attach_callback_scope scope;
+		REQUIRE(scope.entered());
+		std::memset(dst, 0, sizeof(dst));
+		REQUIRE(bpftime_probe_read((uint64_t)dst, sizeof(src),
+					   (uint64_t)src, 0, 0) == 0);
+		REQUIRE(dst[0] == 77);
+	}
+}
+
+TEST_CASE("Test probe read-ahead tolerates an inaccessible next page")
+{
+	const long page_size = sysconf(_SC_PAGESIZE);
+	REQUIRE(page_size > 0);
+	auto *pages = static_cast<uint8_t *>(
+		mmap(nullptr, (size_t)page_size * 2, PROT_READ | PROT_WRITE,
+		     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+	REQUIRE(pages != MAP_FAILED);
+	fill_rolling_pattern(pages, (size_t)page_size);
+	REQUIRE(mprotect(pages + page_size, (size_t)page_size, PROT_NONE) == 0);
+
+	uint8_t dst[32] = {};
+	{
+		bpftime::attach::attach_callback_scope scope;
+		// A legal read fully inside the readable page, adjacent to the
+		// PROT_NONE boundary, must still succeed.
+		uint8_t *near = pages + page_size - 16;
+		REQUIRE(bpftime_probe_read((uint64_t)dst, 16, (uint64_t)near, 0,
+					   0) == 0);
+		REQUIRE(std::memcmp(dst, near, 16) == 0);
+		// Reading the inaccessible page returns EFAULT, not a crash.
+		REQUIRE(bpftime_probe_read((uint64_t)dst, 8,
+					   (uint64_t)(pages + page_size), 0,
+					   0) == -EFAULT);
+	}
+	REQUIRE(mprotect(pages + page_size, (size_t)page_size,
+			 PROT_READ | PROT_WRITE) == 0);
+	REQUIRE(munmap(pages, (size_t)page_size * 2) == 0);
+}
+
+TEST_CASE("Test probe read-ahead returns EFAULT for a bad source in an event")
+{
+	uint64_t dst[2] = {};
+	{
+		bpftime::attach::attach_callback_scope scope;
+		REQUIRE(bpftime_probe_read((uint64_t)dst, sizeof(dst),
+					   (uint64_t)nullptr, 0, 0) ==
+		-EFAULT);
+		REQUIRE(bpftime_probe_read((uint64_t)dst, sizeof(dst),
+					   (uint64_t)0x1000, 0, 0) == -EFAULT);
+	}
+	// After a fault, a valid read in a later event still works.
+	uint64_t src[2] = { 7, 8 };
+	REQUIRE(bpftime_probe_read((uint64_t)dst, sizeof(src), (uint64_t)src, 0,
+				   0) == 0);
+	REQUIRE(dst[0] == 7);
+	REQUIRE(dst[1] == 8);
+}
+
+// Not gated on ENABLE_PROBE_WRITE_CHECK: read-window invalidation must run in
+// bpftime_probe_write_user before both the fault-safe and raw-memcpy branches.
+TEST_CASE("Test probe write invalidates the read-ahead window")
+{
+	uint64_t src[2] = { 11, 22 };
+	uint64_t read_dst[2] = {};
+	uint64_t new_values[2] = { 33, 44 };
+	{
+		bpftime::attach::attach_callback_scope scope;
+		REQUIRE(bpftime_probe_read((uint64_t)read_dst, sizeof(src),
+					   (uint64_t)src, 0, 0) == 0);
+		REQUIRE(read_dst[0] == 11);
+		// Overwrite the source through the fault-safe write helper.
+		REQUIRE(bpftime_probe_write_user((uint64_t)src,
+						  (uint64_t)new_values,
+						  sizeof(new_values), 0, 0) == 0);
+		// The window was invalidated, so the fresh value is observed.
+		REQUIRE(bpftime_probe_read((uint64_t)read_dst, sizeof(src),
+					   (uint64_t)src, 0, 0) == 0);
+	REQUIRE(read_dst[0] == 33);
+	REQUIRE(read_dst[1] == 44);
+	}
+}
+
+TEST_CASE("Test probe read-ahead falls back for reads larger than the window")
+{
+	// 256 bytes exceeds the 128-byte window, so the exact path is used and the
+	// result must match the source regardless of window state.
+	constexpr size_t n = 256;
+	auto *src = new uint8_t[n];
+	auto *dst = new uint8_t[n]();
+	fill_rolling_pattern(src, n);
+	{
+		bpftime::attach::attach_callback_scope scope;
+		// Prime the window with a small read first.
+		REQUIRE(bpftime_probe_read((uint64_t)dst, 16, (uint64_t)src, 0,
+					   0) == 0);
+		std::memset(dst, 0, n);
+		REQUIRE(bpftime_probe_read((uint64_t)dst, n, (uint64_t)src, 0,
+					   0) == 0);
+		REQUIRE(std::memcmp(dst, src, n) == 0);
+		// A following small read still behaves correctly.
+		std::memset(dst, 0, 16);
+		REQUIRE(bpftime_probe_read((uint64_t)dst, 16, (uint64_t)src, 0,
+					   0) == 0);
+		REQUIRE(std::memcmp(dst, src, 16) == 0);
+	}
+	delete[] src;
+	delete[] dst;
+}
+
+TEST_CASE("Test probe read-ahead keeps event coherence for direct stores")
+{
+	// A store that bypasses bpf_probe_write_user (e.g. a direct memory write)
+	// is not observable until the next event: within an event the helper
+	// presents one coherent snapshot.
+	uint64_t src[2] = { 5, 6 };
+	uint64_t dst[2] = {};
+	{
+		bpftime::attach::attach_callback_scope scope;
+		REQUIRE(bpftime_probe_read((uint64_t)dst, sizeof(src),
+					   (uint64_t)src, 0, 0) == 0);
+		REQUIRE(dst[0] == 5);
+		src[0] = 42; // direct mutation, not through probe_write_user
+		std::memset(dst, 0, sizeof(dst));
+		REQUIRE(bpftime_probe_read((uint64_t)dst, sizeof(src),
+					   (uint64_t)src, 0, 0) == 0);
+		REQUIRE(dst[0] == 5); // snapshot within the same event
+	}
+	std::memset(dst, 0, sizeof(dst));
+	REQUIRE(bpftime_probe_read((uint64_t)dst, sizeof(src), (uint64_t)src, 0,
+				   0) == 0);
+	REQUIRE(dst[0] == 42); // fresh fetch in the next event
+}
+
+TEST_CASE("Test probe read-ahead stays independent across threads")
+{
+	constexpr int kThreads = 8;
+	constexpr int kIters = 2000;
+	std::vector<std::thread> pool;
+	std::atomic<int> failures{ 0 };
+	for (int t = 0; t < kThreads; t++) {
+		pool.emplace_back([t, &failures] {
+			uint64_t src[64];
+			for (uint64_t i = 0; i < 64; i++)
+				src[i] = (uint64_t)t * 1000 + i;
+			uint64_t dst[64] = {};
+			for (int it = 0; it < kIters; it++) {
+				{
+					bpftime::attach::attach_callback_scope
+						scope;
+					for (size_t off = 0; off + 2 <= 64;
+					     off += 2) {
+						if (bpftime_probe_read(
+							    (uint64_t)dst, 16,
+							    (uint64_t)(src +
+								       off),
+							    0, 0) != 0 ||
+						    dst[0] != src[off] ||
+						    dst[1] != src[off + 1]) {
+							failures.fetch_add(1);
+							return;
+						}
+					}
+				}
+			}
+		});
+	}
+	for (auto &th : pool)
+		th.join();
+	REQUIRE(failures.load() == 0);
+}
+#endif
 #endif
