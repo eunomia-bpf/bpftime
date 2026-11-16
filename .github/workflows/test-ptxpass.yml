@@ -50,8 +50,19 @@ jobs:
 
       - name: Initialize ubpf submodules (bpf_conformance)
         run: |
-          rm -rf third_party/ubpf/external/bpf_conformance
+          # A self-hosted runner keeps .git/modules between jobs. A nested
+          # submodule tree whose recorded commit is not in its module directory
+          # makes `git submodule update --recursive` abort the whole walk, so
+          # clear the two bpf_conformance copies and their module directories
+          # instead of only the worktree under third_party/ubpf.
+          N=.git/modules/third_party/ubpf/modules/external
+          rm -rf third_party/ubpf/external/bpf_conformance \
+                 third_party/ubpf/external/ebpf-verifier/external/bpf_conformance \
+                 "$N/bpf_conformance" \
+                 "$N/ebpf-verifier/modules/external/bpf_conformance"
           git submodule update --init --recursive third_party/ubpf
+          git -C third_party/ubpf/external/bpf_conformance rev-parse HEAD
+          git -C third_party/ubpf/external/ebpf-verifier/external/bpf_conformance rev-parse HEAD
 
       - name: Check and install required tools
         run: |

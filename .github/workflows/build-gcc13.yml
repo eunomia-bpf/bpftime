@@ -54,8 +54,15 @@ jobs:
 
       - name: Initialize ubpf submodules (bpf_conformance)
         run: |
-          rm -rf third_party/ubpf/external/bpf_conformance
+          set -euo pipefail
+          N=.git/modules/third_party/ubpf/modules/external
+          rm -rf third_party/ubpf/external/bpf_conformance \
+                 third_party/ubpf/external/ebpf-verifier/external/bpf_conformance \
+                 "$N/bpf_conformance" \
+                 "$N/ebpf-verifier/modules/external/bpf_conformance"
           git submodule update --init --recursive third_party/ubpf
+          git -C third_party/ubpf/external/bpf_conformance rev-parse HEAD
+          git -C third_party/ubpf/external/ebpf-verifier/external/bpf_conformance rev-parse HEAD
 
       - name: Install GCC 13 and dependencies
         run: |

@@ -67,8 +67,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf third_party/ubpf/external/bpf_conformance
+          N=.git/modules/third_party/ubpf/modules/external
+          rm -rf third_party/ubpf/external/bpf_conformance \
+                 third_party/ubpf/external/ebpf-verifier/external/bpf_conformance \
+                 "$N/bpf_conformance" \
+                 "$N/ebpf-verifier/modules/external/bpf_conformance"
           git submodule update --init --recursive third_party/ubpf
+          git -C third_party/ubpf/external/bpf_conformance rev-parse HEAD
+          git -C third_party/ubpf/external/ebpf-verifier/external/bpf_conformance rev-parse HEAD
 
       - name: Detect CUDA root and export env
         shell: bash
