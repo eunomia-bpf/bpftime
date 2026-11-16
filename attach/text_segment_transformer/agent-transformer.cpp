@@ -77,7 +77,12 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 		return;
 	}
 	SPDLOG_DEBUG("Loading dynamic library..");
-	auto next_handle = dlmopen(LM_ID_NEWLM, agent_so, RTLD_NOW | RTLD_LOCAL);
+	const bool use_same_namespace =
+		getenv("BPFTIME_AGENT_USE_DLOPEN") != nullptr;
+	auto next_handle = use_same_namespace ?
+				   dlopen(agent_so, RTLD_NOW | RTLD_LOCAL) :
+				   dlmopen(LM_ID_NEWLM, agent_so,
+					   RTLD_NOW | RTLD_LOCAL);
 	if (next_handle == nullptr) {
 		SPDLOG_ERROR("Failed to open agent: {}", dlerror());
 		return;

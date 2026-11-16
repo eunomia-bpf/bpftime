@@ -461,6 +461,24 @@ static void stop_auto_refresh_at_exit()
 		auto_refresh_thread.join();
 }
 
+static void stop_syscall_dispatch_at_exit() noexcept
+{
+#if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
+	try {
+		if (bpftime::attach::global_syscall_trace_attach_impl.has_value() &&
+		    bpftime::attach::global_syscall_trace_attach_impl.value() !=
+			    nullptr)
+			bpftime::attach::global_syscall_trace_attach_impl.value()
+				->dispatch_process_exit();
+	} catch (...) {
+	}
+#endif
+	// libc and DSO teardown may issue mmap/munmap after the runtime shared
+	// memory has been destroyed. Stop dispatching BPF programs before those
+	// destructors run so their map helpers cannot access an unmapped manager.
+	reset_syscall_trace_global();
+}
+
 static bool ensure_detach_worker_started() noexcept
 {
 	bool expected = false;
@@ -530,13 +548,15 @@ static bool ensure_detach_worker_started() noexcept
 
 syscall_hooker_func_t orig_hooker;
 
+static void bpftime_agent_main_impl(const gchar *data,
+				    gboolean *stay_resident);
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
 
 extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
 {
 	int stay_resident = 0;
 	injected_with_frida = false;
-	bpftime_agent_main("", &stay_resident);
+	bpftime_agent_main_impl("", &stay_resident);
 	int ret = orig_main_func(argc, argv, envp);
 	return ret;
 }
@@ -827,7 +847,8 @@ extern "C" void **__cudaRegisterFatBinary(void *fatbin)
 	return nullptr;
 }
 #endif
-extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
+static void bpftime_agent_main_impl(const gchar *data,
+				    gboolean *stay_resident)
 {
 	install_agent_bootstrap_logger();
 	bool force_reinit = false;
@@ -969,7 +990,8 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				orig_hooker);
 			auto *syscall_trace_impl_ptr = syscall_trace_impl.get();
 			ctx_holder.ctx.register_attach_impl(
-				{ ATTACH_SYSCALL_TRACE },
+				{ ATTACH_SYSCALL_TRACE, ATTACH_SYSCALL_KPROBE,
+				  ATTACH_SYSCALL_KRETPROBE },
 				std::move(syscall_trace_impl),
 				[](const std::string_view &sv, int &err) {
 					std::unique_ptr<attach_private_data>
@@ -1077,6 +1099,9 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				init_fail();
 				return;
 			}
+#if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
+			syscall_trace_impl_ptr->dispatch_process_exec();
+#endif
 			srand(std::random_device()());
 
 			int auto_refresh_ms = parse_auto_refresh_ms(data);
@@ -1155,6 +1180,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			// Start IPC control plane for repeat attach/refresh (used by
 			// `bpftime trace`).
 			start_agent_ipc_server_once();
+			std::atexit(stop_syscall_dispatch_at_exit);
 			signal(SIGUSR1, sig_handler_sigusr1_detach);
 			/* We don't want our library to be unloaded after we return. */
 			*stay_resident = TRUE;
@@ -1176,23 +1202,31 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 		}
 }
 
+extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
+{
+	bpftime_agent_main_impl(data, stay_resident);
+}
+
 // using definition for libbpf for syscall issues
 // maybe should separate libbpf and kernel features separately
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 extern "C" int64_t syscall_callback(int64_t sys_nr, int64_t arg1, int64_t arg2,
 				    int64_t arg3, int64_t arg4, int64_t arg5,
-				    int64_t arg6)
+				    int64_t arg6, int64_t user_ip,
+				    int64_t user_sp, int64_t user_bp)
 {
 	try {
 		auto impl = bpftime::attach::global_syscall_trace_attach_impl;
 		if (impl.has_value() && impl.value() != nullptr) {
 			return impl.value()->dispatch_syscall(
-				sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
+				sys_nr, arg1, arg2, arg3, arg4, arg5, arg6,
+				user_ip, user_sp, user_bp);
 		}
 	} catch (...) {
 	}
 	if (orig_hooker != nullptr)
-		return orig_hooker(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
+		return orig_hooker(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6,
+				   user_ip, user_sp, user_bp);
 	return -ENOSYS;
 }
 
@@ -1205,7 +1239,7 @@ _bpftime__setup_syscall_trace_callback(syscall_hooker_func_t *hooker)
 	*hooker = &syscall_callback;
 	gboolean val = FALSE;
 	try {
-		bpftime_agent_main("", &val);
+		bpftime_agent_main_impl("", &val);
 		SPDLOG_INFO("Agent syscall trace setup exiting..");
 	} catch (...) {
 	}

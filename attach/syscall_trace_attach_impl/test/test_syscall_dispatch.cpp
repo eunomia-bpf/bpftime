@@ -1,23 +1,61 @@
 #include "syscall_table.hpp"
 #include "syscall_trace_attach_private_data.hpp"
 #include <catch2/catch_test_macros.hpp>
+#include <cstddef>
 #include <cstdint>
 #include <stdexcept>
 #include <syscall_trace_attach_impl.hpp>
 using namespace bpftime::attach;
 
 extern "C" int64_t _bpftime_dummy_syscall(int64_t, int64_t, int64_t, int64_t,
-					  int64_t, int64_t, int64_t)
+					  int64_t, int64_t, int64_t, int64_t,
+					  int64_t, int64_t)
 {
 	return 0;
 }
 
 static int syscall_call_count;
 extern "C" int64_t _bpftime_counting_syscall(int64_t, int64_t, int64_t, int64_t,
-					     int64_t, int64_t, int64_t)
+					     int64_t, int64_t, int64_t, int64_t,
+					     int64_t, int64_t)
 {
 	return ++syscall_call_count;
 }
+
+#if defined(__x86_64__)
+struct test_pt_regs {
+	uint64_t r15, r14, r13, r12, bp, bx, r11, r10, r9, r8, ax, cx, dx,
+		si, di, orig_ax, ip, cs, flags, sp, ss;
+};
+
+TEST_CASE("do_mmap kprobe receives kernel function arguments")
+{
+	auto &syscalls = std::get<0>(get_global_syscall_id_table());
+	REQUIRE(syscalls.contains("mmap"));
+	syscall_trace_attach_impl attacher;
+	attacher.set_original_syscall_function(_bpftime_dummy_syscall);
+	syscall_trace_attach_private_data data;
+	REQUIRE(data.initialize_from_string("do_mmap") == 0);
+	test_pt_regs observed = {};
+	REQUIRE(attacher.create_attach_with_ebpf_callback(
+			[&](const void *p, size_t size, uint64_t *) -> int {
+				if (size == sizeof(observed))
+					observed = *static_cast<const test_pt_regs *>(p);
+				return 0;
+			},
+			data, ATTACH_SYSCALL_KPROBE) >= 0);
+	attacher.dispatch_syscall(syscalls.at("mmap"), 0x1000, 0x2000, 3,
+				  0x22, -1, 0, 0xabc, 0xdef, 0x123);
+	REQUIRE(observed.di == 0);
+	REQUIRE(observed.si == 0x1000);
+	REQUIRE(observed.dx == 0x2000);
+	REQUIRE(observed.cx == 3);
+	REQUIRE(observed.r8 == 0x22);
+	REQUIRE(observed.ip == 0xabc);
+	REQUIRE(observed.sp == 0xdef);
+	REQUIRE(observed.bp == 0x123);
+}
+#endif
 
 TEST_CASE("Test syscall dispatch - global")
 {
@@ -207,4 +245,87 @@ TEST_CASE("A failing exit callback is contained")
 	REQUIRE(syscall_call_count == 1);
 	REQUIRE(later_callback_count == 1);
 	REQUIRE(!curr_thread_override_return_callback.has_value());
+}
+
+TEST_CASE("Scheduler lifecycle tracepoints are dispatched")
+{
+	REQUIRE(offsetof(trace_event_raw_sched_process_fork, parent_pid) == 24);
+	REQUIRE(offsetof(trace_event_raw_sched_process_fork, child_pid) == 44);
+	auto tracepoint_id = [](const char *name) {
+		for (const auto &[id, mapped_name] :
+		     get_global_syscall_tracepoint_name_table()) {
+			if (mapped_name == name)
+				return id;
+		}
+		return -1;
+	};
+	auto make_data = [&](const char *name) {
+		syscall_trace_attach_private_data data;
+		int id = tracepoint_id(name);
+		REQUIRE(id >= 0);
+		REQUIRE(data.initialize_from_string(std::to_string(id)) == 0);
+		return data;
+	};
+
+	syscall_trace_attach_impl attacher;
+	attacher.set_original_syscall_function(_bpftime_counting_syscall);
+	bool fork_invoked = false;
+	bool exec_invoked = false;
+	bool exit_invoked = false;
+	size_t fork_ctx_size = 0;
+	size_t exec_ctx_size = 0;
+	size_t exit_ctx_size = 0;
+	int parent_pid = 0;
+	int child_pid = 0;
+	auto fork_data = make_data(SCHED_PROCESS_FORK_NAME);
+	int fork_id = attacher.create_attach_with_ebpf_callback(
+		[&](const void *p, size_t size, uint64_t *) -> int {
+			auto &ctx = *static_cast<
+				const trace_event_raw_sched_process_fork *>(p);
+			fork_ctx_size = size;
+			parent_pid = ctx.parent_pid;
+			child_pid = ctx.child_pid;
+			fork_invoked = true;
+			return 0;
+		},
+		fork_data, ATTACH_SYSCALL_TRACE);
+	REQUIRE(fork_id >= 0);
+	auto exec_data = make_data(SCHED_PROCESS_EXEC_NAME);
+	int exec_id = attacher.create_attach_with_ebpf_callback(
+		[&](const void *, size_t size, uint64_t *) -> int {
+			exec_ctx_size = size;
+			exec_invoked = true;
+			return 0;
+		},
+		exec_data, ATTACH_SYSCALL_TRACE);
+	REQUIRE(exec_id >= 0);
+	auto exit_data = make_data(SCHED_PROCESS_EXIT_NAME);
+	int exit_id = attacher.create_attach_with_ebpf_callback(
+		[&](const void *, size_t size, uint64_t *) -> int {
+			exit_ctx_size = size;
+			exit_invoked = true;
+			return 0;
+		},
+		exit_data, ATTACH_SYSCALL_TRACE);
+	REQUIRE(exit_id >= 0);
+
+	auto &syscalls = std::get<0>(get_global_syscall_id_table());
+	REQUIRE(syscalls.contains("clone"));
+	syscall_call_count = 0;
+	REQUIRE(attacher.dispatch_syscall(syscalls.at("clone"), 0, 0, 0, 0, 0,
+					  0) == 1);
+	attacher.dispatch_process_exec();
+	attacher.dispatch_process_exit();
+	REQUIRE(fork_invoked);
+	REQUIRE(exec_invoked);
+	REQUIRE(exit_invoked);
+	REQUIRE(fork_ctx_size == sizeof(trace_event_raw_sched_process_fork));
+	REQUIRE(exec_ctx_size == sizeof(trace_entry));
+	REQUIRE(exit_ctx_size == sizeof(trace_entry));
+	REQUIRE(parent_pid > 0);
+	REQUIRE(child_pid == 1);
+
+	REQUIRE(attacher.detach_by_id(fork_id) == 0);
+	REQUIRE(attacher.detach_by_id(exec_id) == 0);
+	REQUIRE(attacher.detach_by_id(exit_id) == 0);
 }
