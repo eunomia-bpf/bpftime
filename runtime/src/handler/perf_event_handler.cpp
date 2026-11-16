@@ -24,6 +24,7 @@
 #include <type_traits>
 #include <variant>
 #if __linux__
+#include <pthread.h>
 #include <sys/syscall.h>
 #elif __APPLE__
 #include <pthread.h>
@@ -94,10 +95,48 @@ struct spin_lock_guard {
 	spin_lock_guard &operator=(const spin_lock_guard &) = delete;
 };
 
+#if __linux__
+// gettid() has not been cached by glibc since 2.25, so every software perf
+// output paid a real gettid syscall before the shard cache was even looked
+// up. Cache it in ordinary (global-dynamic) thread-local storage: the first
+// access only takes the dynamic linker's TLS lookup, never a syscall on the
+// hot path, and the default model stays safe when this library is dlopen()ed
+// after startup. The value is a trivial int64_t, so no destructor is
+// registered (the output path must stay allocation-free, see #726).
+//
+// Boundaries:
+//  - The first touch of global-dynamic TLS may run __tls_get_addr, which is
+//    not async-signal-safe. Software perf output (helper 25) is not in the
+//    trap backend's audited async-signal-safe helper set
+//    (helper_is_async_signal_safe in bpf_helper.cpp), so it never runs in
+//    SIGTRAP context; admission there would require a new audit.
+//  - pthread_atfork covers fork/pthread_create/posix_spawn (the last execs
+//    immediately). A raw clone()/vfork() that bypasses pthread_atfork is not
+//    a supported runtime entry; such a child must not call this helper.
+
+thread_local int64_t bpftime_cached_tid = -1;
+
+void bpftime_refresh_cached_tid_in_child()
+{
+	// Only the forking thread survives in the child, but its TLS copy still
+	// carries the parent's tid; force the next call to resolve the child's.
+	bpftime_cached_tid = -1;
+}
+
+const int bpftime_tid_atfork_status =
+	pthread_atfork(nullptr, nullptr, bpftime_refresh_cached_tid_in_child);
+#endif
+
 int64_t current_thread_id()
 {
 #if __linux__
-	return (int64_t)syscall(SYS_gettid);
+	// If the fork handler could not be registered, a forked child would keep
+	// the parent's tid, so resolve every call directly.
+	if (bpftime_tid_atfork_status != 0)
+		return (int64_t)syscall(SYS_gettid);
+	if (bpftime_cached_tid == -1)
+		bpftime_cached_tid = (int64_t)syscall(SYS_gettid);
+	return bpftime_cached_tid;
 #elif __APPLE__
 	uint64_t tid = 0;
 	pthread_threadid_np(nullptr, &tid);
