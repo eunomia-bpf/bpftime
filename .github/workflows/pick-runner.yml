@@ -20,6 +20,14 @@ on:
         description: Number of jobs this workflow sends to the picked runners
         type: number
         required: true
+      local:
+        description: JSON list of the organization runners' labels
+        type: string
+        default: '["self-hosted","linux","x64","vm"]'
+      local-slots:
+        description: Jobs the organization's runners with those labels run at once
+        type: number
+        default: 4
     outputs:
       runner:
         description: JSON value for runs-on
@@ -39,27 +47,31 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           HOSTED: ${{ inputs.hosted }}
           JOBS: ${{ inputs.jobs }}
-          FORCED: ${{ vars.BPFTIME_LINUX_RUNNER }}
-          # Concurrent jobs: the VM runner scale set runs up to 4; GitHub
-          # runs 20 jobs at once per organization.
-          VM_SLOTS: 4
+          # The override applies to the x64 VM runners' jobs only.
+          FORCED: ${{ inputs.local == '["self-hosted","linux","x64","vm"]' && vars.BPFTIME_LINUX_RUNNER || '' }}
+          LOCAL: ${{ inputs.local }}
+          # Concurrent jobs: the organization's runners as given; GitHub runs
+          # 20 jobs at once per organization.
+          VM_SLOTS: ${{ inputs.local-slots }}
           HOSTED_SLOTS: 20
         run: |
           set -u
           hosted=$(jq -cn --arg l "$HOSTED" '$l')
-          vm='["self-hosted","linux","x64","vm"]'
+          vm=$(jq -c . <<<"$LOCAL")
           pick() { echo "runner=$1" >> "$GITHUB_OUTPUT"; echo "::notice title=Runner::$2"; exit 0; }
           [ -n "$FORCED" ] && pick "$FORCED" "BPFTIME_LINUX_RUNNER picks $FORCED"
-          [ "$GITHUB_REPOSITORY" = eunomia-bpf/bpftime ] || pick "$hosted" "GitHub: the VM runners serve eunomia-bpf/bpftime only"
+          [ "$GITHUB_REPOSITORY" = eunomia-bpf/bpftime ] || pick "$hosted" "GitHub: the organization runners serve eunomia-bpf/bpftime only"
           # Every run starts with this job, so a job waiting for a runner
           # belongs to a run in progress.
           runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?status=in_progress&per_page=15" --jq '.workflow_runs[].id') ||
             pick "$hosted" "GitHub: the Actions API did not answer"
           jobs=""
           for id in $runs; do
+            # A job is the organization runners' when it carries all their
+            # labels, GitHub's when it names a hosted image.
             j=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?filter=latest&per_page=100" --jq '
               .jobs[] | select(.status != "completed") |
-              (if (.labels | index("vm")) then "vm"
+              (if (.labels as $l | '"$vm"' | all(. as $x | $l | index($x))) then "vm"
                elif any(.labels[]; test("^(ubuntu|windows|macos)")) then "hosted"
                else "other" end) + " " + .status + " " + .created_at') ||
               pick "$hosted" "GitHub: the Actions API did not answer"
