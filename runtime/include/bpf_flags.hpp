@@ -13,9 +13,19 @@
 #include <bpf/bpf.h>
 #else
 // Define BPF flags locally when libbpf is not available
-// These match the definitions from linux/bpf.h
-// Note: If linux/bpf.h is included elsewhere, it should be included
-// before this header to avoid enum redefinition errors.
+// These match the definitions from linux/bpf.h.
+//
+// linux/bpf.h declares the same names, and queue.hpp reaches this header
+// before queue.cpp includes <linux/bpf.h>, so the include order cannot be
+// relied on: both orders have to compile. Pull the kernel header in first
+// when it is reachable and only declare the fallbacks when it is not.
+#if defined(__has_include)
+#if __has_include(<linux/bpf.h>)
+#include <linux/bpf.h>
+#define BPFTIME_BPF_FLAGS_HAVE_KERNEL_HEADER 1
+#endif
+#endif
+#ifndef BPFTIME_BPF_FLAGS_HAVE_KERNEL_HEADER
 #ifndef BPFTIME_BPF_FLAGS_DEFINED
 #define BPFTIME_BPF_FLAGS_DEFINED
 enum {
@@ -45,6 +55,7 @@ enum {
 	BPF_F_USER_BUILD_ID = (1ULL << 11),
 };
 #endif // BPFTIME_BPF_FLAGS_DEFINED
+#endif // BPFTIME_BPF_FLAGS_HAVE_KERNEL_HEADER
 #endif // BPFTIME_BUILD_WITH_LIBBPF
 
 #endif // BPFTIME_BPF_FLAGS_HPP
