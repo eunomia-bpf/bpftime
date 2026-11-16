@@ -220,69 +220,95 @@ static int get_host_nspid(const char *procfs, const char *entry, int fallback)
 	int length = snprintf(path, sizeof(path), "%s/%s/status", procfs, entry);
 	if (length < 0 || static_cast<size_t>(length) >= sizeof(path))
 		return fallback;
-	int fd = open(path, O_RDONLY | O_CLOEXEC);
-	if (fd < 0)
+	FILE *file = fopen(path, "re");
+	if (file == nullptr)
 		return fallback;
-	char content[2048];
-	ssize_t size;
-	do {
-		size = read(fd, content, sizeof(content) - 1);
-	} while (size < 0 && errno == EINTR);
-	close(fd);
-	if (size <= 0)
-		return fallback;
-	content[size] = '\0';
+	char *line = nullptr;
+	size_t capacity = 0;
 	int result = fallback;
-	for (char *line = content; line != nullptr;) {
-		char *next = strchr(line, '\n');
-		if (next != nullptr)
-			*next++ = '\0';
-		if (strncmp(line, "NSpid:", 6) == 0) {
-			char *end = nullptr;
-			long value = strtol(line + 6, &end, 10);
-			if (end != line + 6 && value > 0 &&
-			    value <= 2147483647L)
-				result = static_cast<int>(value);
-			break;
-		}
-		line = next;
+	// The Groups line can be arbitrarily long and precedes NSpid in procfs.
+	// getline also avoids accepting a PID truncated at a read boundary.
+	while (getline(&line, &capacity, file) >= 0) {
+		if (strncmp(line, "NSpid:", 6) != 0)
+			continue;
+		char *end = nullptr;
+		errno = 0;
+		long value = strtol(line + 6, &end, 10);
+		if (errno == 0 && end != line + 6 && value > 0 &&
+		    value <= INT32_MAX && (*end == ' ' || *end == '\t' ||
+					  *end == '\n' || *end == '\0'))
+			result = static_cast<int>(value);
+		break;
 	}
+	free(line);
+	fclose(file);
 	return result;
 }
+static thread_local uint64_t bpftime_cached_host_identity = 0;
 #endif
+
+// bpf_get_current_pid_tgid caches the identity so it does not pay a syscall on
+// every call. The cache cannot be function-local: a forked child inherits the
+// parent's cached values, and would report the parent's pid and tid. These live
+// at file scope so the fork handler can refresh them in the child.
+static pid_t bpftime_cached_tgid = getpid();
+#if __linux__
+static thread_local int bpftime_cached_tid = -1;
+#elif __APPLE__
+static thread_local uint64_t bpftime_cached_tid = UINT64_MAX;
+#endif
+
+static void bpftime_refresh_cached_identity_in_child()
+{
+	bpftime_cached_tgid = getpid();
+	// tid is meaningless in the child; the next helper call refills it.
+#if __linux__
+	bpftime_cached_tid = -1;
+#elif __APPLE__
+	bpftime_cached_tid = UINT64_MAX;
+#endif
+}
+
+static const int bpftime_identity_atfork_status = pthread_atfork(
+	nullptr, nullptr, bpftime_refresh_cached_identity_in_child);
 
 uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 				      uint64_t)
 {
+	// If registering the fork handler failed, the cache is still the
+	// parent's after a fork, so read the identity directly. The probe
+	// access cache above falls back the same way. This exceptional path
+	// also recomputes procfs translation on each call.
+	if (bpftime_identity_atfork_status != 0) {
 #if __linux__
-	static thread_local int cached_local_tgid = -1;
-	static thread_local int tgid = -1;
-	static thread_local int tid = -1;
-	int local_tgid = getpid();
-	if (cached_local_tgid != local_tgid) {
-		int local_tid = static_cast<int>(syscall(SYS_gettid));
-		cached_local_tgid = local_tgid;
-		tgid = get_host_nspid(getenv("BPFTIME_HOST_PROCFS"), "self",
-				       local_tgid);
-		tid = get_host_nspid(getenv("BPFTIME_HOST_PROCFS"),
-				      "thread-self", local_tid);
+		const char *procfs = getenv("BPFTIME_HOST_PROCFS");
+		return (uint64_t(get_host_nspid(procfs, "self", getpid())) << 32) |
+		       uint32_t(get_host_nspid(procfs, "thread-self",
+					      syscall(SYS_gettid)));
+#elif __APPLE__
+		uint64_t tid = 0;
+		pthread_threadid_np(NULL, &tid);
+		return ((uint64_t)getpid() << 32) | tid;
+#endif
+	}
+#if __linux__
+	if (bpftime_cached_tid == -1) {
+		bpftime_cached_tid = static_cast<int>(syscall(SYS_gettid));
+		const char *procfs = getenv("BPFTIME_HOST_PROCFS");
+		bpftime_cached_host_identity =
+			(uint64_t(get_host_nspid(procfs, "self", bpftime_cached_tgid)) << 32) |
+			uint32_t(get_host_nspid(procfs, "thread-self", bpftime_cached_tid));
 	}
 #elif __APPLE__
-	// Mirror the Linux branch: detect fork via getpid() change so the child
-	// does not keep reporting the parent's cached identity. The previous
-	// one-shot `static int tgid = getpid()` never refreshed after fork.
-	static thread_local int cached_local_tgid = -1;
-	static thread_local uint64_t tgid = 0;
-	static thread_local uint64_t tid = UINT64_MAX; // pthread_threadid_np uses uint64_t
-	int local_tgid = getpid();
-	if (cached_local_tgid != local_tgid) {
-		cached_local_tgid = local_tgid;
-		tgid = static_cast<uint64_t>(local_tgid);
-		// Mach thread id is not inherited across fork; force re-resolution.
-		pthread_threadid_np(NULL, &tid);
+	if (bpftime_cached_tid == UINT64_MAX) {
+		pthread_threadid_np(NULL, &bpftime_cached_tid);
 	}
 #endif
-	return ((uint64_t)tgid << 32) | tid;
+#if __linux__
+	return bpftime_cached_host_identity;
+#else
+	return ((uint64_t)bpftime_cached_tgid << 32) | bpftime_cached_tid;
+#endif
 }
 
 uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t, uint64_t,
