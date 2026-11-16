@@ -29,12 +29,24 @@ env:
   BPFTIME_VM_NAME: llvm
 
 jobs:
+  pick-runner:
+    uses: ./.github/workflows/pick-runner.yml
+    permissions:
+      actions: read
+    with:
+      hosted: ubuntu-24.04-arm
+      jobs: 1
+      local: '["self-hosted","linux","arm64","sandbox"]'
+      local-slots: 1
+
   runtime-arm64:
-    # An ephemeral arm64 runner in a gVisor sandbox (Ubuntu 24.04 image): the
-    # build and the runtime unit tests run natively on aarch64. The sandbox
-    # has no tracefs, kprobes, uprobes or kernel BPF; jobs that need them run
-    # on the x86-64 VM runners.
-    runs-on: [self-hosted, linux, arm64, sandbox]
+    needs: pick-runner
+    # GitHub's ubuntu-24.04-arm runner, or the organization's one ephemeral
+    # arm64 runner in a gVisor sandbox (Ubuntu 24.04 image) when it has room;
+    # the build and the runtime unit tests run natively on aarch64 either way.
+    # The sandbox has no tracefs, kprobes, uprobes or kernel BPF; jobs that
+    # need them run on the x86-64 runners.
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-24.04-arm"') }}
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
