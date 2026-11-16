@@ -98,21 +98,29 @@ struct spin_lock_guard {
 #if __linux__
 // gettid() has not been cached by glibc since 2.25, so every software perf
 // output paid a real gettid syscall before the shard cache was even looked
-// up. Cache it in ordinary (global-dynamic) thread-local storage: the first
-// access only takes the dynamic linker's TLS lookup, never a syscall on the
-// hot path, and the default model stays safe when this library is dlopen()ed
-// after startup. The value is a trivial int64_t, so no destructor is
-// registered (the output path must stay allocation-free, see #726).
+// up. Cache it in thread-local storage: a cache hit is then a single TLS
+// load, never a syscall, on the hot path. The value is a trivial int64_t, so
+// no destructor is registered (the output path must stay allocation-free,
+// see #726).
+//
+// The storage model is initial-exec, not default global-dynamic: this file is
+// part of the runtime target, which is compiled with
+// `-ftls-model=initial-exec` (runtime/CMakeLists.txt), so the compiler emits
+// a direct %fs-relative access with no __tls_get_addr call. That removes the
+// dynamic-linker lookup from the hot path, at the cost of 8 bytes of static
+// TLS per thread counted against the same surplus budget #726 shrank its shard
+// cache for. Keep this variable small for that reason.
 //
 // Boundaries:
-//  - The first touch of global-dynamic TLS may run __tls_get_addr, which is
-//    not async-signal-safe. Software perf output (helper 25) is not in the
-//    trap backend's audited async-signal-safe helper set
+//  - An initial-exec access is async-signal-safe, but software perf output
+//    (helper 25) is still not in the trap backend's audited helper set
 //    (helper_is_async_signal_safe in bpf_helper.cpp), so it never runs in
-//    SIGTRAP context; admission there would require a new audit.
+//    SIGTRAP context; admitting it there would require a new audit.
 //  - pthread_atfork covers fork/pthread_create/posix_spawn (the last execs
 //    immediately). A raw clone()/vfork() that bypasses pthread_atfork is not
 //    a supported runtime entry; such a child must not call this helper.
+//  - The -1 sentinel cannot collide with a real tid, which is always
+//    positive.
 
 thread_local int64_t bpftime_cached_tid = -1;
 
