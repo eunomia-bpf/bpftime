@@ -26,6 +26,10 @@ on:
       - "third_party/**"
       - "CMakeLists.txt"
       - ".gitmodules"
+
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true

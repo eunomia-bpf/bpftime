@@ -37,6 +37,9 @@ env:
   SERVER_LOG: logs/bpftime_server.log
   CLIENT_LOG: logs/bpftime_client.log
 
+permissions:
+  contents: read
+
 jobs:
   build-and-run-syscall-tracing-load-start-test:
     runs-on: ubuntu-22.04
