@@ -279,6 +279,35 @@ under review. Both must satisfy the semantics below before becoming selectable.
   frame-pointer addresses, including stale frames left by coroutine stack
   switches. Safety must come from the copy backend.
 
+### Event-scoped read-ahead window
+
+With the no-fault syscall backend, an optional thread-local, event-scoped
+read-ahead window (`probe_read_ahead_window` in `bpf_helper.cpp`) collapses
+repeated adjacent/overlapping small reads inside one attach callback into a
+single page-clamped `process_vm_readv`; subsequent reads are served from the
+window by `memcpy`. It is active only while an attach callback is running
+(`current_thread_attach_callback_depth > 0`) and is bound to an event
+generation, so it can never satisfy a read from a previous event. It installs
+no signal handler, no BPF instruction, and no caller-facing API, and the
+out-of-event exact-read path is byte-for-byte unchanged.
+
+Two deliberate, documented contracts apply while the window is active:
+
+1. **Coherence (source freshness).** Reads within one event observe one coherent
+   snapshot. A store that does not go through `bpf_probe_write_user` (another
+   thread, or a direct BPF map-pointer write) becomes visible only at the next
+   event. This matches the probe model where the callback runs synchronously on
+   the hooked thread and the profiled target code is not running concurrently.
+2. **Destination trust.** Source-address fault isolation is unchanged: a bad
+   source still returns `-EFAULT` via the kernel, and the out-of-event exact
+   path keeps a fully fault-safe destination. The in-event hit/fill `memcpy`
+   writes the BPF program's own destination buffer, which the verifier requires
+   to be a valid, sufficiently large stack/map buffer. In builds with the
+   verifier disabled, an intentionally invalid in-event destination is therefore
+   a trusted-buffer contract violation that raises a host `SIGSEGV`, rather
+   than the `-EFAULT` the exact syscall path would return; this boundary is
+   pinned by a regression test. Restoring full destination fault isolation on
+   the cached path requires a protected-copy backend, tracked in #838.
 ### Test surface
 
 - `runtime/unit-test/test_probe.cpp`: valid, unmapped, and stale pointers;

@@ -504,8 +504,8 @@ TEST_CASE("Test probe write invalidates the read-ahead window")
 		// The window was invalidated, so the fresh value is observed.
 		REQUIRE(bpftime_probe_read((uint64_t)read_dst, sizeof(src),
 					   (uint64_t)src, 0, 0) == 0);
-	REQUIRE(read_dst[0] == 33);
-	REQUIRE(read_dst[1] == 44);
+		REQUIRE(read_dst[0] == 33);
+		REQUIRE(read_dst[1] == 44);
 	}
 }
 
@@ -596,6 +596,68 @@ TEST_CASE("Test probe read-ahead stays independent across threads")
 	for (auto &th : pool)
 		th.join();
 	REQUIRE(failures.load() == 0);
+}
+
+TEST_CASE("Test probe read keeps fault-safe destination outside an event")
+{
+	// Without an attach scope the exact process_vm_readv path is used, so an
+	// invalid destination returns -EFAULT instead of crashing the host.
+	uint64_t src[2] = { 1, 2 };
+	REQUIRE(bpftime_probe_read((uint64_t) nullptr, sizeof(src),
+				   (uint64_t)src, 0, 0) == -EFAULT);
+}
+
+TEST_CASE("Test probe read-ahead pins the in-event destination trust contract")
+{
+	// Inside an event a small read is served through the window and landed by
+	// memcpy. The destination is the BPF program's own trusted buffer; an
+	// intentionally invalid in-event destination is a contract violation that
+	// raises SIGSEGV in the child, pinned here via fork so the test host lives.
+	uint64_t src[2] = { 1, 2 };
+	pid_t child = fork();
+	REQUIRE(child >= 0);
+	if (child == 0) {
+		bpftime::attach::attach_callback_scope scope;
+		if (!scope.entered())
+			_exit(20);
+		// Never returns: valid source, invalid destination through memcpy.
+		(void)bpftime_probe_read((uint64_t) nullptr, sizeof(src),
+					 (uint64_t)src, 0, 0);
+		_exit(21);
+	}
+	int status = 0;
+	REQUIRE(waitpid(child, &status, 0) == child);
+	REQUIRE(WIFSIGNALED(status));
+	REQUIRE(WTERMSIG(status) == SIGSEGV);
+}
+
+TEST_CASE("Test probe read-ahead returns EFAULT for a cross-page straddle")
+{
+	// A request that starts in a readable page but straddles into a PROT_NONE
+	// page cannot use the page-clamped window and must fall back to the exact
+	// syscall path, which reports -EFAULT for the unreadable tail.
+	const long page_size = sysconf(_SC_PAGESIZE);
+	REQUIRE(page_size > 0);
+	auto *pages = static_cast<uint8_t *>(
+		mmap(nullptr, (size_t)page_size * 2, PROT_READ | PROT_WRITE,
+		     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+	REQUIRE(pages != MAP_FAILED);
+	fill_rolling_pattern(pages, (size_t)page_size);
+	REQUIRE(mprotect(pages + page_size, (size_t)page_size, PROT_NONE) == 0);
+
+	auto *dst = new uint64_t[8]();
+	// Place a 32-byte request 16 bytes before the protected boundary.
+	void *straddle = pages + page_size - 16;
+	{
+		bpftime::attach::attach_callback_scope scope;
+		REQUIRE(scope.entered());
+		REQUIRE(bpftime_probe_read((uint64_t)dst, 32, (uint64_t)straddle, 0,
+					   0) == -EFAULT);
+	}
+	delete[] dst;
+	REQUIRE(mprotect(pages + page_size, (size_t)page_size,
+			 PROT_READ | PROT_WRITE) == 0);
+	REQUIRE(munmap(pages, (size_t)page_size * 2) == 0);
 }
 #endif
 #endif
