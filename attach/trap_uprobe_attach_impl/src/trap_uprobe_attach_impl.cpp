@@ -167,6 +167,11 @@ static_assert(std::atomic<uint64_t>::is_always_lock_free);
 static_assert(std::atomic<void *>::is_always_lock_free);
 __attribute__((tls_model("initial-exec"))) thread_local trap_tls *tl_slot = nullptr;
 std::atomic<uint64_t> exhausted_slots{ 0 };
+// BPF/probe callbacks that threw while running on the SIGTRAP handler frame.
+// A signal handler must not log (spdlog can lock/allocate) or let an exception
+// unwind through the kernel frame, so failures are counted lock-free here and
+// exposed via trap_callback_exception_count() for tests/diagnostics.
+std::atomic<uint64_t> callback_exception_count{ 0 };
 
 trap_tls *claim_thread_slot()
 {
@@ -947,6 +952,9 @@ void trap_engine::handle_hit(probe_site *site, ucontext_t *uc)
 				}
 			}
 		} catch (...) {
+			// Signal-frame safe: count only, no allocation or logging here.
+			callback_exception_count.fetch_add(
+				1, std::memory_order_relaxed);
 		}
 		current_signal_callback = nullptr;
 		tl_slot->callback.override_return = nullptr;
@@ -1010,6 +1018,9 @@ void trap_engine::handle_return(ucontext_t *uc)
 				e->run<ATTACH_URETPROBE_INDEX>(regs);
 		}
 	} catch (...) {
+		// Signal-frame safe: count only, no allocation or logging here.
+		callback_exception_count.fetch_add(
+			1, std::memory_order_relaxed);
 	}
 	current_signal_callback = nullptr;
 	tl_slot->phase = 0;
@@ -1097,6 +1108,11 @@ uint64_t bpftime::attach::trap::split_write_count()
 uint64_t bpftime::attach::trap::thread_slot_exhaustion_count()
 {
 	return exhausted_slots.load(std::memory_order_relaxed);
+}
+
+uint64_t bpftime::attach::trap::trap_callback_exception_count()
+{
+	return callback_exception_count.load(std::memory_order_relaxed);
 }
 
 std::optional<std::string>
