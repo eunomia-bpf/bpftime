@@ -8,12 +8,14 @@ set_target_properties(bpftime_text_segment_transformer PROPERTIES CXX_STANDARD 2
 target_link_libraries(bpftime_text_segment_transformer
     spdlog::spdlog
     ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
+    bpftime_seccomp_attach_impl
 )
 
 target_include_directories(bpftime_text_segment_transformer
     PRIVATE
     ${FRIDA_GUM_INSTALL_DIR}
     ${SPDLOG_INCLUDE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../seccomp_attach_impl/include
 )
 
 if (${TEST_LCOV}) 

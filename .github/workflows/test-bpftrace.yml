@@ -247,8 +247,11 @@ jobs:
           fi
 
           # Execute command
-          sudo -E $LD_PRELOAD_CMD cat build/install_manifest.txt | tee "$CLIENT_LOG"
-          CAT_EXIT_CODE=$?
+          # Capture the real client status: without this, a pipeline to tee
+          # makes $? reflect tee (0 when tee itself succeeds), masking a crashing client.
+          CAT_EXIT_CODE=0
+          sudo -E $LD_PRELOAD_CMD cat build/install_manifest.txt > "$CLIENT_LOG" 2>&1 || CAT_EXIT_CODE=$?
+          cat "$CLIENT_LOG"
 
           # Wait for server to process events
           echo "Waiting for server to process events..."
@@ -619,8 +622,11 @@ jobs:
 
           # Execute victim program, using timeout command to limit running time to 5 seconds
           echo "Running victim program with 5 second timeout..."
-          sudo -E timeout 5s $LD_PRELOAD_CMD ./example/malloc/victim | tee "$CLIENT_LOG"
-          VICTIM_EXIT_CODE=$?
+          # Same pipeline-masking fix: read timeout/victim's own status, not
+          # tee's, so the expected 124 (and any real crash) is observed.
+          VICTIM_EXIT_CODE=0
+          sudo -E timeout 5s $LD_PRELOAD_CMD ./example/malloc/victim > "$CLIENT_LOG" 2>&1 || VICTIM_EXIT_CODE=$?
+          cat "$CLIENT_LOG"
 
           # Check exit code, timeout command returns 124 when terminating program after timeout
           if [ $VICTIM_EXIT_CODE -eq 124 ]; then
@@ -1015,7 +1021,19 @@ jobs:
         build-and-run-one-liners-test,
       ]
     runs-on: ubuntu-22.04
-    if: always()
+    # Only syscall-tracing and malloc publish coverage-* artifacts; the
+    # one-liners job uploads server logs and is not a coverage input. Combine
+    # runs only when both coverage producers succeed, so a failed/cancelled
+    # producer (e.g. a self-hosted runner losing communication) yields an
+    # honest skip and its own red job stays the gate. When both are green but
+    # no artifacts exist, the guard below fails loudly as a real workflow or
+    # path regression instead of crashing on a bare `find` or uploading empty
+    # coverage. The one-liners job stays in needs so its result still gates the
+    # overall workflow, but its status does not block coverage combination.
+    if: >-
+      always() &&
+      needs.build-and-run-syscall-tracing-load-start-test.result == 'success' &&
+      needs.build-and-run-malloc-example-test.result == 'success'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1028,6 +1046,23 @@ jobs:
         with:
           pattern: coverage-*
           path: coverage-reports
+
+      - name: Fail explicitly when producers left no coverage artifacts
+        run: |
+          if [ ! -d coverage-reports ]; then
+            echo "::error::Both coverage producer jobs succeeded, but download-artifact matched no coverage-* artifacts and created no coverage-reports directory. The upload paths or the download pattern regressed."
+            exit 1
+          fi
+          info_reports=()
+          while IFS= read -r report; do
+            info_reports+=("$report")
+          done < <(find coverage-reports -type f -name '*.info' | sort)
+          if [ "${#info_reports[@]}" -eq 0 ]; then
+            echo "::error::Both coverage producer jobs succeeded, but coverage-reports contains no *.info files."
+            exit 1
+          fi
+          echo "Found ${#info_reports[@]} coverage report(s):"
+          printf '  %s\n' "${info_reports[@]}"
 
       - name: List downloaded reports
         run: find coverage-reports -type f -name "*.info" | sort
@@ -1071,8 +1106,10 @@ jobs:
             # Show summary
             lcov --list combined/combined-coverage.info || echo "Warning: Failed to list combined coverage"
           else
-            echo "No valid coverage reports found"
-            echo "# Empty combined coverage file - no valid input reports" > combined/combined-coverage.info
+            # Reaching here with all producers green means every downloaded
+            # *.info is empty; refuse to publish an empty combined report.
+            echo "::error::Producers reported success but every downloaded *.info is empty (<=10 bytes); refusing to upload an empty combined coverage report." >&2
+            exit 1
           fi
 
       - name: Upload combined coverage report

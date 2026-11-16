@@ -19,7 +19,8 @@ void *array_map_impl::get_raw_data() const
 array_map_impl::array_map_impl(
 	boost::interprocess::managed_shared_memory &memory, uint32_t value_size,
 	uint32_t max_entries)
-	: data(value_size * max_entries, memory.get_segment_manager())
+	: data(size_t(value_size) * max_entries,
+		  memory.get_segment_manager())
 {
 	this->_value_size = value_size;
 	this->_max_entries = max_entries;
@@ -31,7 +32,7 @@ void *array_map_impl::elem_lookup(const void *key)
 		errno = ENOENT;
 		return nullptr;
 	}
-	return &data[key_val * _value_size];
+	return &data[size_t(key_val) * _value_size];
 }
 
 long array_map_impl::elem_update(const void *key, const void *value,
@@ -50,7 +51,7 @@ long array_map_impl::elem_update(const void *key, const void *value,
 		return -1;
 	}
 	std::copy((uint8_t *)value, (uint8_t *)value + _value_size,
-		  &data[key_val * _value_size]);
+		  &data[size_t(key_val) * _value_size]);
 	return 0;
 }
 
