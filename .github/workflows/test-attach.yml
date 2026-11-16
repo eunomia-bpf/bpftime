@@ -33,8 +33,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  pick-runner:
+    uses: ./.github/workflows/pick-runner.yml
+    permissions:
+      actions: read
+    with:
+      hosted: ubuntu-latest
+      jobs: 2
+
   build_and_test_attach:
-    runs-on: "ubuntu-latest"
+    needs: pick-runner
+    # The VM runners or GitHub's, whichever is picked for this run; job
+    # containers on a VM runner run --privileged against that VM's own kernel.
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-latest"') }}
     strategy:
       matrix:
         container:

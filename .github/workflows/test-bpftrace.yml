@@ -41,8 +41,19 @@ permissions:
   contents: read
 
 jobs:
+  pick-runner:
+    uses: ./.github/workflows/pick-runner.yml
+    permissions:
+      actions: read
+    with:
+      hosted: ubuntu-22.04
+      jobs: 3
+
   build-and-run-syscall-tracing-load-start-test:
-    runs-on: ubuntu-22.04
+    needs: pick-runner
+    # The VM runners or GitHub's, whichever is picked for this run; job
+    # containers on a VM runner run --privileged against that VM's own kernel.
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-22.04"') }}
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
       options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
@@ -56,11 +67,18 @@ jobs:
       - name: System setup and kernel headers
         run: |
           apt-get update
+          # The running kernel's headers come from Ubuntu when it packages that
+          # kernel; a VM runner's guest kernel has none, and bpftrace reads its BTF.
           apt-get install -y --no-install-recommends \
           lcov tree strace gdb sudo libc6-dev bpftrace \
           linux-headers-generic linux-tools-generic \
-          linux-headers-$(uname -r) \
+          $(apt-cache show linux-headers-$(uname -r) >/dev/null 2>&1 && echo linux-headers-$(uname -r)) \
           libelf-dev procps gnupg gnupg-agent pinentry-curses dirmngr
+          # bpftrace 0.14 here takes tracepoint argument types from kernel headers;
+          # without headers for the running kernel it reads the generic ones above.
+          if [ ! -d "/lib/modules/$(uname -r)/build" ]; then
+            echo "BPFTRACE_KERNEL_SOURCE=$(ls -d /usr/src/linux-headers-*-generic | sort -V | tail -n 1)" >> "$GITHUB_ENV"
+          fi
 
           mkdir -p ~/.gnupg
           echo "allow-loopback-pinentry" > ~/.gnupg/gpg-agent.conf
@@ -367,7 +385,10 @@ jobs:
           verbose: true
 
   build-and-run-malloc-example-test:
-    runs-on: ubuntu-22.04
+    needs: pick-runner
+    # The VM runners or GitHub's, whichever is picked for this run; job
+    # containers on a VM runner run --privileged against that VM's own kernel.
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-22.04"') }}
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
       options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
@@ -381,11 +402,18 @@ jobs:
       - name: System setup and kernel headers
         run: |
           apt-get update
+          # The running kernel's headers come from Ubuntu when it packages that
+          # kernel; a VM runner's guest kernel has none, and bpftrace reads its BTF.
           apt-get install -y --no-install-recommends \
             lcov tree strace gdb sudo libc6-dev bpftrace \
             linux-headers-generic linux-tools-generic \
-            linux-headers-$(uname -r) \
+            $(apt-cache show linux-headers-$(uname -r) >/dev/null 2>&1 && echo linux-headers-$(uname -r)) \
             libelf-dev libssl-dev procps gnupg gnupg-agent pinentry-curses dirmngr
+          # bpftrace 0.14 here takes tracepoint argument types from kernel headers;
+          # without headers for the running kernel it reads the generic ones above.
+          if [ ! -d "/lib/modules/$(uname -r)/build" ]; then
+            echo "BPFTRACE_KERNEL_SOURCE=$(ls -d /usr/src/linux-headers-*-generic | sort -V | tail -n 1)" >> "$GITHUB_ENV"
+          fi
 
           # Setup GPG agent for Codecov
           mkdir -p ~/.gnupg
@@ -726,7 +754,10 @@ jobs:
           verbose: true
 
   build-and-run-one-liners-test:
-    runs-on: ubuntu-22.04
+    needs: pick-runner
+    # The VM runners or GitHub's, whichever is picked for this run; job
+    # containers on a VM runner run --privileged against that VM's own kernel.
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-22.04"') }}
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
       options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
@@ -740,11 +771,18 @@ jobs:
       - name: System setup and kernel headers
         run: |
           apt-get update
+          # The running kernel's headers come from Ubuntu when it packages that
+          # kernel; a VM runner's guest kernel has none, and bpftrace reads its BTF.
           apt-get install -y --no-install-recommends \
             lcov tree strace gdb sudo libc6-dev bpftrace \
             linux-headers-generic linux-tools-generic \
-            linux-headers-$(uname -r) \
+            $(apt-cache show linux-headers-$(uname -r) >/dev/null 2>&1 && echo linux-headers-$(uname -r)) \
             libelf-dev procps gnupg gnupg-agent pinentry-curses dirmngr
+          # bpftrace 0.14 here takes tracepoint argument types from kernel headers;
+          # without headers for the running kernel it reads the generic ones above.
+          if [ ! -d "/lib/modules/$(uname -r)/build" ]; then
+            echo "BPFTRACE_KERNEL_SOURCE=$(ls -d /usr/src/linux-headers-*-generic | sort -V | tail -n 1)" >> "$GITHUB_ENV"
+          fi
 
           echo "==== System Information ===="; uname -a && cat /etc/os-release
           echo "==== Checking bpftrace ===="

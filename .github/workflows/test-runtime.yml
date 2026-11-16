@@ -37,8 +37,19 @@ env:
   BPFTIME_VM_NAME: llvm
 
 jobs:
+  pick-runner:
+    uses: ./.github/workflows/pick-runner.yml
+    permissions:
+      actions: read
+    with:
+      hosted: ubuntu-latest
+      jobs: 3
+
   build:
-    runs-on: "ubuntu-latest"
+    needs: pick-runner
+    # The VM runners or GitHub's, whichever is picked for this run; job
+    # containers on a VM runner run --privileged against that VM's own kernel.
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-latest"') }}
     strategy:
       # Let every OS finish even if one fails, so an openEuler-specific issue
       # does not cancel the ubuntu/fedora jobs and hide their real results.

@@ -39,6 +39,14 @@ concurrency:
 env:
   BPFTIME_VM_NAME: llvm
 jobs:
+  pick-runner:
+    uses: ./.github/workflows/pick-runner.yml
+    permissions:
+      actions: read
+    with:
+      hosted: ubuntu-22.04
+      jobs: 148
+
   runtime-library:
     runs-on: ubuntu-22.04
     steps:
@@ -60,6 +68,7 @@ jobs:
       - name: Test direct runtime-library lifecycle
         run: ctest --test-dir build-library -R '^runtime_library_' --output-on-failure
   build-runtime:
+    needs: pick-runner
     strategy:
       matrix:
         enable_jit:
@@ -70,7 +79,9 @@ jobs:
             name: ubuntu
           - image: fedora-39
             name: fedora
-    runs-on: ubuntu-22.04
+    # The VM runners or GitHub's, whichever is picked for this run; job
+    # containers on a VM runner run --privileged against that VM's own kernel.
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-22.04"') }}
     container:
       image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
       options: --privileged
@@ -220,8 +231,10 @@ jobs:
             ~/.bpftime
 
   build-and-test:
-    runs-on: ubuntu-22.04
-    needs: [build-runtime]
+    # The VM runners or GitHub's, whichever is picked for this run; job
+    # containers on a VM runner run --privileged against that VM's own kernel.
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-22.04"') }}
+    needs: [pick-runner, build-runtime]
     container:
       image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
       options: ${{ matrix.privilege_options.options }}

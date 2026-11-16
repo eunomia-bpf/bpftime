@@ -34,13 +34,24 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 jobs:
+  pick-runner:
+    uses: ./.github/workflows/pick-runner.yml
+    permissions:
+      actions: read
+    with:
+      hosted: ubuntu-latest
+      jobs: 2
+
   build:
+    needs: pick-runner
     strategy:
       matrix:
         container:
           - ubuntu-2204
           - fedora-39
-    runs-on: ubuntu-latest
+    # The VM runners or GitHub's, whichever is picked for this run; job
+    # containers on a VM runner run --privileged against that VM's own kernel.
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-latest"') }}
     container:
       image: "manjusakalza/bpftime-base-image:${{matrix.container}}"
       options: --privileged
