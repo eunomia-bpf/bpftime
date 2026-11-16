@@ -297,7 +297,10 @@ void *frida_attach_impl::call_attach_specific_function(const std::string& name,
 	SPDLOG_DEBUG("Calling frida attach impl specified feature: {}", name);
 	if (name == "generate_stack") {
 		if (!current_thread_gum_cpu_context.has_value()) {
-			SPDLOG_ERROR("There is no frida hook running");
+			// A program attached outside a Frida hook (a syscall
+			// tracepoint, for one) asked for a user stack: there is
+			// none to walk, and the caller returns an error for it.
+			SPDLOG_DEBUG("There is no frida hook running");
 			return nullptr;
 		}
 		SPDLOG_DEBUG("Getting stack trace...");

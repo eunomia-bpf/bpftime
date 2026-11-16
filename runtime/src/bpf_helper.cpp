@@ -979,7 +979,9 @@ int64_t bpftime_get_stackid(uint64_t ctx_raw, uint64_t map_raw, uint64_t flags,
 			       ->call_attach_specific_function("generate_stack",
 							       nullptr);
 	if (raw_ptr == nullptr) {
-		SPDLOG_ERROR("Unable to get stack trace");
+		// No stack outside a Frida hook; the attach implementation logs
+		// a failure to walk one inside a hook.
+		SPDLOG_DEBUG("Unable to get stack trace");
 		return -ENOENT;
 	}
 	std::unique_ptr<std::vector<uint64_t>> result(
@@ -1048,7 +1050,9 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 			       ->call_attach_specific_function("generate_stack",
 							       nullptr);
 	if (raw_ptr == nullptr) {
-		SPDLOG_ERROR("Unable to get stack trace");
+		// No stack outside a Frida hook; the attach implementation logs
+		// a failure to walk one inside a hook.
+		SPDLOG_DEBUG("Unable to get stack trace");
 		return -ENOENT;
 	}
 	std::unique_ptr<std::vector<uint64_t>> result(
