@@ -550,8 +550,12 @@ bpf_attach_ctx::instantiate_perf_event_bpf_link_handler_at(
 				      .attach_cookie;
 #if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
 		if (dynamic_cast<attach::trap::trap_attach_impl *>(attach_impl)) {
-			if (int err = prog->prepare_for_signal_execution(); err < 0)
-				return err;
+			if (int err = prog->prepare_for_signal_execution(); err < 0) {
+				SPDLOG_DEBUG(
+					"Unable to prepare program {} for signal execution: {}",
+					prog->prog_name(), err);
+				return std::nullopt;
+			}
 		}
 #endif
 		attach_id = attach_impl->create_attach_with_ebpf_callback(
