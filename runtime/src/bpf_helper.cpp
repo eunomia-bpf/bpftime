@@ -407,14 +407,105 @@ void bpftime_copy_comm(char *buf, size_t size, const char *comm)
 	buf[size - 1] = '\0';
 }
 
+#if __linux__
+// Process-wide cache of the executable basename reported by
+// bpf_get_current_comm. It deliberately stays in BSS with pthread_once
+// publication so every failure mode of the previous std::string cache
+// (removed by #723) is absent:
+//  - no heap allocation on any call, so an uprobe on malloc/mmap/brk cannot
+//    re-enter a held allocator lock (the first call stays allocation-free,
+//    covered by the [reentry] unit test);
+//  - pthread_once orders the first publication, so concurrent first calls
+//    cannot race on the buffer;
+//  - execve replaces the whole address space and rebuilds this BSS state, so
+//    the new image always resolves its own name; fork inherits an equally
+//    valid name because /proc/self/exe does not change across fork.
+// The init routine performs only a raw readlink syscall and string scans, so
+// a thread blocked in pthread_once cannot wait on an allocator lock.
+//
+// pthread_once is not async-signal-safe: the cache relies on being called from
+// ordinary thread context (the frida backend). Trap-backend BPF links run in
+// SIGTRAP context and admit only an audited async-signal-safe helper set
+// (see attach/trap_uprobe_attach_impl/README.md), so this helper must be
+// re-audited before ever being admitted there.
+//
+// A fork concurrent with another thread running the once routine would let
+// the child inherit an in-progress control word with no thread to finish it.
+// The atfork child handler resets the cache, mirroring the pid/tgid cache
+// handling from #812.
+namespace
+{
+struct current_comm_cache {
+	pthread_once_t once = PTHREAD_ONCE_INIT;
+	char basename[PATH_MAX] = {};
+	bool valid = false;
+};
+
+current_comm_cache &get_current_comm_cache()
+{
+	// constinit turns the BSS/no-dynamic-init requirement above into a
+	// compile-time guarantee: no guard variable and no atexit registration.
+	constinit static current_comm_cache cache;
+	return cache;
+}
+
+void initialize_current_comm_cache()
+{
+	auto &cache = get_current_comm_cache();
+	char path[PATH_MAX];
+	auto len = readlink("/proc/self/exe", path, sizeof(path) - 1);
+	if (len == -1)
+		return;
+	path[len] = '\0';
+	const char *filename = path;
+	for (decltype(len) index = 0; index < len; ++index) {
+		if (path[index] == '/')
+			filename = path + index + 1;
+	}
+	strncpy(cache.basename, filename, sizeof(cache.basename) - 1);
+	cache.basename[sizeof(cache.basename) - 1] = '\0';
+	cache.valid = true;
+}
+
+void reset_current_comm_cache_in_child()
+{
+	// The child has a single thread, so re-arming the once control word
+	// cannot race with a waiter.
+	auto &cache = get_current_comm_cache();
+	cache.once = PTHREAD_ONCE_INIT;
+	cache.valid = false;
+}
+
+const int current_comm_atfork_status =
+	pthread_atfork(nullptr, nullptr, reset_current_comm_cache_in_child);
+} // namespace
+#endif
+
 uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
 				  uint64_t, uint64_t)
 {
+#if __linux__
+	// If the fork handler could not be registered, a forked child might keep
+	// an in-progress once word, so bypass the cache and resolve every call
+	// directly, exactly as #723 did.
+	if (current_comm_atfork_status == 0) {
+		auto &cache = get_current_comm_cache();
+		pthread_once(&cache.once, initialize_current_comm_cache);
+		if (cache.valid) {
+			bpftime_copy_comm((char *)(uintptr_t)buf, (size_t)size,
+					  cache.basename);
+			return 0;
+		}
+	}
+	// First resolution failed (for example /proc unavailable), or the atfork
+	// handler registration failed: keep the historical per-call retry and
+	// its return code.
+#endif
 	// This helper can run from an allocation callback (for example an
 	// uprobe on malloc/mmap) while libc already holds an allocator lock.
 	// A lazily initialized std::string takes the heap on its first long
-	// value, which re-enters the allocator and can self-deadlock. Resolve
-	// the executable basename into a stack buffer on every call instead.
+	// value, which re-enters the allocator and can self-deadlock. The
+	// fallback path resolves the name into a stack buffer without heap.
 	char strbuf[PATH_MAX];
 	auto len = readlink("/proc/self/exe", strbuf, std::size(strbuf) - 1);
 	if (len == -1)
