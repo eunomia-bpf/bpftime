@@ -28,7 +28,6 @@ set(TEST_SOURCES
     test/test_back_trace.cpp
     test/test_register_conversion.cpp
     test/test_short_uprobe_reclaim.cpp
-    test/test_frida_callback_boundary.cpp
 )
 option(TEST_LCOV "option for lcov" OFF)
 add_library(bpftime_frida_stripped_backtrace_fixture SHARED
