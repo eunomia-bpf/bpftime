@@ -17,7 +17,8 @@ namespace
 {
 
 std::vector<uint64_t> mock_stack;
-// Set while a test plays a program that runs outside any hook.
+// Set while a test plays a probe with no unwinding context: the attach
+// implementation has no Gum invocation and therefore no frames to return.
 bool mock_outside_hook = false;
 
 class mock_stack_attach_impl : public bpftime::attach::base_attach_impl {
@@ -150,8 +151,13 @@ TEST_CASE("get_stack rejects skips beyond the available trace")
 			    [](uint64_t value) { return value == 0; }));
 }
 
-TEST_CASE("get_stack outside a hook returns an error without logging one")
+TEST_CASE("get_stack outside a hook reports an empty stack without logging")
 {
+	// A syscall-trace or tracepoint probe has a synthesized pt_regs and no
+	// Gum invocation, so the attach implementation returns no frames. The
+	// kernel reports that as an empty stack, and the helper must not turn
+	// it into an error a BPF program would have to special-case, nor log at
+	// error level for a program that runs outside a hook by design.
 	std::ostringstream output;
 	auto previous = spdlog::default_logger();
 	auto logger = std::make_shared<spdlog::logger>(
@@ -160,14 +166,18 @@ TEST_CASE("get_stack outside a hook returns an error without logging one")
 	logger->set_level(spdlog::level::err);
 	spdlog::set_default_logger(logger);
 	mock_outside_hook = true;
-	std::array<uint64_t, 4> buffer{};
+	std::array<uint64_t, 2> buffer;
+	buffer.fill(UINT64_MAX);
 
-	auto result =
+	auto copied =
 		bpftime_get_stack(0, reinterpret_cast<uint64_t>(buffer.data()),
 				  sizeof(buffer), BPF_F_USER_STACK, 0);
 
 	mock_outside_hook = false;
 	spdlog::set_default_logger(previous);
-	REQUIRE(result == -ENOENT);
+
+	REQUIRE(copied == 0);
+	REQUIRE(buffer[0] == 0);
+	REQUIRE(buffer[1] == 0);
 	REQUIRE(output.str().empty());
 }
