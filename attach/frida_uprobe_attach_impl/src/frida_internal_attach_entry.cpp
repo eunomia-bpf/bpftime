@@ -1,6 +1,7 @@
 #include "frida_internal_attach_entry.hpp"
 #include "frida_uprobe_attach_impl.hpp"
 #include "frida_attach_entry.hpp"
+#include "frida_callback_boundary.hpp"
 #include <dlfcn.h>
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
@@ -289,17 +290,29 @@ extern "C" void *__bpftime_frida_attach_manager__override_handler()
 	SPDLOG_DEBUG("Setting current thread gum cpu context");
 	current_thread_gum_cpu_context = ctx->cpu_context;
 
-	hook_entry->run_filter_callback(regs);
-	SPDLOG_DEBUG("Resetting current thread gum cpu context");
-	current_thread_gum_cpu_context.reset();
-	if (hook_entry->is_overrided) {
-		auto value = (uintptr_t)hook_entry->user_ret;
-		SPDLOG_DEBUG("Using override return value: {}", value);
-		return (void *)value;
-	} else {
-		return func((void *)arg0, (void *)arg1, (void *)arg2,
-			    (void *)arg3, (void *)arg4);
-	}
+	// Everything below can throw (run_filter_callback and the BPF callback
+	// chain). Bound it so an exception cannot unwind through the frida-gum C
+	// frame; on failure fall back to transparently running the original
+	// function instead of terminating the host process.
+	return frida_c_boundary(
+		[&]() -> void * {
+			hook_entry->run_filter_callback(regs);
+			SPDLOG_DEBUG("Resetting current thread gum cpu context");
+			current_thread_gum_cpu_context.reset();
+			if (hook_entry->is_overrided) {
+				auto value = (uintptr_t)hook_entry->user_ret;
+				SPDLOG_DEBUG("Using override return value: {}",
+					     value);
+				return (void *)value;
+			}
+			return func((void *)arg0, (void *)arg1, (void *)arg2,
+				    (void *)arg3, (void *)arg4);
+		},
+		[&]() -> void * {
+			current_thread_gum_cpu_context.reset();
+			return func((void *)arg0, (void *)arg1, (void *)arg2,
+				    (void *)arg3, (void *)arg4);
+		});
 }
 
 static void uprobe_listener_on_enter(GumInvocationContext *ctx,
@@ -310,13 +323,21 @@ static void uprobe_listener_on_enter(GumInvocationContext *ctx,
 	bpftime::pt_regs regs;
 	convert_gum_cpu_context_to_pt_regs(*ctx->cpu_context, regs);
 
-	SPDLOG_DEBUG("Setting current thread gum cpu context");
-	current_thread_gum_cpu_context = ctx->cpu_context;
-
-	hook_entry->iterate_uprobe_callbacks(regs);
-
-	SPDLOG_DEBUG("Resetting current thread gum cpu context");
-	current_thread_gum_cpu_context.reset();
+	// GumInvocationListener callbacks run on frida-gum C frames. Bound the
+	// C++ probe logic so a thrown exception is swallowed into a skipped probe
+	// event rather than unwinding into gum and terminating the host.
+	frida_c_boundary(
+		[&] {
+			SPDLOG_DEBUG("Setting current thread gum cpu context");
+			current_thread_gum_cpu_context = ctx->cpu_context;
+			hook_entry->iterate_uprobe_callbacks(regs);
+			SPDLOG_DEBUG("Resetting current thread gum cpu context");
+			current_thread_gum_cpu_context.reset();
+		},
+		[] {
+			// Fail-safe: drop this single event, keep the host running.
+			current_thread_gum_cpu_context.reset();
+		});
 }
 
 static void uprobe_listener_on_leave(GumInvocationContext *ctx,
@@ -326,5 +347,9 @@ static void uprobe_listener_on_leave(GumInvocationContext *ctx,
 	SPDLOG_TRACE("Handle uretprobe at uprobe_listener_on_leave");
 	bpftime::pt_regs regs;
 	convert_gum_cpu_context_to_pt_regs(*ctx->cpu_context, regs);
-	hook_entry->iterate_uretprobe_callbacks(regs);
+	frida_c_boundary(
+		[&] { hook_entry->iterate_uretprobe_callbacks(regs); },
+		[] {
+			// Fail-safe: drop this single event, keep the host running.
+		});
 }
