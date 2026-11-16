@@ -66,9 +66,11 @@ jobs:
             name: ubuntu
           - image: fedora-39
             name: fedora
-    # Job containers run --privileged with the kernel's tracefs; every vm
-    # runner is its own VM, so they touch only that VM's kernel.
-    runs-on: [self-hosted, linux, x64, vm]
+    # GitHub's ubuntu-22.04 runner by default. The repository or organization
+    # variable BPFTIME_LINUX_RUNNER, a JSON list of runner labels such as
+    # ["self-hosted","linux","x64","vm"], moves the job to those runners;
+    # job containers there run --privileged against that VM's own kernel.
+    runs-on: ${{ fromJSON(vars.BPFTIME_LINUX_RUNNER || '"ubuntu-22.04"') }}
     container:
       image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
       options: --privileged
@@ -218,9 +220,11 @@ jobs:
             ~/.bpftime
 
   build-and-test:
-    # Job containers run --privileged with the kernel's tracefs; every vm
-    # runner is its own VM, so they touch only that VM's kernel.
-    runs-on: [self-hosted, linux, x64, vm]
+    # GitHub's ubuntu-22.04 runner by default. The repository or organization
+    # variable BPFTIME_LINUX_RUNNER, a JSON list of runner labels such as
+    # ["self-hosted","linux","x64","vm"], moves the job to those runners;
+    # job containers there run --privileged against that VM's own kernel.
+    runs-on: ${{ fromJSON(vars.BPFTIME_LINUX_RUNNER || '"ubuntu-22.04"') }}
     needs: [build-runtime]
     container:
       image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"

@@ -39,9 +39,11 @@ env:
 
 jobs:
   build-and-run-syscall-tracing-load-start-test:
-    # Job containers run --privileged with the kernel's tracefs; every vm
-    # runner is its own VM, so they touch only that VM's kernel.
-    runs-on: [self-hosted, linux, x64, vm]
+    # GitHub's ubuntu-22.04 runner by default. The repository or organization
+    # variable BPFTIME_LINUX_RUNNER, a JSON list of runner labels such as
+    # ["self-hosted","linux","x64","vm"], moves the job to those runners;
+    # job containers there run --privileged against that VM's own kernel.
+    runs-on: ${{ fromJSON(vars.BPFTIME_LINUX_RUNNER || '"ubuntu-22.04"') }}
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
       options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
@@ -373,9 +375,11 @@ jobs:
           verbose: true
 
   build-and-run-malloc-example-test:
-    # Job containers run --privileged with the kernel's tracefs; every vm
-    # runner is its own VM, so they touch only that VM's kernel.
-    runs-on: [self-hosted, linux, x64, vm]
+    # GitHub's ubuntu-22.04 runner by default. The repository or organization
+    # variable BPFTIME_LINUX_RUNNER, a JSON list of runner labels such as
+    # ["self-hosted","linux","x64","vm"], moves the job to those runners;
+    # job containers there run --privileged against that VM's own kernel.
+    runs-on: ${{ fromJSON(vars.BPFTIME_LINUX_RUNNER || '"ubuntu-22.04"') }}
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
       options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
@@ -741,9 +745,11 @@ jobs:
           verbose: true
 
   build-and-run-one-liners-test:
-    # Job containers run --privileged with the kernel's tracefs; every vm
-    # runner is its own VM, so they touch only that VM's kernel.
-    runs-on: [self-hosted, linux, x64, vm]
+    # GitHub's ubuntu-22.04 runner by default. The repository or organization
+    # variable BPFTIME_LINUX_RUNNER, a JSON list of runner labels such as
+    # ["self-hosted","linux","x64","vm"], moves the job to those runners;
+    # job containers there run --privileged against that VM's own kernel.
+    runs-on: ${{ fromJSON(vars.BPFTIME_LINUX_RUNNER || '"ubuntu-22.04"') }}
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
       options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
