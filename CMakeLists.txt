@@ -134,11 +134,15 @@ if(${BPFTIME_BUILD_WITH_LIBBPF})
   include(cmake/libbpf.cmake)
 endif()
 
-# Frida: official prebuilt for Linux/macOS; QNX requires a local build
-if(BPFTIME_TARGET_QNX OR CMAKE_SYSTEM_NAME STREQUAL "QNX")
-  include(cmake/frida-qnx.cmake)
-else()
-  include(cmake/frida.cmake)
+# Frida: official prebuilt for Linux/macOS; QNX requires a local build.
+# Frida has no devkit for riscv64, where StandardSettings turns the backend off,
+# so including either script unconditionally breaks that build.
+if(BPFTIME_ENABLE_FRIDA)
+  if(BPFTIME_TARGET_QNX OR CMAKE_SYSTEM_NAME STREQUAL "QNX")
+    include(cmake/frida-qnx.cmake)
+  else()
+    include(cmake/frida.cmake)
+  endif()
 endif()
 
 set(CMAKE_POSITION_INDEPENDENT_CODE YES)
