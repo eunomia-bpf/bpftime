@@ -40,9 +40,9 @@ jobs:
           HOSTED: ${{ inputs.hosted }}
           JOBS: ${{ inputs.jobs }}
           FORCED: ${{ vars.BPFTIME_LINUX_RUNNER }}
-          # Concurrent jobs: the VM runner scale set keeps memory headroom
-          # below its 12 runners; GitHub runs 20 jobs at once per organization.
-          VM_SLOTS: 8
+          # Concurrent jobs: the VM runner scale set runs up to 15; GitHub
+          # runs 20 jobs at once per organization.
+          VM_SLOTS: 15
           HOSTED_SLOTS: 20
         run: |
           set -u
