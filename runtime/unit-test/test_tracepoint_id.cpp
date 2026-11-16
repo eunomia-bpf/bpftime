@@ -80,7 +80,8 @@ TEST_CASE("Rootless tracepoint IDs resolve before any callback table access")
 		REQUIRE(data.is_enter == enter);
 		syscall_trace_attach_impl attacher;
 		attacher.set_original_syscall_function(
-			+[](int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, int64_t) -> int64_t { return 0; });
+			+[](int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, int64_t,
+			    int64_t, int64_t, int64_t) -> int64_t { return 0; });
 		int calls = 0;
 		int attached = attacher.create_attach_with_ebpf_callback(
 			[&](const void *, size_t, uint64_t *) { ++calls; return 0; }, data, ATTACH_SYSCALL_TRACE);
