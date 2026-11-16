@@ -46,7 +46,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          name="$(nvidia-smi --query-gpu=name --format=csv,noheader | head -n1)"
+          # nvidia-smi exits 6 when it cannot talk to the driver, and prints
+          # nothing on stdout, which used to surface as a bare "exit code 6"
+          # with no indication of which host was broken.
+          if ! out="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>&1)"; then
+            echo "::error::nvidia-smi failed on $(hostname) (${RUNNER_NAME:-unknown runner}): ${out:-no output}"
+            nvidia-smi 2>&1 | head -n 20 || true
+            exit 1
+          fi
+          name="$(printf '%s\n' "$out" | head -n1)"
           label="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]' | sed -e 's/nvidia//g' -e 's/geforce//g' -e 's/[^a-z0-9]//g')"
           echo "GPU: $name -> label $label"
           echo "label=$label" >> "$GITHUB_OUTPUT"
