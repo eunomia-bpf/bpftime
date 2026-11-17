@@ -78,6 +78,11 @@ extern "C" void bpftime_destroy_global_shm()
 	}
 }
 
+extern "C" bool bpftime_global_shm_is_initialized()
+{
+	return global_shm_initialized;
+}
+
 extern "C" void bpftime_remove_global_shm()
 {
 	using namespace bpftime;

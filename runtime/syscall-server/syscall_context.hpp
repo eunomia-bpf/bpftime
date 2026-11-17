@@ -142,7 +142,7 @@ class syscall_context {
 	// try loading the bpf syscall helpers.
 	// if the syscall original function is not prepared, it will cause a
 	// segfault.
-	void try_startup();
+	// try_startup() is public: see the declaration near the ctor.
 	bool mock_enabled_for_current_thread() const noexcept;
 
 	// enable userspace eBPF runing with kernel eBPF.
@@ -169,6 +169,12 @@ class syscall_context {
 	syscall_context();
 	virtual ~syscall_context();
 	syscall_fn orig_syscall_fn = nullptr;
+	// Public, recursion-safe one-time startup. It holds mock_disable_depth for
+	// its whole duration so the SHM/mmap syscalls issued during initialization
+	// hit the real libc instead of re-entering interposed handlers (which would
+	// deadlock on the same std::call_once). Use this, never start_up()
+	// directly, when pre-warming before installing the seccomp filter.
+	void try_startup();
 
 	// handle syscall
 	int handle_close(int);

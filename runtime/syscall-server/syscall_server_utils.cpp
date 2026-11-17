@@ -29,7 +29,9 @@
 #include <spdlog/spdlog.h>
 #include <bpftime_shm.hpp>
 #include <string>
+#include <sstream>
 #include <string_view>
+#include <unordered_map>
 #include <system_error>
 #include <unistd.h>
 #ifdef ENABLE_BPFTIME_VERIFIER
@@ -151,6 +153,21 @@ static bool pid_is_alive(int pid)
 static void remove_syscall_server_global_shm() noexcept
 {
 	if (g_syscall_server_shm_name.empty()) {
+		return;
+	}
+	// Static teardown (__destruct_shm) may already have unmapped the segment
+	// before this atexit handler runs; touching the in-segment pid-set mutex
+	// would then fault. The liveness flag lives in ordinary .bss and stays
+	// readable, so once cleared only a name-based unlink is safe.
+	if (!bpftime_global_shm_is_initialized()) {
+		if (g_syscall_server_owns_shm &&
+		    getpid() == g_syscall_server_shm_owner_pid) {
+			try {
+				boost::interprocess::shared_memory_object::remove(
+					g_syscall_server_shm_name.c_str());
+			} catch (...) {
+			}
+		}
 		return;
 	}
 	if (getpid() != g_syscall_server_shm_owner_pid) {

@@ -317,3 +317,16 @@ Two deliberate, documented contracts apply while the window is active:
 - Signal-recovery backends additionally cover repeated recovery,
   non-canonical addresses, signal-mask restoration, initialization fallback,
   and unrelated `SIGSEGV` retaining fatal default behavior.
+
+## Rootless dependency boundary (mandatory)
+
+`runtime/syscall-server` owns the rootless seccomp USER_NOTIF capture and the
+fake-kernel syscall emulation in one self-contained shared object. It MUST NOT
+include, link, or reach through a function slot into anything under `attach/`
+(frida, capstone, text-segment transformer, attach implementations). The only
+outward seams are kernel-ABI-style C signatures and the seccomp USER_NOTIF
+kernel interface. Shared contracts live as neutral headers in
+`runtime/include/` (e.g. `rootless_tracepoint_id.hpp`).
+
+See `docs/rootless-architecture-boundary.md` for the full rule, the two
+mutually-exclusive interception paths, and the machine-checkable gates.

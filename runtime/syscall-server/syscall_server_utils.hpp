@@ -7,6 +7,7 @@
 #define _SYSCALL_SERVER_UTILS_HPP
 
 #include "syscall_context.hpp"
+#include <rootless_tracepoint_id.hpp>
 #include <cstdint>
 #include <optional>
 #include <filesystem>
@@ -27,4 +28,5 @@ constexpr uint64_t PERF_UPROBE_REF_CTR_OFFSET_BITS = 32;
 constexpr uint64_t PERF_UPROBE_REF_CTR_OFFSET_SHIFT = 32;
 
 } // namespace bpftime
+
 #endif

@@ -228,6 +228,10 @@ void bpftime_initialize_global_shm(bpftime::shm_open_type type);
 void bpftime_destroy_global_shm();
 // remove the global shared memory from system
 void bpftime_remove_global_shm();
+// true while the global SHM segment is constructed/mapped; backed by an
+// ordinary .bss flag, so it stays readable during process teardown after the
+// segment itself has been unmapped. Used to make atexit cleanup teardown-safe.
+bool bpftime_global_shm_is_initialized();
 
 // enable memory protect, e.g. mpk
 void bpftime_protect_enable();

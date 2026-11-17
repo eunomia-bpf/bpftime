@@ -4,10 +4,17 @@ project(
     LANGUAGES C CXX
 )
 
+# Rootless seccomp USER_NOTIF capture is built into this existing shared object.
+# The notifier and the rootless __libc_start_main entry are frida/capstone-free
+# and call only the local dispatch_syscall; the attach library is linked solely
+# for the #815 tracefs id synthesis path, not for seccomp capture.
 add_library(bpftime-syscall-server SHARED
     syscall_context.cpp
     syscall_server_main.cpp
     syscall_server_utils.cpp
+    seccomp_notifier.cpp
+    seccomp_raw_syscall.cpp
+    rootless_agent_entry.cpp
 )
 
 # Force link VM compat libraries so constructor-based factory registration is retained
@@ -31,6 +38,9 @@ target_link_libraries(bpftime-syscall-server PUBLIC
     -ldl
     spdlog::spdlog)
 
+# Tracepoint id synthesis (#815) is owned by the attach implementation; the
+# syscall server links it for the mocked tracefs id path, while the in-object
+# seccomp USER_NOTIF notifier (seccomp_notifier.cpp) stays frida/capstone-free.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(bpftime-syscall-server PRIVATE bpftime_syscall_trace_attach_impl)
 endif()
@@ -40,6 +50,7 @@ add_dependencies(bpftime-syscall-server spdlog::spdlog)
 target_include_directories(bpftime-syscall-server
     PUBLIC
     "../include"
+    ${CMAKE_CURRENT_SOURCE_DIR}
     "../../vm"
     "../../third_party/libbpf/include/uapi"
     ${SPDLOG_INCLUDE}
