@@ -12,6 +12,7 @@
 #include "cuda.h"
 #endif
 #include "syscall_context.hpp"
+#include "synthetic_kallsyms.hpp"
 #include <cstdint>
 #include <cerrno>
 #include <cstdlib>
@@ -88,6 +89,45 @@ bool read_real_tracepoint_id(const std::string &path_text, uint32_t &out_id)
 		return false;
 	out_id = static_cast<uint32_t>(id);
 	return true;
+}
+
+// Whether the real /proc/kallsyms hides its addresses, read through
+// RTLD_NEXT for the same reason as read_real_tracepoint_id above. Only a
+// small sample is needed: one nonzero address means kptr_restrict does not
+// apply here, and the real file must then be served unchanged.
+bool real_kallsyms_hides_addresses()
+{
+	using openat_fn = int (*)(int, const char *, int, ...);
+	using read_fn = ssize_t (*)(int, void *, size_t);
+	using close_fn = int (*)(int);
+	static openat_fn next_openat =
+		(openat_fn)dlsym(RTLD_NEXT, "openat");
+	static read_fn next_read = (read_fn)dlsym(RTLD_NEXT, "read");
+	static close_fn next_close = (close_fn)dlsym(RTLD_NEXT, "close");
+	if (next_openat == nullptr || next_read == nullptr ||
+	    next_close == nullptr)
+		return false;
+	int fd = next_openat(AT_FDCWD, "/proc/kallsyms", O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return false;
+	char buffer[1024];
+	size_t filled = 0;
+	while (filled < sizeof(buffer)) {
+		ssize_t n = next_read(fd, buffer + filled,
+				      sizeof(buffer) - filled);
+		if (n > 0) {
+			filled += static_cast<size_t>(n);
+			continue;
+		}
+		if (n == 0)
+			break;
+		if (errno != EINTR)
+			break;
+	}
+	next_close(fd);
+	if (filled == 0)
+		return false;
+	return kallsyms_addresses_hidden(std::string_view(buffer, filled));
 }
 } // namespace
 // Why not use string_view? because parse_uint_from_file requires a c-string
@@ -360,6 +400,18 @@ create_mocked_file_based_on_full_path(const std::filesystem::path &path)
 		(path_text.starts_with(debug_tracepoint_root) ||
 		 path_text.starts_with(tracepoint_root)) &&
 		path_text.ends_with("/id");
+	// Rootless containers expose an all-zero /proc/kallsyms. Serve a
+	// built-in synthetic table so an unmodified profiler can initialize
+	// without an external System.map, but only while the real file hides
+	// its addresses: a privileged kernel reports real ones, and its
+	// addresses must survive. An explicit BPFTIME_KALLSYMS_PATH redirect
+	// is handled before this function is reached and takes precedence.
+	if (is_synthetic_kallsyms_path(path_text) &&
+	    real_kallsyms_hides_addresses()) {
+		SPDLOG_DEBUG("serving built-in synthetic /proc/kallsyms");
+		return std::make_unique<mocked_file_provider>(
+			synthetic_kallsyms_content());
+	}
 	if (is_tracepoint_id) {
 		// When tracefs is accessible, the real id file carries a valid
 		// kernel tracepoint id. Do not mock it: a fabricated id would
