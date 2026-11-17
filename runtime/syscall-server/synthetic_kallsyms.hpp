@@ -23,6 +23,7 @@
 #define BPFTIME_SYNTHETIC_KALLSYMS_H
 
 #include <string>
+#include <string_view>
 
 namespace bpftime
 {
@@ -51,6 +52,38 @@ inline const std::string &synthetic_kallsyms_content()
 		"ffffffff81200600 T prctl_set_seccomp\n"
 		"ffffffff82000000 T _etext\n";
 	return content;
+}
+
+// True for the one path the synthetic table can replace.
+inline bool is_synthetic_kallsyms_path(const std::string &path)
+{
+	return path == "/proc/kallsyms";
+}
+
+// True when a sample of /proc/kallsyms carries no nonzero address, which is
+// what kptr_restrict without CAP_SYSLOG produces in an unprivileged
+// container. A privileged kernel reports real addresses, and then the real
+// file has to be served: fabricated addresses would make every
+// address-to-symbol lookup in the traced process wrong, and their static
+// offsets do not even match the running kernel.
+inline bool kallsyms_addresses_hidden(std::string_view sample)
+{
+	size_t pos = 0;
+	while (pos < sample.size()) {
+		size_t end = sample.find('\n', pos);
+		if (end == std::string_view::npos)
+			end = sample.size();
+		std::string_view line = sample.substr(pos, end - pos);
+		pos = end + 1;
+		size_t space = line.find(' ');
+		if (space == std::string_view::npos || space == 0)
+			continue;
+		for (char ch : line.substr(0, space)) {
+			if (ch != '0')
+				return false;
+		}
+	}
+	return true;
 }
 
 } // namespace bpftime

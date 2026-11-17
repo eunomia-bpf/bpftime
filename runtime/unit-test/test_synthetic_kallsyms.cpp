@@ -5,21 +5,13 @@
 #include "catch2/catch_test_macros.hpp"
 
 #if __linux__
-#include "syscall_server_utils.hpp"
 #include "synthetic_kallsyms.hpp"
-#include <filesystem>
 #include <string>
 
-TEST_CASE("synthetic /proc/kallsyms is served as a mocked file",
-	  "[syscall][kallsyms]")
+TEST_CASE("synthetic /proc/kallsyms table is parseable", "[syscall][kallsyms]")
 {
-	auto provider = bpftime::create_mocked_file_based_on_full_path(
-		std::filesystem::path("/proc/kallsyms"));
-	REQUIRE(provider.has_value());
-	const std::string &content = provider->buf;
-	// Must be a parseable, non-empty table.
+	const std::string &content = bpftime::synthetic_kallsyms_content();
 	REQUIRE_FALSE(content.empty());
-	// Every line must have at least "addr type name" fields.
 	bool has_nonzero_text_symbol = false;
 	bool has_stext = false;
 	size_t lines = 0;
@@ -31,18 +23,21 @@ TEST_CASE("synthetic /proc/kallsyms is served as a mocked file",
 		std::string line = content.substr(pos, end - pos);
 		if (!line.empty()) {
 			lines++;
-			REQUIRE(line.find(' ') != std::string::npos);
+			// "<hex address> <type> <name>"
+			size_t first = line.find(' ');
+			REQUIRE(first != std::string::npos);
+			REQUIRE(line.find(' ', first + 1) != std::string::npos);
 			if (line.find(" T _stext") != std::string::npos)
 				has_stext = true;
-			// A nonzero leading hex address clears the parser's
-			// noSymbols condition.
-			if (line.size() > 1 && line[0] != '0')
+			if (line[0] != '0')
 				has_nonzero_text_symbol = true;
 		}
 		pos = end + 1;
 	}
 	REQUIRE(lines >= 3);
 	REQUIRE(has_stext);
+	// A parser that requires at least one real address reads this as
+	// "symbols are visible" instead of failing before loading a program.
 	REQUIRE(has_nonzero_text_symbol);
 }
 
@@ -57,14 +52,30 @@ TEST_CASE("synthetic table exposes symbols a generic tracer looks up",
 	}
 }
 
-TEST_CASE("unrelated proc files are not mocked as kallsyms",
+TEST_CASE("only /proc/kallsyms routes to the synthetic table",
 	  "[syscall][kallsyms]")
 {
-	auto provider = bpftime::create_mocked_file_based_on_full_path(
-		std::filesystem::path("/proc/self/status"));
-	if (provider.has_value()) {
-		REQUIRE(provider->buf.find("_stext") ==
-			std::string::npos);
-	}
+	REQUIRE(bpftime::is_synthetic_kallsyms_path("/proc/kallsyms"));
+	REQUIRE_FALSE(bpftime::is_synthetic_kallsyms_path("/proc/self/status"));
+	REQUIRE_FALSE(
+		bpftime::is_synthetic_kallsyms_path("/proc/kallsyms.bak"));
+}
+
+TEST_CASE("hidden addresses are detected from a kallsyms sample",
+	  "[syscall][kallsyms]")
+{
+	// kptr_restrict without CAP_SYSLOG: every address is zero.
+	const char *hidden = "0000000000000000 T _stext\n"
+			     "0000000000000000 T _text\n"
+			     "0000000000000000 t do_one_initcall\n";
+	REQUIRE(bpftime::kallsyms_addresses_hidden(hidden));
+	// A privileged kernel: real addresses must be served as they are.
+	const char *visible = "ffffffff81000000 T _stext\n"
+			      "ffffffff81000100 T _text\n";
+	REQUIRE_FALSE(bpftime::kallsyms_addresses_hidden(visible));
+	// One visible module address among hidden core symbols also counts.
+	const char *mixed = "0000000000000000 T _stext\n"
+			    "ffffffffc0123456 t nf_conntrack_in\t[livepatch]\n";
+	REQUIRE_FALSE(bpftime::kallsyms_addresses_hidden(mixed));
 }
 #endif

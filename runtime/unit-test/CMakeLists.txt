@@ -161,7 +161,7 @@ else()
     target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain ${CUDA_LIBS})
 endif()
 
-target_include_directories(bpftime_runtime_tests PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS} ${Catch2_INCLUDE} ${Boost_INCLUDE})
+target_include_directories(bpftime_runtime_tests PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS} ${Catch2_INCLUDE} ${Boost_INCLUDE} "${CMAKE_CURRENT_SOURCE_DIR}/../syscall-server")
 add_test(NAME bpftime_runtime_tests COMMAND bpftime_runtime_tests)
 
 # These are necessary ebpf program required by the test
