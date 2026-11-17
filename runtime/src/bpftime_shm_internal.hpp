@@ -256,6 +256,9 @@ public:
 
 	long bpf_map_pop_elem(int fd, void *value, bool from_syscall) const;
 
+	long bpf_map_lookup_and_delete_elem(int fd, const void *key, void *value,
+					    bool from_syscall) const;
+
 	long bpf_map_peek_elem(int fd, void *value, bool from_syscall) const;
 
 	int bpf_map_get_next_key(int fd, const void *key, void *next_key,
