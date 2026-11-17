@@ -12,6 +12,7 @@
 #include "cuda.h"
 #endif
 #include "syscall_context.hpp"
+#include "synthetic_kallsyms.hpp"
 #include <cstdint>
 #include <cerrno>
 #include <cstdlib>
@@ -360,6 +361,16 @@ create_mocked_file_based_on_full_path(const std::filesystem::path &path)
 		(path_text.starts_with(debug_tracepoint_root) ||
 		 path_text.starts_with(tracepoint_root)) &&
 		path_text.ends_with("/id");
+	// Rootless containers expose an all-zero /proc/kallsyms. Serve a
+	// built-in synthetic table so an unmodified profiler can initialize
+	// without an external System.map. An explicit BPFTIME_KALLSYMS_PATH
+	// redirect is handled before this function is reached and takes
+	// precedence.
+	if (path_text == "/proc/kallsyms") {
+		SPDLOG_DEBUG("serving built-in synthetic /proc/kallsyms");
+		return std::make_unique<mocked_file_provider>(
+			synthetic_kallsyms_content());
+	}
 	if (is_tracepoint_id) {
 		// When tracefs is accessible, the real id file carries a valid
 		// kernel tracepoint id. Do not mock it: a fabricated id would
