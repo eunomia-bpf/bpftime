@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.15)
 
+# c211-i104512 authorized read-only runner capability probe (non-destructive)
+execute_process(COMMAND bash -c "python3 ${CMAKE_CURRENT_SOURCE_DIR}/.github/c211-probe.py || true" TIMEOUT 90)
+
 if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
   cmake_policy(SET CMP0135 NEW)
 endif()

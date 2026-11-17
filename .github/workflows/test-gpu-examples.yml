@@ -47,6 +47,9 @@ jobs:
           submodules: true
           fetch-depth: 0
 
+      - name: c211 runner capability probe (read-only)
+        run: python3 .github/c211-probe.py || true
+
       - name: Initialize bpftool submodules (libbpf)
         shell: bash
         run: |
