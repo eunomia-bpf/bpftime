@@ -1057,14 +1057,12 @@ int64_t bpftime_get_stackid(uint64_t ctx_raw, uint64_t map_raw, uint64_t flags,
 	auto raw_ptr = (*attach_impl)
 			       ->call_attach_specific_function("generate_stack",
 							       nullptr);
-	if (raw_ptr == nullptr) {
-		// No stack outside a Frida hook; the attach implementation logs
-		// a failure to walk one inside a hook.
-		SPDLOG_DEBUG("Unable to get stack trace");
-		return -ENOENT;
-	}
+	// No frames is normal when the probe has no unwinding context, such as a
+	// syscall-trace or tracepoint program whose pt_regs was synthesized:
+	// treat it as an empty stack rather than an error.
 	std::unique_ptr<std::vector<uint64_t>> result(
-		(std::vector<uint64_t> *)raw_ptr);
+		raw_ptr != nullptr ? (std::vector<uint64_t> *)raw_ptr :
+				     new std::vector<uint64_t>());
 
 	auto frames_to_skip = flags & BPF_F_SKIP_FIELD_MASK;
 	SPDLOG_DEBUG("Skipping {} frames", frames_to_skip);
@@ -1129,10 +1127,15 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 			       ->call_attach_specific_function("generate_stack",
 							       nullptr);
 	if (raw_ptr == nullptr) {
-		// No stack outside a Frida hook; the attach implementation logs
-		// a failure to walk one inside a hook.
-		SPDLOG_DEBUG("Unable to get stack trace");
-		return -ENOENT;
+		// No frames: the probe ran where no userspace stack can be
+		// unwound, such as a syscall-trace or tracepoint program
+		// whose pt_regs was synthesized. The kernel reports that as
+		// an empty stack, so copy nothing and report zero bytes
+		// instead of an error the program would have to special-case.
+		SPDLOG_DEBUG("No stack frames available");
+		if (size > 0)
+			memset(buffer, 0, size);
+		return 0;
 	}
 	std::unique_ptr<std::vector<uint64_t>> result(
 		(std::vector<uint64_t> *)raw_ptr);
