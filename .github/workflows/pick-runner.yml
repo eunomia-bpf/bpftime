@@ -59,18 +59,30 @@ jobs:
           pick() { echo "runner=$1" >> "$GITHUB_OUTPUT"; echo "::notice title=Runner::$2"; exit 0; }
           [ -n "$FORCED" ] && pick "$FORCED" "BPFTIME_LINUX_RUNNER picks $FORCED"
           [ "$GITHUB_REPOSITORY" = eunomia-bpf/bpftime ] || pick "$hosted" "GitHub: the organization runners serve eunomia-bpf/bpftime only"
-          # Every run starts with this job, so a job running or waiting on the
-          # organization runners belongs to a run in progress.
-          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?status=in_progress&per_page=15" --jq '.workflow_runs[].id') ||
-            pick "$hosted" "GitHub: the Actions API did not answer"
+          # A job waiting for the organization runners belongs to a run that
+          # has not completed, and that run's own status is often still
+          # "queued": its picker job finished while its other jobs wait. Both
+          # statuses must be listed, or those waiting jobs are invisible and a
+          # full set of runners looks idle. Newest runs first, stopping as
+          # soon as the runners are known to be full.
+          limit=$((SLOTS - JOBS + 1))
           busy=0
-          for id in $runs; do
-            # A job is the organization runners' when it carries all their labels.
-            n=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?filter=latest&per_page=100" --jq '
-              [.jobs[] | select(.status != "completed") |
-               select(.labels as $l | '"$local_labels"' | all(. as $x | $l | index($x)))] | length') ||
-              pick "$hosted" "GitHub: the Actions API did not answer"
-            busy=$((busy + n))
+          for status in in_progress queued; do
+            for page in 1 2 3; do
+              runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?status=$status&per_page=100&page=$page" \
+                --jq '.workflow_runs[].id') ||
+                pick "$hosted" "GitHub: the Actions API did not answer"
+              [ -n "$runs" ] || break
+              for id in $runs; do
+                # A job is the organization runners' when it carries all their labels.
+                n=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?filter=latest&per_page=100" --jq '
+                  [.jobs[] | select(.status != "completed") |
+                   select(.labels as $l | '"$local_labels"' | all(. as $x | $l | index($x)))] | length') ||
+                  pick "$hosted" "GitHub: the Actions API did not answer"
+                busy=$((busy + n))
+                [ "$busy" -lt "$limit" ] || break 3
+              done
+            done
           done
           load="organization runners $busy of $SLOTS slots running or waiting; this workflow $JOBS jobs"
           [ $((busy + JOBS)) -le "$SLOTS" ] && pick "$local_labels" "Organization runners: $load"
