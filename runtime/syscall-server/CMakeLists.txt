@@ -62,6 +62,25 @@ target_include_directories(bpftime-syscall-server PUBLIC
 )
 endif()
 
+# Failure-path coverage for the in-object seccomp USER_NOTIF worker. Ported from
+# the deleted attach/seccomp_attach_impl test; it compiles seccomp_notifier.cpp
+# standalone with --wrap seams and mocks the object-local dispatch_syscall, so it
+# links neither the full syscall-server shared object nor any attach/ library.
+if(BPFTIME_ENABLE_UNIT_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
+   AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+  add_executable(bpftime_seccomp_failure_tests test/test_seccomp_failure.cpp)
+  target_include_directories(bpftime_seccomp_failure_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    "../include"
+    ${SPDLOG_INCLUDE}
+  )
+  target_link_libraries(bpftime_seccomp_failure_tests PRIVATE
+    Catch2::Catch2WithMain spdlog::spdlog)
+  target_link_options(bpftime_seccomp_failure_tests PRIVATE
+    -Wl,--wrap=ioctl -Wl,--wrap=prctl -Wl,--wrap=syscall)
+  add_test(NAME bpftime_seccomp_failure_tests COMMAND bpftime_seccomp_failure_tests)
+endif()
+
 set_target_properties(bpftime-syscall-server PROPERTIES CXX_STANDARD 20 LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/syscall-server.version)
 
 if(UNIX AND NOT APPLE)

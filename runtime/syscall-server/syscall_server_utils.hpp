@@ -7,7 +7,6 @@
 #define _SYSCALL_SERVER_UTILS_HPP
 
 #include "syscall_context.hpp"
-#include <rootless_tracepoint_id.hpp>
 #include <cstdint>
 #include <optional>
 #include <filesystem>
