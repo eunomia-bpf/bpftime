@@ -79,7 +79,9 @@ def main() -> int:
             if ok:
                 built.add(path)
         if ok:
-            # Each example starts from no bpftime shared memory.
+            # Each example starts from no bpftime shared memory. Two runs
+            # may race on the same segment, so a file that is already gone
+            # is not a failure.
             for leftover in glob.glob("/dev/shm/bpftime*"):
                 try:
                     os.remove(leftover)
