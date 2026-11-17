@@ -21,13 +21,13 @@
 extern "C" uint64_t bpf_perf_event_output(uint64_t, uint64_t, uint64_t,
 					  uint64_t, uint64_t);
 
-TEST_CASE("Perf output preserves the calling thread's CPU affinity",
+TEST_CASE("Perf output never changes the calling thread's CPU affinity",
 	  "[perf_event][affinity]")
 {
 	cpu_set_t before;
 	REQUIRE(sched_getaffinity(0, sizeof(before), &before) == 0);
 	if (CPU_COUNT(&before) < 2)
-		SKIP("Affinity restoration requires at least two allowed CPUs");
+		SKIP("The out-of-range section requires at least two allowed CPUs");
 
 	const char *old_name = getenv("BPFTIME_GLOBAL_SHM_NAME");
 	struct cleanup {
@@ -121,6 +121,8 @@ TEST_CASE("Perf output preserves the calling thread's CPU affinity",
 	CHECK(ret == expected_ret);
 	if (expected_ret == static_cast<uint64_t>(-1))
 		CHECK(output_errno == expected_errno);
+	// The helper must not touch scheduler state at all: the mask set by the
+	// test itself stays identical on every success and error path.
 	CHECK(CPU_EQUAL(&before, &after));
 }
 #endif

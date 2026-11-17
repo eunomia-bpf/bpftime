@@ -2,18 +2,24 @@
 #include "linux/bpf.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <spdlog/sinks/ostream_sink.h>
+#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <array>
 #include <cerrno>
 #include <cstdint>
 #include <memory>
+#include <sstream>
 #include <vector>
 
 namespace
 {
 
 std::vector<uint64_t> mock_stack;
+// Set while a test plays a probe with no unwinding context: the attach
+// implementation has no Gum invocation and therefore no frames to return.
+bool mock_outside_hook = false;
 
 class mock_stack_attach_impl : public bpftime::attach::base_attach_impl {
     public:
@@ -32,7 +38,7 @@ class mock_stack_attach_impl : public bpftime::attach::base_attach_impl {
 	void *call_attach_specific_function(const std::string &name,
 					    void *) override
 	{
-		if (name != "generate_stack")
+		if (name != "generate_stack" || mock_outside_hook)
 			return nullptr;
 		return new std::vector<uint64_t>(mock_stack);
 	}
@@ -143,4 +149,35 @@ TEST_CASE("get_stack rejects skips beyond the available trace")
 				  0) == -EFAULT);
 	REQUIRE(std::all_of(buffer.begin(), buffer.end(),
 			    [](uint64_t value) { return value == 0; }));
+}
+
+TEST_CASE("get_stack outside a hook reports an empty stack without logging")
+{
+	// A syscall-trace or tracepoint probe has a synthesized pt_regs and no
+	// Gum invocation, so the attach implementation returns no frames. The
+	// kernel reports that as an empty stack, and the helper must not turn
+	// it into an error a BPF program would have to special-case, nor log at
+	// error level for a program that runs outside a hook by design.
+	std::ostringstream output;
+	auto previous = spdlog::default_logger();
+	auto logger = std::make_shared<spdlog::logger>(
+		"get_stack_outside_hook",
+		std::make_shared<spdlog::sinks::ostream_sink_mt>(output));
+	logger->set_level(spdlog::level::err);
+	spdlog::set_default_logger(logger);
+	mock_outside_hook = true;
+	std::array<uint64_t, 2> buffer;
+	buffer.fill(UINT64_MAX);
+
+	auto copied =
+		bpftime_get_stack(0, reinterpret_cast<uint64_t>(buffer.data()),
+				  sizeof(buffer), BPF_F_USER_STACK, 0);
+
+	mock_outside_hook = false;
+	spdlog::set_default_logger(previous);
+
+	REQUIRE(copied == 0);
+	REQUIRE(buffer[0] == 0);
+	REQUIRE(buffer[1] == 0);
+	REQUIRE(output.str().empty());
 }

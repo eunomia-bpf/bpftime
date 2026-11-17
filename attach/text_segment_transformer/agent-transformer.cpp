@@ -128,15 +128,15 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 		SPDLOG_ERROR("Failed to open agent: {}", dlerror());
 		return;
 	}
-	// Set the flag `injected_with_frida` for agent
+	// Set the `injected_with_frida` flag when the agent exports it. The
+	// syscall-server does not, so a missing symbol only skips the assignment;
+	// returning here would also skip seccomp setup and break rootless tracing.
 	bool *injected_with_frida__agent =
 		(bool *)dlsym(next_handle, "injected_with_frida");
-	if (!injected_with_frida__agent) {
-		SPDLOG_ERROR(
-			"Agent does not expose a symbol named injected_with_frida; aborting agent activation without terminating the host");
-		return;
-	}
-	*injected_with_frida__agent = injected_with_frida;
+	if (injected_with_frida__agent)
+		*injected_with_frida__agent = injected_with_frida;
+	else
+		SPDLOG_WARN("Agent does not expose injected_with_frida");
 	auto entry_func = (void (*)(syscall_hooker_func_t *))dlsym(
 		next_handle, "_bpftime__setup_syscall_trace_callback");
 
