@@ -1597,6 +1597,16 @@ long bpf_map_handler::map_lookup_and_delete_elem(const void *key, void *value,
 			return impl->lookup_and_delete_userspace(key, value);
 		}
 	};
+	// Queue and stack take the keyless pop, and both declare
+	// should_lock = true: the handler owns their lock.
+	const auto do_pop = [&](auto *impl) -> long {
+		if (impl->should_lock) {
+			bpftime_lock_guard guard(map_lock);
+			return impl->map_pop_elem(value);
+		} else {
+			return impl->map_pop_elem(value);
+		}
+	};
 
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
@@ -1620,11 +1630,11 @@ long bpf_map_handler::map_lookup_and_delete_elem(const void *key, void *value,
 	}
 	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
 		auto impl = static_cast<queue_map_impl *>(map_impl_ptr.get());
-		return impl->map_pop_elem(value);
+		return do_pop(impl);
 	}
 	case bpf_map_type::BPF_MAP_TYPE_STACK: {
 		auto impl = static_cast<stack_map_impl *>(map_impl_ptr.get());
-		return impl->map_pop_elem(value);
+		return do_pop(impl);
 	}
 	default:
 		SPDLOG_ERROR(
