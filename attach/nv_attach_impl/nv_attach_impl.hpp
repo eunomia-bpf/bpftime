@@ -30,13 +30,32 @@
 #include <vector>
 #include <atomic>
 
-namespace bpftime
+namespace boost
 {
-namespace attach
+namespace asio
 {
+class thread_pool;
+}
+} // namespace boost
 
-using print_config_fn = void (*)(int length, char *out);
-using process_input_fn = int (*)(const char *input, int length, char *output);
+ namespace bpftime
+ {
+ namespace attach
+ {
+
+ using print_config_fn = void (*)(int length, char *out);
+ using process_input_fn = int (*)(const char *input, int length, char *output);
+
+// PTX pass plugins are dlmopen'd into private link namespaces (LM_ID_NEWLM)
+// and run an LLVM NVPTX JIT through process_input(). CPU stress on the real
+// plugin shows that path may only be entered from one consistent OS thread for
+// the whole nv_attach_impl lifetime: spread-over-threads and even mutex-
+// serialized cross-thread calls crash (SIGSEGV/SIGABRT), and a fresh
+// single-thread pool per call (new TID each time) crashes too; only one
+// long-lived worker is stable. A function-local pool(1) is therefore
+// insufficient because hack_fatbin() runs per fatbin and again after the
+// patch cache is cleared on re-attach.
+constexpr unsigned kPtxPassWorkerThreads = 1;
 
 std::string filter_compiled_ptx_for_ebpf_program(std::string input,
 						 std::string);
@@ -255,6 +274,16 @@ class nv_attach_impl final : public base_attach_impl {
 	// discovered pass definitions
 	std::vector<std::unique_ptr<pass_cfg_with_exec_path>>
 		pass_configurations;
+	// One long-lived worker owning every process_input() call into the
+	// dlmopen'd pass plugins (see kPtxPassWorkerThreads). Heap-allocated so
+	// the ctor creates it after dlmopen and the dtor joins+resets it before
+	// pass_configurations dlclose()s the plugin handles.
+	std::unique_ptr<boost::asio::thread_pool> ptx_pass_worker;
+	// Serializes hack_fatbin() against destruction so a task is never posted
+	// to a worker being joined/reset. Worker tasks never take this lock, so
+	// awaiting their futures while holding it cannot deadlock.
+	std::mutex worker_lifecycle_mutex;
+	bool worker_stopping = false;
 	std::map<std::string, ptxpass::runtime_response::RuntimeResponse>
 		patch_cache;
 	std::mutex patch_cache_mutex;
