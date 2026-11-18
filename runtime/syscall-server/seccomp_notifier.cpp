@@ -173,19 +173,6 @@ static std::optional<int64_t> dispatch_mapped_file_syscall(const int64_t *args)
 				 redirected[6]);
 }
 
-static bool is_tracepoint_id_path(const char *path)
-{
-	if (path == nullptr)
-		return false;
-	constexpr const char *debugfs_prefix =
-		"/sys/kernel/debug/tracing/events/";
-	constexpr const char *tracefs_prefix = "/sys/kernel/tracing/events/";
-	size_t length = strlen(path);
-	return length >= 3 && strcmp(path + length - 3, "/id") == 0 &&
-	       (strncmp(path, debugfs_prefix, strlen(debugfs_prefix)) == 0 ||
-		strncmp(path, tracefs_prefix, strlen(tracefs_prefix)) == 0);
-}
-
 static bool is_tracefs_mount_path(const char *path)
 {
 	return path != nullptr &&
