@@ -37,9 +37,11 @@ extern "C" int __libc_start_main(bpftime_main_func_t main, int argc,
 
 	// Worker threads log through interposed syscalls; a rotating file sink
 	// makes a worker's spdlog flush contend with the main thread's stdio
-	// lock during fclose and deadlock. Default to console unless the caller
-	// chose an explicit target (the omni bundle already sets console).
-	if (getenv("BPFTIME_LOG_OUTPUT") == nullptr)
+	// lock during fclose and deadlock. Default to console on the rootless
+	// path only: an ordinary BPFTIME_LOG_OUTPUT-less preload must keep
+	// writing its log file, as the startup tests assert no host stdio.
+	if (getenv("BPFTIME_GO_SECCOMP") != nullptr &&
+	    getenv("BPFTIME_LOG_OUTPUT") == nullptr)
 		setenv("BPFTIME_LOG_OUTPUT", "console", 1);
 
 	// Finish the one-time fake-kernel/SHM startup BEFORE installing the
