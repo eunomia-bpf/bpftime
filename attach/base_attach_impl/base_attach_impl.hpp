@@ -22,6 +22,10 @@ inline thread_local std::optional<override_return_set_callback>
 inline thread_local uintptr_t current_thread_attach_func_ip = 0;
 
 inline thread_local unsigned current_thread_attach_callback_depth = 0;
+// Bumped once per top-level attach callback (event). Lets event-scoped helper
+// caches distinguish one callback event from the next on the same thread.
+inline thread_local unsigned long long
+	current_thread_attach_event_generation = 0;
 inline thread_local bool current_thread_attach_callbacks_suppressed = false;
 
 class attach_callback_scope {
@@ -30,8 +34,10 @@ class attach_callback_scope {
 		: active(!current_thread_attach_callbacks_suppressed &&
 			 current_thread_attach_callback_depth == 0)
 	{
-		if (active)
+		if (active) {
 			current_thread_attach_callback_depth++;
+			++current_thread_attach_event_generation;
+		}
 	}
 	~attach_callback_scope()
 	{

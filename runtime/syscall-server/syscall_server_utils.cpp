@@ -13,6 +13,9 @@
 #endif
 #include "syscall_context.hpp"
 #include "synthetic_kallsyms.hpp"
+#if __linux__
+#include "syscall_trace_attach_private_data.hpp"
+#endif
 #include <cstdint>
 #include <cerrno>
 #include <cstdlib>
@@ -414,22 +417,23 @@ create_mocked_file_based_on_full_path(const std::filesystem::path &path)
 	}
 	if (is_tracepoint_id) {
 		// When tracefs is accessible, the real id file carries a valid
-		// kernel tracepoint id. Do not mock it: a fabricated id would
-		// index the tracepoint table out of range in the traced
-		// process. Returning no provider lets the normal open path read
-		// the genuine id, matching the default behavior.
+		// kernel tracepoint id. Returning no provider lets the normal
+		// open path read that ID and keeps kernel-mode opens unchanged.
 		uint32_t real_id = 0;
 		if (read_real_tracepoint_id(path_text, real_id))
 			return {};
-		// Rootless mode cannot read tracefs. Synthesize a stable id from
-		// the event path so server and client derive the same value.
-		uint32_t hash = 2166136261U;
-		for (unsigned char ch : path_text) {
-			hash ^= ch;
-			hash *= 16777619U;
-		}
-		return std::make_unique<mocked_file_provider>(
-			std::to_string(1024U + hash % 100000000U) + "\n");
+		// Encode only syscall events understood by the receiving attach
+		// implementation. The same event has one ID under both mounts.
+#if __linux__
+		const size_t root_size = path_text.starts_with(tracepoint_root) ?
+			tracepoint_root.size() : debug_tracepoint_root.size();
+		const auto event = std::string_view(path_text).substr(
+			root_size, path_text.size() - root_size - 3);
+		int32_t id = attach::syscall_trace_attach_private_data::synthetic_id_for_event(event);
+		if (id != 0)
+			return std::make_unique<mocked_file_provider>(std::to_string(id) + "\n");
+#endif
+		return {};
 	}
 	if (path == UPROBE_TYPE_FILE_NAME) {
 		SPDLOG_DEBUG("{} is uprobe type file", path.c_str());
