@@ -14,6 +14,10 @@
 #include <thread>
 #include <unistd.h>
 #include <vector>
+#if __linux__
+#include <sys/syscall.h>
+#include <sys/wait.h>
+#endif
 
 #if __linux__
 
@@ -149,6 +153,54 @@ TEST_CASE("Software perf shard cache replaces one slot instead of clearing",
 		REQUIRE(fixture.output(fixture.events[i],
 				       static_cast<int>(i), 0) == 0);
 	REQUIRE(bpftime::cached_software_perf_event_shard_count() == slots);
+}
+
+TEST_CASE("Software perf shard resolves the child's tid after fork",
+	  "[perf_event][software_perf_event][cache]")
+{
+	const std::string shm_name =
+		"SoftwarePerfForkTestShm-" + std::to_string(getpid());
+	shm_remove remover{ std::string(shm_name) };
+	boost::interprocess::managed_shared_memory shm(
+		boost::interprocess::create_only, shm_name.c_str(),
+		16 * 1024 * 1024);
+	auto *event = shm.construct<bpftime::software_perf_event_data>(
+		"fork_perf")(0, 0, 0, shm);
+	REQUIRE(event != nullptr);
+	REQUIRE(event->ensure_mmap_buffer(getpagesize() + 1024 * 1024) !=
+		nullptr);
+
+	// Populate the parent's thread-local tid cache and its shard first.
+	int parent_payload = 1;
+	REQUIRE(event->output_data(&parent_payload,
+				   sizeof(parent_payload)) == 0);
+
+	const pid_t pid = fork();
+	REQUIRE(pid >= 0);
+	if (pid == 0) {
+		// _exit skips destructors: the shared memory is owned and
+		// cleaned up by the parent. Without the atfork reset the
+		// inherited TLS cache would make this output reuse the
+		// parent's tid.
+		int child_payload = 2;
+		if (event->output_data(&child_payload,
+				       sizeof(child_payload)) != 0)
+			_exit(3);
+		const int64_t child_tid =
+			static_cast<int64_t>(syscall(SYS_gettid));
+		bool found_child_shard = false;
+		for (const auto &shard : event->producer_shards) {
+			if (shard.tid == child_tid)
+				found_child_shard = true;
+		}
+		_exit(found_child_shard ? 0 : 4);
+	}
+
+	int status = 0;
+	REQUIRE(waitpid(pid, &status, 0) == pid);
+	REQUIRE(WIFEXITED(status));
+	// 3 = output failed in the child; 4 = the child kept the parent's tid.
+	REQUIRE(WEXITSTATUS(status) == 0);
 }
 
 #endif
