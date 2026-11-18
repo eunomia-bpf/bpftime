@@ -540,44 +540,57 @@ nv_attach_impl::nv_attach_impl()
 				    ptx_pass_libraries);
 		}
 	}
+	// Create the single pass worker BEFORE any dlmopen so each plugin's
+	// private link namespace is first entered from this one stable thread;
+	// print_config (here) and process_input (hack_fatbin) then run on the
+	// same TID for the namespace's whole lifetime.
+	ptx_pass_worker =
+		std::make_unique<boost::asio::thread_pool>(
+			kPtxPassWorkerThreads);
 	auto paths = split_by_colon(ptx_pass_libraries);
-	for (const auto &path : paths) {
-		SPDLOG_INFO("Found path: {}, executing..", path.c_str());
-		void *handle = dlmopen(LM_ID_NEWLM, path.c_str(),
-				       RTLD_NOW | RTLD_LOCAL);
-		if (!handle) {
-			SPDLOG_ERROR(
-				"Unable to load dynamic library of pass {}: {}",
-				path.c_str(), dlerror());
-			continue;
-		}
-		auto print_config =
-			(print_config_fn)dlsym(handle, "print_config");
-		if (!print_config) {
-			SPDLOG_ERROR("Symbol print_config not found in {}",
-				     path.c_str());
-			continue;
-		}
-		auto process_input =
-			(process_input_fn)dlsym(handle, "process_input");
-		if (!process_input) {
-			SPDLOG_ERROR("Symbol process_input not found in {}",
-				     path.c_str());
-			continue;
-		}
-		ptxpass::pass_config::PassConfig config;
-		std::vector<char> buf(10 << 20);
-		print_config(buf.size(), buf.data());
+	std::packaged_task<void()> load_passes([this, paths]() -> void {
+		for (const auto &path : paths) {
+			SPDLOG_INFO("Found path: {}, executing..", path.c_str());
+			void *handle = dlmopen(LM_ID_NEWLM, path.c_str(),
+					       RTLD_NOW | RTLD_LOCAL);
+			if (!handle) {
+				SPDLOG_ERROR(
+					"Unable to load dynamic library of pass {}: {}",
+					path.c_str(), dlerror());
+				continue;
+			}
+			auto print_config =
+				(print_config_fn)dlsym(handle, "print_config");
+			if (!print_config) {
+				SPDLOG_ERROR("Symbol print_config not found in {}",
+						path.c_str());
+				continue;
+			}
+			auto process_input =
+				(process_input_fn)dlsym(handle, "process_input");
+			if (!process_input) {
+				SPDLOG_ERROR("Symbol process_input not found in {}",
+						path.c_str());
+				continue;
+			}
+			ptxpass::pass_config::PassConfig config;
+			std::vector<char> buf(10 << 20);
+			print_config(buf.size(), buf.data());
 
-		auto json = nlohmann::json::parse(buf.data());
-		ptxpass::pass_config::from_json(json, config);
-		SPDLOG_INFO("Retrived config of {}", path.c_str());
-		SPDLOG_DEBUG("Config {}", json.dump(4));
-		this->pass_configurations.emplace_back(
-			std::make_unique<pass_cfg_with_exec_path>(
-				path, config, print_config, process_input,
-				handle));
-	}
+			auto json = nlohmann::json::parse(buf.data());
+			ptxpass::pass_config::from_json(json, config);
+			SPDLOG_INFO("Retrived config of {}", path.c_str());
+			SPDLOG_DEBUG("Config {}", json.dump(4));
+			this->pass_configurations.emplace_back(
+				std::make_unique<pass_cfg_with_exec_path>(
+					path, config, print_config, process_input,
+					handle));
+		}
+	});
+	auto load_future = load_passes.get_future();
+	boost::asio::post(*ptx_pass_worker,
+			  [&load_passes]() { load_passes(); });
+	load_future.get();
 	{
 		const char *provided_compiler_lib =
 			getenv("BPFTIME_PTX_COMPILER_LIB");
@@ -598,11 +611,7 @@ nv_attach_impl::nv_attach_impl()
 			throw std::runtime_error("Unable to load PTX compiler");
 		this->ptx_compiler = *compiler;
 	nv_attach_set_active_impl(this);
-	// One stable worker for every dlmopen'd pass plugin call. Created after
-	// all dlmopen so the thread only ever enters already-loaded namespaces.
-	ptx_pass_worker =
-		std::make_unique<boost::asio::thread_pool>(
-			kPtxPassWorkerThreads);
+	// ptx_pass_worker was created before dlmopen above.
 	}
  	} catch (...) {
 		// A failure after hooks were committed (e.g. worker thread creation)
