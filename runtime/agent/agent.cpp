@@ -861,6 +861,49 @@ extern "C" void **__cudaRegisterFatBinary(void *fatbin)
 	return nullptr;
 }
 #endif
+// Rootless late-collector support: Ray worker actors are fork+exec'd before the
+// collector creates the shared-memory segment. The inline 60x50ms OPEN_ONLY retry
+// (~3s) then fails and the agent would stay dormant forever (no frida attach, zero
+// events). Schedule a bounded background re-init that keeps re-entering
+// bpftime_agent_main_impl until the segment appears. It never blocks the worker
+// main() and fails open on timeout so the workload always proceeds unprofiled
+// rather than hanging or crashing.
+static std::atomic<bool> deferred_agent_init_scheduled{ false };
+static void schedule_deferred_agent_init() noexcept
+{
+	bool expected = false;
+	if (!deferred_agent_init_scheduled.compare_exchange_strong(
+		    expected, true))
+		return;
+	try {
+		std::thread([]() noexcept {
+			// Up to ~5 minutes: each main_impl attempt itself retries SHM for
+			// ~3s; sleep between rounds.
+			for (int round = 0;
+			     round < 30 &&
+			     __atomic_load_n(&initialized, __ATOMIC_SEQ_CST) !=
+				     AGENT_READY;
+			     ++round) {
+				try {
+					int stay_resident = 0;
+					bpftime_agent_main_impl("", &stay_resident);
+				} catch (...) {
+				}
+				if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) ==
+				    AGENT_READY)
+					break;
+				std::this_thread::sleep_for(
+					std::chrono::seconds(7));
+			}
+			deferred_agent_init_scheduled.store(
+				false, std::memory_order_release);
+		}).detach();
+	} catch (...) {
+		deferred_agent_init_scheduled.store(
+			false, std::memory_order_release);
+	}
+}
+
 static void bpftime_agent_main_impl(const gchar *data,
 				    gboolean *stay_resident)
 {
@@ -983,9 +1026,11 @@ static void bpftime_agent_main_impl(const gchar *data,
 			}
 			if (!shm_ok) {
 				SPDLOG_ERROR(
-					"Unable to initialize shared memory: {}",
+					"Unable to initialize shared memory: {}; "
+					"scheduling bounded deferred agent init",
 					last_err);
 				init_fail();
+				schedule_deferred_agent_init();
 				return;
 			}
 			auto &runtime_config = bpftime_get_runtime_config();
