@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <functional>
 #if __linux__
+#include <linux/types.h>
 #include <sys/epoll.h>
 #elif __APPLE__
 #include "bpftime_epoll.h"
