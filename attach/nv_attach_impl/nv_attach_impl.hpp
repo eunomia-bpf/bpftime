@@ -274,10 +274,12 @@ class nv_attach_impl final : public base_attach_impl {
 	// discovered pass definitions
 	std::vector<std::unique_ptr<pass_cfg_with_exec_path>>
 		pass_configurations;
-	// One long-lived worker owning every process_input() call into the
-	// dlmopen'd pass plugins (see kPtxPassWorkerThreads). Heap-allocated so
-	// the ctor creates it after dlmopen and the dtor joins+resets it before
-	// pass_configurations dlclose()s the plugin handles.
+	// One long-lived worker owning every entry into the dlmopen'd pass
+	// plugins (both print_config at load and process_input at patch time;
+	// see kPtxPassWorkerThreads). Heap-allocated so the ctor creates it
+	// before any dlmopen (the namespace is first entered from this thread)
+	// and the dtor joins+resets it before pass_configurations dlclose()s
+	// the plugin handles.
 	std::unique_ptr<boost::asio::thread_pool> ptx_pass_worker;
 	// Serializes hack_fatbin() against destruction so a task is never posted
 	// to a worker being joined/reset. Worker tasks never take this lock, so
