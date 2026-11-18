@@ -27,7 +27,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
-#include <cassert>
+#include <future>
 #include <cstdint>
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -577,12 +577,20 @@ nv_attach_impl::nv_attach_impl()
 		if (!compiler)
 			throw std::runtime_error("Unable to load PTX compiler");
 		this->ptx_compiler = *compiler;
-	}
 	nv_attach_set_active_impl(this);
-	} catch (...) {
-		// Initialization may fail after hooks were committed. Detach the
-		// listener before constructor unwinding destroys its contexts.
-		enabled.store(false, std::memory_order_release);
+	// One stable worker for every dlmopen'd pass plugin call. Created after
+	// all dlmopen so the thread only ever enters already-loaded namespaces.
+	ptx_pass_worker =
+		std::make_unique<boost::asio::thread_pool>(
+			kPtxPassWorkerThreads);
+	}
+ 	} catch (...) {
+		// A failure after hooks were committed (e.g. worker thread creation)
+		// must not leave a dangling global active_impl pointing at this
+		// partially constructed object.
+		if (nv_attach_get_active_impl() == this)
+			nv_attach_set_active_impl(nullptr);
+ 		// Initialization may fail after hooks were committed. Detach the
 		try {
 			if (transaction_open)
 				gum_interceptor_end_transaction(interceptor);
@@ -600,7 +608,17 @@ nv_attach_impl::nv_attach_impl()
 
 nv_attach_impl::~nv_attach_impl()
 {
-	if (nv_attach_get_active_impl() == this)
+	// Stop the pass worker before any plugin handle is dlclose()d by the
+	// pass_configurations member destructor, so it can never enter an
+	// unloaded dlmopen namespace. The lifecycle lock blocks hack_fatbin
+	// from posting once teardown begins.
+	std::lock_guard<std::mutex> lifecycle_lock(worker_lifecycle_mutex);
+	worker_stopping = true;
+	if (ptx_pass_worker) {
+		ptx_pass_worker->join();
+		ptx_pass_worker.reset();
+	}
+ 	if (nv_attach_get_active_impl() == this)
 		nv_attach_set_active_impl(nullptr);
 
 	if (frida_interceptor != nullptr) {
@@ -981,10 +999,18 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 	/**
 	Here we can patch the PTX.
 	*/
-	boost::asio::thread_pool pool(
-		std::max(1u, std::thread::hardware_concurrency()));
+	// Held for the whole call so destruction cannot join the worker while
+	// tasks are posted/awaited. Worker tasks never take this lock, so waiting
+	// on their futures below cannot deadlock.
+	std::lock_guard<std::mutex> lifecycle_lock(worker_lifecycle_mutex);
+	if (worker_stopping || !ptx_pass_worker) {
+		SPDLOG_ERROR("PTX pass worker is not available");
+		return std::nullopt;
+	}
 	std::map<std::string, std::tuple<std::string, bool>> ptx_out;
 	std::mutex map_mutex;
+	std::vector<std::future<void>> pass_futures;
+	pass_futures.reserve(all_ptx.size());
 	std::vector<nv_attach_entry> entries;
 	{
 		std::lock_guard<std::mutex> guard(hook_entries_mutex);
@@ -992,7 +1018,9 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 			entries.push_back(entry);
 	}
 	for (auto &[file_name, original_ptx] : all_ptx) {
-		boost::asio::post(pool, [this, original_ptx, file_name, &map_mutex, &ptx_out, &entries]() -> void {
+		auto task = std::make_shared<std::packaged_task<void()>>(
+			[this, original_ptx, file_name, &map_mutex, &ptx_out,
+			 &entries]() -> void {
 			auto current_ptx = original_ptx;
 			SPDLOG_INFO("Patching PTX: {}", file_name);
 			bool should_add_trampoline = false;
@@ -1146,9 +1174,38 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 			std::lock_guard<std::mutex> _guard(map_mutex);
 			ptx_out["patched." + file_name] = std::make_tuple(
 				current_ptx, should_add_trampoline);
-		});
+		})
+		;
+		pass_futures.push_back(task->get_future());
+		// Runs on the one persistent worker; the shared_ptr keeps the
+		// task alive until that thread executes it.
+		boost::asio::post(*ptx_pass_worker,
+				  [task]() { (*task)(); });
 	}
-	pool.join();
+	// Drain every future before returning so worker tasks finish while the
+	// reference-captured locals (mutexes, ptx_out) stay alive. Keep the
+	// first error and rethrow only after the drain, otherwise an early
+	// rethrow would unwind this frame while sibling tasks still touch them.
+	std::exception_ptr first_pass_error;
+	for (auto &future : pass_futures) {
+		try {
+			future.get();
+		} catch (const std::exception &e) {
+			if (!first_pass_error)
+				first_pass_error = std::current_exception();
+			else
+				SPDLOG_ERROR(
+					"Additional PTX pass task failed: {}", e.what());
+		} catch (...) {
+			if (!first_pass_error)
+				first_pass_error = std::current_exception();
+			else
+				SPDLOG_ERROR(
+					"Additional PTX pass task failed with unknown exception");
+		}
+	}
+	if (first_pass_error)
+		std::rethrow_exception(first_pass_error);
 	if (spdlog::should_log(spdlog::level::debug)) {
 		char tmp_dir[] = "/tmp/bpftime-fatbin-work.XXXXXX";
 		if (mkdtemp(tmp_dir) == nullptr) {
