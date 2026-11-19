@@ -14,7 +14,10 @@
 #include "syscall_context.hpp"
 #include "synthetic_kallsyms.hpp"
 #if __linux__
-#include "syscall_trace_attach_private_data.hpp"
+// Self-contained rootless tracepoint id synthesis. The syscall name->number
+// table is generated inside runtime/ (syscall_id_table target); the syscall
+// server must not include or link anything under attach/ to read it.
+#include "syscall_id_list.h"
 #endif
 #include <cstdint>
 #include <cerrno>
@@ -134,6 +137,62 @@ bool real_kallsyms_hides_addresses()
 		return false;
 	return kallsyms_addresses_hidden(std::string_view(buffer, filled));
 }
+
+#if __linux__
+// Rootless synthetic tracepoint id base. Must match the encoding consumed on
+// the attach side so a synthesized ".../id" resolves to the same event.
+constexpr int32_t rootless_synthetic_id_base = 0x40000000;
+
+// Syscall name -> number map built once from the runtime-generated table.
+// Local to this translation unit on purpose: reaching into attach/ for this
+// mapping would re-introduce the layering inversion the self-contained
+// syscall server exists to avoid.
+const std::unordered_map<std::string, int32_t> &
+rootless_syscall_name_to_nr()
+{
+	static const auto map = [] {
+		std::unordered_map<std::string, int32_t> built;
+		std::istringstream ss(table);
+		std::string name;
+		int32_t nr = 0;
+		while (ss >> name >> nr)
+			built.emplace(name, nr);
+		// Tracepoint spelling vs kernel syscall name.
+		if (auto it = built.find("umount2"); it != built.end())
+			built.emplace("umount", it->second);
+		return built;
+	}();
+	return map;
+}
+
+// Behaviourally identical to the attach-side synthetic tracepoint id
+// encoder (same base, prefixes, bounds and return values), reimplemented
+// here so the syscall server keeps zero attach/frida dependencies.
+// Returns 0 for events that cannot be encoded so the caller falls back to
+// the normal tracefs/open path.
+int32_t rootless_synthetic_id_for_event(std::string_view event)
+{
+	if (event == "raw_syscalls/sys_enter")
+		return rootless_synthetic_id_base;
+	if (event == "raw_syscalls/sys_exit")
+		return rootless_synthetic_id_base + 1;
+	constexpr std::string_view enter_prefix = "syscalls/sys_enter_";
+	constexpr std::string_view exit_prefix = "syscalls/sys_exit_";
+	bool enter = event.starts_with(enter_prefix);
+	if (!enter && !event.starts_with(exit_prefix))
+		return 0;
+	auto name = event.substr(
+		enter ? enter_prefix.size() : exit_prefix.size());
+	const auto &names = rootless_syscall_name_to_nr();
+	auto found = names.find(std::string(name));
+	if (name.empty() || found == names.end() || found->second < 0 ||
+	    found->second >=
+		    (INT32_MAX - rootless_synthetic_id_base) / 2 - 1)
+		return 0;
+	return rootless_synthetic_id_base + 2 * (found->second + 1) +
+	       (enter ? 0 : 1);
+}
+#endif
 } // namespace
 // Why not use string_view? because parse_uint_from_file requires a c-string
 static const std::string UPROBE_TYPE_FILE_NAME =
@@ -446,7 +505,7 @@ create_mocked_file_based_on_full_path(const std::filesystem::path &path)
 			tracepoint_root.size() : debug_tracepoint_root.size();
 		const auto event = std::string_view(path_text).substr(
 			root_size, path_text.size() - root_size - 3);
-		int32_t id = attach::syscall_trace_attach_private_data::synthetic_id_for_event(event);
+		int32_t id = rootless_synthetic_id_for_event(event);
 		if (id != 0)
 			return std::make_unique<mocked_file_provider>(std::to_string(id) + "\n");
 #endif

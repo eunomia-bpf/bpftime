@@ -38,11 +38,15 @@ target_link_libraries(bpftime-syscall-server PUBLIC
     -ldl
     spdlog::spdlog)
 
-# Tracepoint id synthesis (#815) is owned by the attach implementation; the
-# syscall server links it for the mocked tracefs id path, while the in-object
-# seccomp USER_NOTIF notifier (seccomp_notifier.cpp) stays frida/capstone-free.
+# ARCHITECTURE INVARIANT (enforced below): bpftime-syscall-server must never
+# link or include any attach/ library (which may pull frida/capstone) and must
+# never reference frida/capstone itself. Rootless tracepoint id synthesis is
+# implemented locally in syscall_server_utils.cpp using only the runtime-level
+# generated syscall name->number table (the syscall_id_table target).
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(bpftime-syscall-server PRIVATE bpftime_syscall_trace_attach_impl)
+    add_dependencies(bpftime-syscall-server syscall_id_table)
+    target_include_directories(bpftime-syscall-server PRIVATE
+        ${CMAKE_BINARY_DIR}/runtime)
 endif()
 
 add_dependencies(bpftime-syscall-server spdlog::spdlog)
@@ -97,4 +101,56 @@ endif()
 if (${TEST_LCOV}) 
     target_compile_options(bpftime-syscall-server PRIVATE -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
     target_link_options(bpftime-syscall-server PRIVATE -fprofile-arcs)
+endif()
+
+# ---------------------------------------------------------------------------
+# Architecture guard: fail the build at configure time if the self-contained
+# syscall server ever grows an attach/ or frida/capstone dependency again.
+# This is a hard assertion, not a convention: it greps the actual sources and
+# the link line of this target, so re-introducing the coupling cannot silently
+# pass CI. The seccomp failure test (test/) is excluded: it intentionally
+# #includes seccomp_notifier.cpp standalone with --wrap seams.
+# ---------------------------------------------------------------------------
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  file(GLOB _syscall_server_sources
+       CONFIGURE_DEPENDS
+       "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
+       "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp")
+  # Plain substrings checked with string(FIND), not regex: regex tokens such
+  # as [^\n] get mangled when expanded out of a CMake list in foreach. These
+  # are real code dependencies (include directives, CMake target names and
+  # C symbols); documentation comments that only mention the words are fine.
+  # seccomp_tracer.hpp lives in this same syscall-server/ directory and is a
+  # legitimate local include, so it is NOT forbidden. Only cross-directory
+  # includes into attach/, attach CMake targets and frida/capstone C symbols
+  # are violations.
+  set(_forbidden_substrings
+      "bpftime_syscall_trace_attach_impl"
+      "bpftime_frida_uprobe_attach_impl"
+      "bpftime_base_attach_impl"
+      "frida_gum"
+      "gum_interceptor"
+      "capstone.h")
+  foreach(_src ${_syscall_server_sources})
+    file(READ "${_src}" _contents)
+    # Cross-directory include into the attach tree (a local same-dir header
+    # such as "seccomp_tracer.hpp" has no attach/ path segment and is fine).
+    string(FIND "${_contents}" "#include \"../attach/" _attach_inc)
+    string(FIND "${_contents}" "#include \"attach/" _attach_inc2)
+    if(NOT _attach_inc EQUAL -1 OR NOT _attach_inc2 EQUAL -1)
+      message(FATAL_ERROR
+        "Architecture violation: ${_src} includes a header from attach/. "
+        "bpftime-syscall-server must stay self-contained.")
+    endif()
+    foreach(_needle ${_forbidden_substrings})
+      string(FIND "${_contents}" "${_needle}" _hit)
+      if(NOT _hit EQUAL -1)
+        message(FATAL_ERROR
+          "Architecture violation: ${_src} contains forbidden dependency "
+          "'${_needle}'. bpftime-syscall-server must stay self-contained with "
+          "zero attach/frida/capstone dependency. See the invariant comment "
+          "at the top of this CMakeLists.txt.")
+      endif()
+    endforeach()
+  endforeach()
 endif()
