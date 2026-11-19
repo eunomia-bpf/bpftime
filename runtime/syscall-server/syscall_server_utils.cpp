@@ -18,6 +18,7 @@
 // table is generated inside runtime/ (syscall_id_table target); the syscall
 // server must not include or link anything under attach/ to read it.
 #include "syscall_id_list.h"
+#include "platform_utils.hpp"
 #endif
 #include <cstdint>
 #include <cerrno>
@@ -508,6 +509,17 @@ create_mocked_file_based_on_full_path(const std::filesystem::path &path)
 		int32_t id = rootless_synthetic_id_for_event(event);
 		if (id != 0)
 			return std::make_unique<mocked_file_provider>(std::to_string(id) + "\n");
+		// rootless_synthetic_id_for_event only encodes
+		// syscalls/sys_enter_* and syscalls/sys_exit_*. Every other
+		// tracepoint (sched/..., raw_syscalls/...) falls back to the
+		// same path-derived id used to build the rootless tracepoint
+		// table, so the id the profiler reads resolves back to this
+		// event when it attaches. Without this fallback an unreadable
+		// tracefs id file yields ENOENT and an unmodified profiler
+		// aborts during startup.
+		return std::make_unique<mocked_file_provider>(
+			std::to_string(rootless::synthetic_tracepoint_id(path_text)) +
+			"\n");
 #endif
 		return {};
 	}

@@ -20,8 +20,9 @@ set(SYSCALL_TRACE_ATTACH_IMPL_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include CACHE 
 
 # Own include dirs stay PUBLIC (agent and tests consume them) and are listed
 # first: this module also has a syscall_table.hpp that must not be shadowed
-# by the same-named header in runtime/include. The neutral rootless contract
-# is a private, downward-only dependency with a unique header name.
+# by the same-named header in runtime/include. The shared rootless id
+# derivation lives in the runtime-level platform_utils.hpp, reached through
+# the PRIVATE runtime include dir below as a downward-only dependency.
 target_include_directories(bpftime_syscall_trace_attach_impl PUBLIC
     ${SYSCALL_TRACE_ATTACH_IMPL_INCLUDE}
     ${BASE_ATTACH_IMPL_INCLUDE})

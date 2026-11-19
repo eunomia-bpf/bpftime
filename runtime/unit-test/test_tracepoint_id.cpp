@@ -3,6 +3,7 @@
 #include "syscall_server_utils.hpp"
 #include "syscall_trace_attach_private_data.hpp"
 #include "syscall_trace_attach_impl.hpp"
+#include "platform_utils.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <boost/scope_exit.hpp>
 #include <dlfcn.h>
@@ -56,8 +57,18 @@ TEST_CASE("Tracepoint id provider preserves real IDs and resolves rootless alias
 			std::string(root) + "syscalls/sys_enter_read/id");
 		REQUIRE(provider.has_value());
 		REQUIRE((*provider)->buf == std::to_string(expected) + "\n");
-		REQUIRE_FALSE(bpftime::create_mocked_file_based_on_full_path(
-			std::string(root) + "syscalls/sys_enter_nonexistent_bpftime/id").has_value());
+		// An unknown syscall never gets a syscall-base id. It still
+		// receives a path-derived fallback provider so a rootless
+		// openat() succeeds; the value is exactly the id the table
+		// builder derives for the same path.
+		auto unknown = bpftime::create_mocked_file_based_on_full_path(
+			std::string(root) + "syscalls/sys_enter_nonexistent_bpftime/id");
+		REQUIRE(unknown.has_value());
+		const int32_t unknown_id = std::stoi((*unknown)->buf);
+		REQUIRE(unknown_id <
+			bpftime::attach::syscall_trace_attach_private_data::synthetic_id_base);
+		REQUIRE(unknown_id == bpftime::rootless::synthetic_tracepoint_id(
+			std::string(root) + "syscalls/sys_enter_nonexistent_bpftime/id"));
 	}
 	FILE *real_id = tmpfile();
 	REQUIRE(real_id != nullptr);
@@ -118,5 +129,62 @@ TEST_CASE("Rootless tracepoint IDs initialize concurrently")
 	for (auto &worker : workers)
 		worker.join();
 	REQUIRE(matched == 16);
+}
+TEST_CASE("Rootless mocks sched and raw_syscalls tracepoint ids")
+{
+	// Regression: synthetic_id_for_event covers syscalls/sys_enter_*,
+	// syscalls/sys_exit_* and the raw_syscalls aliases, but returns 0 for
+	// ordinary tracepoints such as sched/.... Those used to get no mock
+	// provider, so reading their tracefs id file returned ENOENT and an
+	// unmodified profiler aborted at startup. Force the real-id probe to
+	// fail, reproducing an unreadable rootless tracefs without depending on
+	// the host kernel.
+	test_tracepoint_probe = true;
+	BOOST_SCOPE_EXIT_ALL(&) {
+		test_tracepoint_probe = false;
+		test_tracepoint_fd = -1;
+	};
+	using bpftime::rootless::synthetic_tracepoint_id;
+	using bpftime::attach::syscall_trace_attach_private_data;
+	constexpr int32_t base =
+		syscall_trace_attach_private_data::synthetic_id_base;
+	// sched/... has no syscall-base encoding and must use the path-derived
+	// FNV id, identical to the value the rootless table builder derives for
+	// the same path, and below the syscall-base range.
+	const char *sched_events[] = {
+		"sched/sched_process_fork",
+		"sched/sched_process_exec",
+		"sched/sched_process_exit",
+	};
+	for (const char *event_path : sched_events) {
+		const std::string id_path =
+			std::string("/sys/kernel/tracing/events/") + event_path + "/id";
+		auto provider = bpftime::create_mocked_file_based_on_full_path(id_path);
+		REQUIRE(provider.has_value());
+		const int32_t id = std::stoi((*provider)->buf);
+		REQUIRE(id == synthetic_tracepoint_id(id_path));
+		REQUIRE(id < base);
+		// Both tracefs mount aliases must resolve to the same ID, since the
+		// rootless attach table indexes only the canonical tracefs path.
+		const std::string debug_id_path =
+			std::string("/sys/kernel/debug/tracing/events/") +
+			event_path + "/id";
+		auto debug_provider =
+			bpftime::create_mocked_file_based_on_full_path(debug_id_path);
+		REQUIRE(debug_provider.has_value());
+		REQUIRE(std::stoi((*debug_provider)->buf) == id);
+	}
+	// raw_syscalls keeps its dedicated global enter/exit syscall-base id.
+	const struct { const char *event; int32_t id; } raw_cases[] = {
+		{ "raw_syscalls/sys_enter", base },
+		{ "raw_syscalls/sys_exit", base + 1 },
+	};
+	for (const auto &rc : raw_cases) {
+		const std::string id_path =
+			std::string("/sys/kernel/tracing/events/") + rc.event + "/id";
+		auto provider = bpftime::create_mocked_file_based_on_full_path(id_path);
+		REQUIRE(provider.has_value());
+		REQUIRE(std::stoi((*provider)->buf) == rc.id);
+	}
 }
 #endif
