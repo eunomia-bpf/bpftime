@@ -13,16 +13,17 @@ FROM openeuler/openeuler:24.03-lts-sp1
 # ubuntu image does not run apt upgrade either. Package installs pull
 # current metadata and versions on their own; security refreshes happen
 # through periodic image rebuilds.
+# Keep this list to what test-runtime.yml installs on openEuler today:
+# the openEuler mirrors are slow from CI runners, and debugging/GPG extras
+# the job never uses would add many minutes to every manual image build.
 RUN if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi \
     && $PM -y install \
-        git ca-certificates sudo curl wget which file \
+        git ca-certificates which file \
         cmake make gcc gcc-c++ \
         clang llvm llvm-devel \
         zlib-devel elfutils-libelf-devel pkgconf-pkg-config \
         libasan boost-devel openssl-devel \
-        gdb strace tree procps-ng \
-        gnupg pinentry dirmngr \
-        python3 python3-pip \
+        python3 \
         ccache \
     && $PM clean all
 
