@@ -53,6 +53,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - name: Enable ccache
+        uses: ./.github/actions/ccache
       - name: Install library example build dependencies
         run: sudo apt-get update && sudo apt-get install -y ninja-build libboost-dev zlib1g-dev
       - name: Initialize required submodules
@@ -91,6 +93,10 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: "recursive"
+      - name: Enable ccache
+        uses: ./.github/actions/ccache
+        with:
+          variant: ${{ matrix.container.name }}
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v3
         with:
@@ -265,6 +271,10 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: "recursive"
+      - name: Enable ccache
+        uses: ./.github/actions/ccache
+        with:
+          variant: ${{ matrix.container.name }}
       - name: Download prebuilt runtime (with jit)
         if: ${{matrix.enable_jit}}
         uses: actions/download-artifact@v4

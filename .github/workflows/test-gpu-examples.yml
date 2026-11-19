@@ -60,6 +60,10 @@ jobs:
           set -euo pipefail
           rm -rf third_party/ubpf/external/bpf_conformance
           git submodule update --init --recursive third_party/ubpf
+      - name: Enable ccache
+        uses: ./.github/actions/ccache
+        with:
+          variant: gpu
 
       - name: Detect CUDA root and export env
         shell: bash

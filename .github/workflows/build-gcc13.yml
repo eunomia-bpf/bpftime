@@ -56,6 +56,10 @@ jobs:
         run: |
           rm -rf third_party/ubpf/external/bpf_conformance
           git submodule update --init --recursive third_party/ubpf
+      - name: Enable ccache
+        uses: ./.github/actions/ccache
+        with:
+          variant: gcc13
 
       - name: Install GCC 13 and dependencies
         run: |
