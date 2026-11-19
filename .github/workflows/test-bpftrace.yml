@@ -73,6 +73,7 @@ jobs:
           submodules: "recursive"
 
       - name: System setup and kernel headers
+        shell: bash
         run: |
           set -euo pipefail
           apt-get update
@@ -89,6 +90,7 @@ jobs:
           sudo chmod 1777 "$BPFTIME_SHARED_MEMORY_PATH"
 
       - name: Build bpftime (default, SPDLOG_LEVEL_INFO via RelWithDebInfo)
+        shell: bash
         run: |
           set -euo pipefail
           echo "Building bpftime with CMake (INFO)"
@@ -102,6 +104,7 @@ jobs:
           cmake --build build --config RelWithDebInfo --target bpftime-agent bpftime-syscall-server bpftime_text_segment_transformer -j$(nproc)
 
       - name: Build bpftime (SPDLOG_LEVEL_TRACE)
+        shell: bash
         run: |
           set -euo pipefail
           echo "Building bpftime with CMake (TRACE)"
@@ -116,6 +119,7 @@ jobs:
           cmake --build build-trace --config RelWithDebInfo --target bpftime-agent bpftime-syscall-server bpftime_text_segment_transformer -j$(nproc)
 
       - name: Build malloc example
+        shell: bash
         run: |
           set -euo pipefail
           make -C example/malloc
@@ -123,6 +127,7 @@ jobs:
           test -f example/malloc/victim
 
       - name: Verify built libraries
+        shell: bash
         run: |
           set -euo pipefail
           for d in build build-trace; do
@@ -561,6 +566,7 @@ jobs:
           name: bpftime-malloc-example
           path: example/malloc
       - name: Verify downloaded build results
+        shell: bash
         run: |
           set -euo pipefail
           echo "Checking built libraries:"
@@ -911,6 +917,7 @@ jobs:
           echo "TEST_DATA_LINE_2_XYZ" >> build/install_manifest.txt
 
       - name: Select build for the log level
+        shell: bash
         run: |
           set -euo pipefail
           if [ "${{ matrix.log_level }}" = "TRACE" ]; then
@@ -927,6 +934,7 @@ jobs:
           name: ${{ env.BUILD_ARTIFACT }}
           path: ${{ env.BUILD_DIR }}
       - name: Verify downloaded libraries
+        shell: bash
         run: |
           set -euo pipefail
           echo "Checking built libraries in $BUILD_DIR:"
