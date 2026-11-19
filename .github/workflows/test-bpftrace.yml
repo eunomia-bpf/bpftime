@@ -68,7 +68,7 @@ jobs:
         with:
           submodules: "recursive"
       - name: Enable ccache
-        uses: ./.github/actions/ccache/action.yml
+        uses: ./.github/actions/ccache
         with:
           variant: ubuntu-2204
 
@@ -410,7 +410,7 @@ jobs:
         with:
           submodules: "recursive"
       - name: Enable ccache
-        uses: ./.github/actions/ccache/action.yml
+        uses: ./.github/actions/ccache
         with:
           variant: ubuntu-2204
 
@@ -796,7 +796,7 @@ jobs:
         with:
           submodules: "recursive"
       - name: Enable ccache
-        uses: ./.github/actions/ccache/action.yml
+        uses: ./.github/actions/ccache
         with:
           variant: ubuntu-2204
 

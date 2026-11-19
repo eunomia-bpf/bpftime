@@ -34,7 +34,7 @@ jobs:
         with:
           submodules: 'recursive'
       - name: Enable ccache
-        uses: ./.github/actions/ccache/action.yml
+        uses: ./.github/actions/ccache
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v3
         with:

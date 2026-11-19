@@ -54,7 +54,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Enable ccache
-        uses: ./.github/actions/ccache/action.yml
+        uses: ./.github/actions/ccache
       - name: Install library example build dependencies
         run: sudo apt-get update && sudo apt-get install -y ninja-build libboost-dev zlib1g-dev
       - name: Initialize required submodules
@@ -94,7 +94,7 @@ jobs:
         with:
           submodules: "recursive"
       - name: Enable ccache
-        uses: ./.github/actions/ccache/action.yml
+        uses: ./.github/actions/ccache
         with:
           variant: ${{ matrix.container.name }}
       - name: Setup conda
@@ -272,7 +272,7 @@ jobs:
         with:
           submodules: "recursive"
       - name: Enable ccache
-        uses: ./.github/actions/ccache/action.yml
+        uses: ./.github/actions/ccache
         with:
           variant: ${{ matrix.container.name }}
       - name: Download prebuilt runtime (with jit)

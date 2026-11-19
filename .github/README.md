@@ -20,7 +20,7 @@ All compiled jobs enable ccache through the composite action
 
 ```yaml
       - name: Enable ccache
-        uses: ./.github/actions/ccache/action.yml
+        uses: ./.github/actions/ccache
         with:
           variant: ${{ matrix.container }} # optional cache key discriminator
 ```

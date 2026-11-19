@@ -53,7 +53,7 @@ jobs:
           rm -rf third_party/ubpf/external/bpf_conformance
           git submodule update --init --recursive third_party/ubpf
       - name: Enable ccache
-        uses: ./.github/actions/ccache/action.yml
+        uses: ./.github/actions/ccache
         with:
           variant: gpu
 
