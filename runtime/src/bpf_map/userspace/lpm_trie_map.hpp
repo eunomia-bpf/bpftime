@@ -14,6 +14,8 @@
 #include <memory>
 #include <cstdint>
 #include <pthread.h>
+// Darwin libpthread lacks pthread_spinlock_t; use the cross-platform wrapper.
+#include "spinlock_wrapper.hpp"
 
 namespace bpftime
 {
