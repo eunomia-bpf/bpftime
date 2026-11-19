@@ -193,6 +193,28 @@ int32_t rootless_synthetic_id_for_event(std::string_view event)
 	       (enter ? 0 : 1);
 }
 #endif
+
+#if __linux__
+// Path-derived FNV-1a synthetic id, byte-for-byte identical to the
+// attach-side encoder synthetic_tracepoint_id() in
+// attach/syscall_trace_attach_impl/src/syscall_table.cpp. It covers
+// non-syscall tracepoints (sched/sched_process_fork and friends) that
+// rootless_synthetic_id_for_event cannot encode. When the tracefs ".../id"
+// file is absent in a rootless container, serving this id keeps the mocked
+// open path consistent with the attach-side synthetic table instead of
+// falling through to the real openat(), which returns ENOENT and aborts
+// probe loading. Kept local to preserve the self-contained syscall server's
+// zero attach/ link dependency.
+int32_t rootless_fnv_tracepoint_id(const std::string &id_path)
+{
+	uint32_t hash = 2166136261U;
+	for (unsigned char ch : id_path) {
+		hash ^= ch;
+		hash *= 16777619U;
+	}
+	return static_cast<int32_t>(1024U + hash % 100000000U);
+}
+#endif
 } // namespace
 // Why not use string_view? because parse_uint_from_file requires a c-string
 static const std::string UPROBE_TYPE_FILE_NAME =
@@ -508,8 +530,14 @@ create_mocked_file_based_on_full_path(const std::filesystem::path &path)
 		int32_t id = rootless_synthetic_id_for_event(event);
 		if (id != 0)
 			return std::make_unique<mocked_file_provider>(std::to_string(id) + "\n");
+		// Non-syscall tracepoints (sched/..., raw tracepoints outside the
+		// syscall table) cannot be arithmetically encoded above. Serve the
+		// same path-derived FNV id the attach side uses to build its
+		// synthetic table when tracefs is unavailable, so the id resolves
+		// back at attach time instead of letting openat fail with ENOENT.
+		return std::make_unique<mocked_file_provider>(
+			std::to_string(rootless_fnv_tracepoint_id(path_text)) + "\n");
 #endif
-		return {};
 	}
 	if (path == UPROBE_TYPE_FILE_NAME) {
 		SPDLOG_DEBUG("{} is uprobe type file", path.c_str());
