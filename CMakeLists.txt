@@ -147,10 +147,8 @@ else()
   message(STATUS "Skipping ebpf verifier")
 
   # Catch2
-  if(NOT DEFINED Catch2_INCLUDE)
-    message(STATUS "Adding Catch2 by subdirectory")
-    add_subdirectory(third_party/Catch2)
-  endif()
+  message(STATUS "Adding Catch2 by subdirectory")
+  add_subdirectory(third_party/Catch2)
 endif()
 
 # spdlog

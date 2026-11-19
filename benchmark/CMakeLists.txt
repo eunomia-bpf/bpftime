@@ -8,7 +8,6 @@ if(${BPFTIME_BUILD_WITH_LIBBPF})
   target_link_libraries(simple-benchmark-with-embed-ebpf-calling bpftime_vm ${LIBBPF_LIBRARIES} elf z dl)
   target_include_directories(simple-benchmark-with-embed-ebpf-calling
       PRIVATE
-      ${CMAKE_CURRENT_SOURCE_DIR}../vm/include
       ${LIBBPF_INCLUDE_DIRS})
 endif()
 

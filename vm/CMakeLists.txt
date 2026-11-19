@@ -33,15 +33,7 @@ if(${BPFTIME_BUILD_STANDALONE_VM})
   add_subdirectory(../third_party/argparse ${CMAKE_CURRENT_BINARY_DIR}/argparse)
 endif()
 
-if(${BPFTIME_LLVM_JIT})
-  set(BPFTIME_BPF_RUNTIME_NAME "bpftime_llvm_vm")
-endif()
-
-if(${BPFTIME_UBPF_JIT})
-  set(BPFTIME_BPF_RUNTIME_NAME "bpftime_ubpf_vm")
-endif()
-
-if(NOT BPFTIME_BPF_RUNTIME_NAME)
+if(NOT BPFTIME_LLVM_JIT AND NOT BPFTIME_UBPF_JIT)
   message(WARNING "No built-in VMs has been enabled.")
 endif()
 
@@ -51,13 +43,6 @@ add_subdirectory(vm-core)
 #
 # Unit testing setup
 #
-set(test_sources
-  src/test.c
-  src/test_jit.c
-  src/test_vm.c
-  src/test_core_minimal_ffi.c
-)
-
 if(BPFTIME_ENABLE_UNIT_TESTING)
   enable_testing()
   message(STATUS "Build unit tests for the project. Tests should always be found in the test folder\n")

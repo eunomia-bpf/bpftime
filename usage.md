@@ -146,12 +146,6 @@ Set `BPFTIME_DISABLE_JIT=true` in the server to disable JIT, for example, when r
 LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so BPFTIME_DISABLE_JIT=true example/malloc/malloc
 ```
 
-The JIT may be disabled in old version. Set `BPFTIME_USE_JIT=true` in the server to enable JIT, for example, when running the server:
-
-```sh
-LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so BPFTIME_USE_JIT=true example/malloc/malloc
-```
-
 The default behavior is using LLVM JIT, you can also use ubpf JIT by compile with LLVM JIT enabled. See [documents/build-and-test.md](build-and-test.md) for more details.
 
 ### Run with kernel eBPF and kernel verifier

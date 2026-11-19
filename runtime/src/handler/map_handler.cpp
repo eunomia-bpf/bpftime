@@ -1388,7 +1388,7 @@ bpf_map_handler::try_get_shared_perf_event_array_map_impl() const
 }
 uint64_t bpf_map_handler::get_gpu_map_max_thread_count() const
 {
-#if !defined(BPFTIME_ENABLE_CUDA_ATTACH) && !defined(BPFTIME_ENABLE_ROCM_ATTACH)
+#if !defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	return 0;
 #endif
 
@@ -1429,7 +1429,7 @@ uint64_t bpf_map_handler::get_gpu_map_max_thread_count() const
 }
 void *bpf_map_handler::get_gpu_map_extra_buffer() const
 {
-#if !defined(BPFTIME_ENABLE_CUDA_ATTACH) && !defined(BPFTIME_ENABLE_ROCM_ATTACH)
+#if !defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	return nullptr;
 #endif
 

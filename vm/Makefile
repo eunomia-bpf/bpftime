@@ -1,4 +1,4 @@
-.PHONY: install coverage test docs help build clean build-arm run-arm run-arm64 build-arm64 build-arm32
+.PHONY: install coverage test docs help build clean build-arm64 build-all
 .DEFAULT_GOAL := help
 
 define BROWSER_PYSCRIPT
@@ -32,11 +32,8 @@ JOBS := 1
 help:
 	@python3 -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
 
-test: build-arm32
+test:
 	cd build/ && ctest -VV
-
-test-vm: ## run tests quickly with pytest on x86, you need to build first
-	pytest -v -s test/test_framework
 
 coverage: ## check code coverage quickly GCC
 	rm -rf build/
@@ -45,7 +42,7 @@ coverage: ## check code coverage quickly GCC
 	cd build/ && ctest -C Release -VV
 	cd .. && (bash -c "find . -type f -name '*.gcno' -exec gcov -pb {} +" || true)
 
-build-all: build-all build-arm32 build-arm64
+build-all: build build-arm64
 
 build: ## build the package
 	rm -rf build/
@@ -65,9 +62,6 @@ build-arm64: ## build the package on arm64
 	rm -rf build/
 	cmake -Bbuild -DCMAKE_TOOLCHAIN_FILE=../cmake/aarch64-toolchain.cmake -DARCH=aarch64 -DBPFTIME_ENABLE_UNIT_TESTING=1
 	cmake --build build --config Debug -j$(JOBS)
-
-run-arm64: build-arm64 ## run the binary on arm32 qemu
-	qemu-aarch64 -L /usr/aarch64-linux-gnu/ build/bin/Debug/libebpf
 
 install: ## install the package to the `INSTALL_LOCATION`
 	rm -rf build/
