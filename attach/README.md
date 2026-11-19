@@ -214,3 +214,14 @@ The attach system integrates with the bpftime runtime through:
 - Shared memory for cross-process access
 - VM interface for eBPF program execution
 - Helper function registration system
+## Rootless dependency boundary (mandatory)
+
+The rootless seccomp USER_NOTIF capture does NOT live here anymore. It moved
+into `runtime/syscall-server`, which is fully independent of this directory.
+This `attach/` tree keeps the in-process uprobe text-segment backend
+(frida/capstone) and the syscall-trace attach implementation. Components here
+may include neutral contract headers from `runtime/include/` (downward
+dependency only); they must not be referenced by `runtime/syscall-server`.
+Do not add a new shared object under `attach/` without explicit user approval.
+
+See `docs/rootless-architecture-boundary.md` for the full rule and gates.

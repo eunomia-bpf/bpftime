@@ -78,6 +78,11 @@ extern "C" void bpftime_destroy_global_shm()
 	}
 }
 
+extern "C" bool bpftime_global_shm_is_initialized()
+{
+	return global_shm_initialized;
+}
+
 extern "C" void bpftime_remove_global_shm()
 {
 	using namespace bpftime;
@@ -318,6 +323,17 @@ long bpftime_shm::bpf_map_pop_elem(int fd, void *value, bool from_syscall) const
 {
 	auto *handler = try_get_map_handler(fd);
 	return handler ? handler->map_pop_elem(value, from_syscall) : -1;
+}
+
+long bpftime_shm::bpf_map_lookup_and_delete_elem(int fd, const void *key,
+						 void *value,
+						 bool from_syscall) const
+{
+	auto *handler = try_get_map_handler(fd);
+	return handler ?
+		       handler->map_lookup_and_delete_elem(key, value,
+							   from_syscall) :
+		       -1;
 }
 
 long bpftime_shm::bpf_map_peek_elem(int fd, void *value,

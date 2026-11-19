@@ -14,9 +14,8 @@
 #include <memory>
 #include <cstdint>
 #include <pthread.h>
-#if __APPLE__
+// Darwin libpthread lacks pthread_spinlock_t; use the cross-platform wrapper.
 #include "spinlock_wrapper.hpp"
-#endif
 
 namespace bpftime
 {

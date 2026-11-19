@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <functional>
 #if __linux__
+#include <linux/types.h>
 #include <sys/epoll.h>
 #elif __APPLE__
 #include "bpftime_epoll.h"
@@ -228,6 +229,10 @@ void bpftime_initialize_global_shm(bpftime::shm_open_type type);
 void bpftime_destroy_global_shm();
 // remove the global shared memory from system
 void bpftime_remove_global_shm();
+// true while the global SHM segment is constructed/mapped; backed by an
+// ordinary .bss flag, so it stays readable during process teardown after the
+// segment itself has been unmapped. Used to make atexit cleanup teardown-safe.
+bool bpftime_global_shm_is_initialized();
 
 // enable memory protect, e.g. mpk
 void bpftime_protect_enable();
@@ -351,9 +356,9 @@ long bpftime_map_update_elem_with_origin(int fd, const void *key,
 long bpftime_map_delete_elem_with_origin(int fd, const void *key,
 					 bool from_syscall);
 
-// use from bpf syscall to lookup and delete the elem (equivalent to pop for
-// queue/stack maps)
-long bpftime_map_lookup_and_delete_elem(int fd, void *value);
+// use from bpf syscall to look up and delete the elem: keyed for the hash
+// map types, keyless (a pop) for queue/stack maps
+long bpftime_map_lookup_and_delete_elem(int fd, const void *key, void *value);
 
 // Queue/stack map helper functions for push/pop/peek operations
 long bpftime_map_push_elem(int fd, const void *value, uint64_t flags);

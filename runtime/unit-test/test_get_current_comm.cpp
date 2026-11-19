@@ -6,6 +6,7 @@
 #include "catch2/catch_test_macros.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -14,6 +15,8 @@
 #include <fstream>
 #include <limits.h>
 #include <string>
+#include <thread>
+#include <vector>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -58,11 +61,54 @@ TEST_CASE("bpf_get_current_comm returns the executable basename",
 	REQUIRE(std::strlen(comm) < sizeof(comm));
 	REQUIRE(std::string(comm) == current_exe_basename());
 
-	// Repeated calls stay consistent without any process-global cache.
+	// Repeated calls stay consistent when served from the BSS cache.
 	char again[256];
 	REQUIRE(bpftime_get_current_comm(reinterpret_cast<uint64_t>(again),
 				     sizeof(again), 0, 0, 0) == 0);
 	REQUIRE(std::string(again) == std::string(comm));
+}
+
+TEST_CASE("bpf_get_current_comm publishes one stable name under concurrency",
+	  "[helpers][comm]")
+{
+	const auto expected = current_exe_basename();
+	constexpr unsigned thread_count = 8;
+	constexpr unsigned calls_per_thread = 200;
+	// Release every worker at the same instant so the first (once-only)
+	// publication is actually contended instead of serialized by thread
+	// creation.
+	std::atomic<unsigned> ready{ 0 };
+	std::atomic<bool> start{ false };
+	std::atomic<unsigned> completed{ 0 };
+	std::atomic<unsigned> failures{ 0 };
+	std::vector<std::thread> workers;
+	workers.reserve(thread_count);
+	for (unsigned t = 0; t < thread_count; ++t) {
+		workers.emplace_back([&] {
+			ready.fetch_add(1, std::memory_order_acq_rel);
+			while (!start.load(std::memory_order_acquire)) {
+			}
+			for (unsigned i = 0; i < calls_per_thread; ++i) {
+				char comm[256];
+				if (bpftime_get_current_comm(
+					    reinterpret_cast<uint64_t>(comm),
+					    sizeof(comm), 0, 0, 0) != 0 ||
+				    std::string(comm) != expected)
+					failures.fetch_add(1,
+							  std::memory_order_acq_rel);
+			}
+			completed.fetch_add(1, std::memory_order_acq_rel);
+		});
+	}
+	while (ready.load(std::memory_order_acquire) != thread_count) {
+	}
+	start.store(true, std::memory_order_release);
+	for (auto &worker : workers)
+		worker.join();
+	// Assert on the main thread: Catch2 assertion tracking inside worker
+	// threads is best-effort and would make the reported count nondeterministic.
+	REQUIRE(completed.load(std::memory_order_acquire) == thread_count);
+	REQUIRE(failures.load(std::memory_order_acquire) == 0);
 }
 
 TEST_CASE("bpf_get_current_comm always NUL-terminates the buffer",
@@ -133,6 +179,9 @@ TEST_CASE("bpftime_copy_comm matches kernel comm-copy semantics",
 // of a symlink. The --wrap=malloc/calloc/realloc link options route every
 // allocator entry through the counters below, so the assertion proves that
 // the helper performs no heap allocation while the tracking window is open.
+// The wrapping only intercepts the test binary's own allocator references;
+// glibc-internal __libc_malloc aliases are outside its reach, so the proof
+// covers bpftime code rather than every libc implementation detail.
 namespace
 {
 thread_local bool comm_alloc_tracking = false;
@@ -188,12 +237,24 @@ static int run_comm_reentry_self_check()
 	return 0;
 }
 
-TEST_CASE("bpf_get_current_comm makes no heap allocation on first call",
-	  "[helpers][comm][reentry]")
-{
-	if (getenv(reentry_env) != nullptr)
-		std::exit(run_comm_reentry_self_check());
+// Creates an executable with long_executable_name as its basename in a
+// temporary directory and removes it again on teardown.
+struct long_named_executable {
+	std::string dir;
+	std::string path;
 
+	~long_named_executable()
+	{
+		if (!path.empty())
+			::unlink(path.c_str());
+		if (!dir.empty())
+			::rmdir(dir.c_str());
+	}
+};
+
+long_named_executable make_long_named_executable()
+{
+	long_named_executable fixture;
 	char self[PATH_MAX];
 	auto len = readlink("/proc/self/exe", self, sizeof(self) - 1);
 	REQUIRE(len > 0);
@@ -202,23 +263,35 @@ TEST_CASE("bpf_get_current_comm makes no heap allocation on first call",
 	char dir_template[] = "/tmp/bpftime-comm-XXXXXX";
 	char *dir = mkdtemp(dir_template);
 	REQUIRE(dir != nullptr);
-	const std::string link_path =
-		std::string(dir) + "/" + long_executable_name;
+	fixture.dir = dir;
+	fixture.path = std::string(dir) + "/" + long_executable_name;
 
 	// A symlink would be resolved by /proc/self/exe back to this binary.
 	// Prefer a hard link; fall back to a byte copy on cross-device or
 	// link-restricted filesystems.
-	if (::link(self, link_path.c_str()) != 0) {
+	if (::link(self, fixture.path.c_str()) != 0) {
 		REQUIRE((errno == EXDEV || errno == EPERM));
 		std::ifstream in(self, std::ios::binary);
-		std::ofstream out(link_path, std::ios::binary | std::ios::trunc);
+		std::ofstream out(fixture.path,
+				  std::ios::binary | std::ios::trunc);
 		REQUIRE(in.is_open());
 		REQUIRE(out.is_open());
 		out << in.rdbuf();
 		out.close();
 		REQUIRE(static_cast<bool>(out));
-		REQUIRE(::chmod(link_path.c_str(), 0755) == 0);
+		REQUIRE(::chmod(fixture.path.c_str(), 0755) == 0);
 	}
+	return fixture;
+}
+
+TEST_CASE("bpf_get_current_comm makes no heap allocation on first call",
+	  "[helpers][comm][reentry]")
+{
+	if (getenv(reentry_env) != nullptr)
+		std::exit(run_comm_reentry_self_check());
+
+	auto fixture = make_long_named_executable();
+	const std::string &link_path = fixture.path;
 
 	pid_t pid = fork();
 	REQUIRE(pid >= 0);
@@ -237,11 +310,53 @@ TEST_CASE("bpf_get_current_comm makes no heap allocation on first call",
 
 	int status = 0;
 	REQUIRE(waitpid(pid, &status, 0) == pid);
-	::unlink(link_path.c_str());
-	::rmdir(dir);
 	REQUIRE(WIFEXITED(status));
 	// Exit code 2 means the helper entered the allocator; 3/4/5 mark
 	// fixture or behavior failures described in run_comm_reentry_self_check.
+	REQUIRE(WEXITSTATUS(status) == 0);
+}
+
+TEST_CASE("bpf_get_current_comm survives fork and refreshes after execve",
+	  "[helpers][comm][reentry]")
+{
+	// Fill the cache in the parent so the child forks with a populated
+	// BSS cache and the atfork child handler actually runs against it.
+	char parent_comm[256];
+	REQUIRE(bpftime_get_current_comm(reinterpret_cast<uint64_t>(parent_comm),
+					 sizeof(parent_comm), 0, 0, 0) == 0);
+	const std::string parent_name(parent_comm);
+
+	auto fixture = make_long_named_executable();
+
+	pid_t pid = fork();
+	REQUIRE(pid >= 0);
+	if (pid == 0) {
+		// /proc/self/exe is unchanged by fork: whether the child uses
+		// the inherited entry or re-resolves after the atfork reset, the
+		// reported name must stay the parent's basename.
+		char child_comm[256];
+		if (bpftime_get_current_comm(
+			    reinterpret_cast<uint64_t>(child_comm),
+			    sizeof(child_comm), 0, 0, 0) != 0 ||
+		    std::string(child_comm) != parent_name)
+			_exit(6);
+		// execve rebuilds the address space (and the BSS cache), so the
+		// long-named image must observe its own basename. Reuse the
+		// reentry self-check, which exits non-zero on any mismatch.
+		setenv(reentry_env, "1", 1);
+		char test_name[] =
+			"bpf_get_current_comm makes no heap allocation on first call";
+		char *const argv[] = { const_cast<char *>(fixture.path.c_str()),
+				       test_name, nullptr };
+		execve(fixture.path.c_str(), argv, environ);
+		_exit(5);
+	}
+
+	int status = 0;
+	REQUIRE(waitpid(pid, &status, 0) == pid);
+	REQUIRE(WIFEXITED(status));
+	// 5 = execve failed; 6 = fork inheritance broke; anything else non-zero
+	// comes from the reentry self-check in the execve'd image.
 	REQUIRE(WEXITSTATUS(status) == 0);
 }
 #endif

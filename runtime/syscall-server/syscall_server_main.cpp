@@ -4,6 +4,8 @@
  * All rights reserved.
  */
 #include "syscall_context.hpp"
+#include "syscall_server_utils.hpp"
+#include "syscall_server_internal_dispatch.hpp"
 #if defined(__x86_64__)
 #include <asm/unistd_64.h>
 #else
@@ -465,8 +467,8 @@ extern "C" FILE *_IO_new_fopen(const char *pathname, const char *flags)
 		call_original, safe_ptr_str(pathname), safe_ptr_str(flags));
 }
 #if __linux__
-static long dispatch_syscall(long sysno, long arg1, long arg2, long arg3,
-			     long arg4, long arg5, long arg6)
+long dispatch_syscall(long sysno, long arg1, long arg2, long arg3,
+		      long arg4, long arg5, long arg6) noexcept
 {
 	if (sysno == __NR_openat) {
 		const auto *file = reinterpret_cast<const char *>(arg2);
@@ -644,6 +646,25 @@ extern "C" int64_t bpftime_syscall_server__dispatch_raw_syscall(
 	long result = dispatch_syscall(sysno, arg1, arg2, arg3, arg4, arg5,
 				       arg6);
 	return result == -1 && errno != 0 ? -errno : result;
+}
+#endif
+
+#if defined(__linux__) && defined(__x86_64__)
+int bpftime_syscall_server_prewarm() noexcept
+{
+	// Must run before the seccomp filter is installed. try_startup() holds
+	// mock_disable_depth for the whole startup, so the SHM/mmap/stdio syscalls
+	// it issues reach the real libc instead of re-entering our interposed
+	// handlers and deadlocking on the same std::call_once. Calling start_up()
+	// directly here would recurse (open -> handle_open -> try_startup).
+	if (!initialize_ctx())
+		return -1;
+	try {
+		context.ctx.try_startup();
+	} catch (...) {
+		return -1;
+	}
+	return 0;
 }
 #endif
 

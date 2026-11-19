@@ -33,12 +33,15 @@ set(TEST_SOURCES
     maps/test_lru_var_hash_map.cpp
     maps/test_lru_hash_map.cpp
     maps/test_map_flags_enforcement.cpp
+    maps/test_map_helper_errno.cpp
+    maps/test_map_syscall_semantics.cpp
 
     test_bpftime_shm_json.cpp
     test_probe.cpp
     test_cpu_execution.cpp
     test_get_current_pid_tgid.cpp
     test_get_stack.cpp
+    test_tracepoint_id.cpp
     test_config.cpp
     test_shm_allocation_failure.cpp
     test_software_perf_event.cpp
@@ -89,6 +92,12 @@ add_dependencies(bpftime_runtime_tests bpftime_config_header_test)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_sources(bpftime_runtime_tests PRIVATE
+        ../syscall-server/syscall_server_utils.cpp
+        ../syscall-server/syscall_context.cpp)
+    target_include_directories(bpftime_runtime_tests PRIVATE ../syscall-server)
+    target_link_libraries(bpftime_runtime_tests PRIVATE bpftime_syscall_trace_attach_impl ${CMAKE_DL_LIBS})
+    target_link_options(bpftime_runtime_tests PRIVATE -Wl,--wrap=dlsym)
+    target_sources(bpftime_runtime_tests PRIVATE
         test_get_current_uid_gid.cpp
         test_get_current_comm.cpp)
     target_link_options(bpftime_runtime_tests PRIVATE
@@ -111,16 +120,20 @@ if(UNIX AND NOT APPLE)
         assets/shm_allocation_test_helper.c)
     add_executable(bpftime-runtime-options-test-helper
         assets/runtime_options_test_helper.c)
+    add_executable(bpftime-map-syscall-test-helper
+        assets/map_syscall_test_helper.c)
     set_property(TARGET bpftime-shm-allocation-test-helper PROPERTY C_STANDARD 99)
     set_property(TARGET bpftime-runtime-options-test-helper PROPERTY C_STANDARD 99)
+    set_property(TARGET bpftime-map-syscall-test-helper PROPERTY C_STANDARD 99)
     add_dependencies(bpftime_runtime_tests
         bpftime-agent
         bpftime-syscall-server
         bpftime-runtime-options-test-helper
+        bpftime-map-syscall-test-helper
         bpftime-shm-allocation-test-helper)
     file(GENERATE
         OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/shm_allocation_test_paths.hpp"
-        CONTENT "#define BPFTIME_SHM_ALLOCATION_TEST_HELPER \"$<TARGET_FILE:bpftime-shm-allocation-test-helper>\"\n#define BPFTIME_SYSCALL_SERVER_LIBRARY \"$<TARGET_FILE:bpftime-syscall-server>\"\n#define BPFTIME_AGENT_LIBRARY \"$<TARGET_FILE:bpftime-agent>\"\n")
+        CONTENT "#define BPFTIME_SHM_ALLOCATION_TEST_HELPER \"$<TARGET_FILE:bpftime-shm-allocation-test-helper>\"\n#define BPFTIME_MAP_SYSCALL_TEST_HELPER \"$<TARGET_FILE:bpftime-map-syscall-test-helper>\"\n#define BPFTIME_SYSCALL_SERVER_LIBRARY \"$<TARGET_FILE:bpftime-syscall-server>\"\n#define BPFTIME_AGENT_LIBRARY \"$<TARGET_FILE:bpftime-agent>\"\n")
     target_include_directories(bpftime_runtime_tests PRIVATE
         "${CMAKE_CURRENT_BINARY_DIR}")
 endif()

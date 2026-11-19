@@ -76,6 +76,10 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: "recursive"
+      - name: Enable ccache
+        uses: ./.github/actions/ccache
+        with:
+          variant: ${{ matrix.container }}
       - name: Install deps (openEuler)
         if: matrix.container == 'openeuler-2403sp2'
         run: |
@@ -300,19 +304,20 @@ jobs:
       - name: build runtime with mpk enable
         if: matrix.container != 'openeuler-2403sp2'
         run: |
-          rm -rf build
-          cmake -Bbuild -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_CUDA_ATTACH=OFF -DBUILD_BPFTIME_DAEMON=OFF -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=Debug -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
-          mkdir -p build/runtime/pos/include/proto/
-          mkdir -p build/runtime/pos/cuda_impl/proto/
+          # Keep the MPK configuration in its own build tree instead of
+          # deleting build/: ccache and the first build's objects stay warm.
+          cmake -Bbuild-mpk -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_CUDA_ATTACH=OFF -DBUILD_BPFTIME_DAEMON=OFF -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=Debug -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
+          mkdir -p build-mpk/runtime/pos/include/proto/
+          mkdir -p build-mpk/runtime/pos/cuda_impl/proto/
           ln -sf /usr/lib/llvm-*/include/clang-c/ /usr/include/ || true
           ln -sf /usr/lib/llvm-*/lib/libclang.so /usr/lib || true
           # Single authoritative test build. The prior tolerated warm-up plus
           # commented sed workarounds masked build failures and duplicated the
           # same target; this build now succeeds on its own.
-          cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
+          cmake --build build-mpk --config Debug --target bpftime_runtime_tests -j$(nproc)
       - name: test runtime with mpk
         if: matrix.container != 'openeuler-2403sp2'
-        run: ./build/runtime/unit-test/bpftime_runtime_tests
+        run: ./build-mpk/runtime/unit-test/bpftime_runtime_tests
       - name: Generate runtime with mpk enable coverage (Ubuntu)
         if: "matrix.container == 'ubuntu-2204'"
         run: |
@@ -335,7 +340,7 @@ jobs:
             ./coverage-runtime-mpk.info
 
       - uses: codecov/codecov-action@v4
-        if: github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/master'
         with:
           fail_ci_if_error: true # optional (default = false)
           files: ./coverage-runtime.info

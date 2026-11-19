@@ -9,56 +9,20 @@
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <frida-gum.h>
-#if defined(__linux__) && defined(__x86_64__)
-#include <linux/audit.h>
-#include <linux/filter.h>
-#include <linux/seccomp.h>
-#include <sys/ioctl.h>
-#include <sys/prctl.h>
-#include <sys/stat.h>
-#include <sys/syscall.h>
-#include <sys/vfs.h>
-#endif
 #include <mutex>
 #include <optional>
 #include "text_segment_transformer.hpp"
-#if defined(__linux__) && defined(__x86_64__)
-#include "seccomp_tracer.hpp"
-#endif
+
 #include <string>
 #include <thread>
 
-#if defined(__linux__) && defined(__x86_64__)
-#ifndef SECCOMP_RET_USER_NOTIF
-#define SECCOMP_RET_USER_NOTIF 0x7fc00000U
-#define SECCOMP_FILTER_FLAG_NEW_LISTENER (1UL << 3)
-struct seccomp_notif {
-	uint64_t id;
-	uint32_t pid;
-	uint32_t flags;
-	struct seccomp_data data;
-};
-struct seccomp_notif_resp {
-	uint64_t id;
-	int64_t val;
-	int32_t error;
-	uint32_t flags;
-};
-#define SECCOMP_IOCTL_NOTIF_RECV _IOWR('!', 0, struct seccomp_notif)
-#define SECCOMP_IOCTL_NOTIF_SEND _IOWR('!', 1, struct seccomp_notif_resp)
-#endif
-#endif
-
 using main_func_t = int (*)(int, char **, char **);
-using shm_destroy_func_t = void (*)(void);
 
 static main_func_t orig_main_func = nullptr;
-static shm_destroy_func_t shm_destroy_func = nullptr;
 
 // Whether syscall server was injected using frida. Defaults to true. If
 // __libc_start_main was called, it will be set to false
 static bool injected_with_frida = true;
-static bool agent_initialized_before_main = false;
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
 extern "C" int64_t call_orig_syscall(int64_t sys_nr, int64_t arg1,
 				      int64_t arg2, int64_t arg3, int64_t arg4,
@@ -68,10 +32,8 @@ extern "C" int64_t call_orig_syscall(int64_t sys_nr, int64_t arg1,
 
 extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
 {
-	if (!agent_initialized_before_main) {
-		int stay_resident = 0;
-		bpftime_agent_main("", &stay_resident);
-	}
+	int stay_resident = 0;
+	bpftime_agent_main("", &stay_resident);
 	int ret = orig_main_func(argc, argv, envp);
 	return ret;
 }
@@ -155,17 +117,19 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			"Malformed agent so: no syscall callback entry point");
 		return;
 	}
-#if defined(__linux__) && defined(__x86_64__)
-	if (getenv("BPFTIME_GO_SECCOMP") != nullptr) {
-		if (!bpftime::seccomp::install_seccomp_tracer()) {
-			SPDLOG_CRITICAL(
-				"Unable to install requested rootless seccomp syscall tracer");
-			return;
-		}
-	} else
-#endif
-	{
+	// This transformer serves the in-process uprobe text-segment path only.
+	// Rootless seccomp capture is owned by bpftime-syscall-server now; do not
+	// install it here (loading frida/capstone on that path was the hang).
+	// BPFTIME_SKIP_TEXT_SEGMENT_TRACER is an explicit rootless opt-out: the
+	// unprivileged bundle captures syscalls through seccomp USER_NOTIF in the
+	// syscall-server and memory events through the agent frida uprobe, so no
+	// process needs the global text-segment syscall rewrite. That rewrite hangs
+	// in torch/CUDA init (futex deadlock, GPU stays at 0%). The classic
+	// in-process frida deployment leaves this unset and keeps the full rewrite.
+	if (getenv("BPFTIME_SKIP_TEXT_SEGMENT_TRACER") == nullptr) {
 		bpftime::setup_syscall_tracer();
+		SPDLOG_DEBUG("Transformer exiting, syscall trace is usable now");
+	} else {
+		SPDLOG_INFO("Rootless opt-out: skipping text-segment syscall tracer");
 	}
-	SPDLOG_DEBUG("Transformer exiting, syscall trace is usable now");
 }

@@ -12,7 +12,9 @@ endif()
 add_subdirectory(simple_attach_impl)
 if(UNIX AND NOT APPLE)
   add_subdirectory(syscall_trace_attach_impl)
-  add_subdirectory(seccomp_attach_impl)
+  # seccomp USER_NOTIF capture moved into runtime/syscall-server; the rootless
+  # path must not pull in this attach tree (frida/capstone). See
+  # runtime/README.md and attach/README.md for the dependency boundary.
   if(BPFTIME_ENABLE_FRIDA)
     add_subdirectory(text_segment_transformer)
   endif()

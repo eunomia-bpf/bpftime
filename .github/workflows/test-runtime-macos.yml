@@ -30,7 +30,7 @@ jobs:
         run: |
           brew install cmake boost llvm
 
-      - name: Configure (macOS: no libbpf, LLVM JIT, unit tests)
+      - name: Configure (macOS - no libbpf, LLVM JIT, unit tests)
         run: |
           cmake -DBPFTIME_BUILD_WITH_LIBBPF=OFF \
             -DBPFTIME_LLVM_JIT=YES \

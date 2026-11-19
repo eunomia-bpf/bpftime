@@ -279,6 +279,35 @@ under review. Both must satisfy the semantics below before becoming selectable.
   frame-pointer addresses, including stale frames left by coroutine stack
   switches. Safety must come from the copy backend.
 
+### Event-scoped read-ahead window
+
+With the no-fault syscall backend, an optional thread-local, event-scoped
+read-ahead window (`probe_read_ahead_window` in `bpf_helper.cpp`) collapses
+repeated adjacent/overlapping small reads inside one attach callback into a
+single page-clamped `process_vm_readv`; subsequent reads are served from the
+window by `memcpy`. It is active only while an attach callback is running
+(`current_thread_attach_callback_depth > 0`) and is bound to an event
+generation, so it can never satisfy a read from a previous event. It installs
+no signal handler, no BPF instruction, and no caller-facing API, and the
+out-of-event exact-read path is byte-for-byte unchanged.
+
+Two deliberate, documented contracts apply while the window is active:
+
+1. **Coherence (source freshness).** Reads within one event observe one coherent
+   snapshot. A store that does not go through `bpf_probe_write_user` (another
+   thread, or a direct BPF map-pointer write) becomes visible only at the next
+   event. This matches the probe model where the callback runs synchronously on
+   the hooked thread and the profiled target code is not running concurrently.
+2. **Destination trust.** Source-address fault isolation is unchanged: a bad
+   source still returns `-EFAULT` via the kernel, and the out-of-event exact
+   path keeps a fully fault-safe destination. The in-event hit/fill `memcpy`
+   writes the BPF program's own destination buffer, which the verifier requires
+   to be a valid, sufficiently large stack/map buffer. In builds with the
+   verifier disabled, an intentionally invalid in-event destination is therefore
+   a trusted-buffer contract violation that raises a host `SIGSEGV`, rather
+   than the `-EFAULT` the exact syscall path would return; this boundary is
+   pinned by a regression test. Restoring full destination fault isolation on
+   the cached path requires a protected-copy backend, tracked in #838.
 ### Test surface
 
 - `runtime/unit-test/test_probe.cpp`: valid, unmapped, and stale pointers;
@@ -288,3 +317,65 @@ under review. Both must satisfy the semantics below before becoming selectable.
 - Signal-recovery backends additionally cover repeated recovery,
   non-canonical addresses, signal-mask restoration, initialization fallback,
   and unrelated `SIGSEGV` retaining fatal default behavior.
+
+## Rootless dependency boundary (mandatory)
+
+`runtime/syscall-server` owns the rootless seccomp USER_NOTIF capture and the
+fake-kernel syscall emulation in one self-contained shared object. It MUST NOT
+include, link, or reach through a function slot into anything under `attach/`
+(frida, capstone, text-segment transformer, attach implementations). The only
+outward seams are kernel-ABI-style C signatures and the seccomp USER_NOTIF
+kernel interface. Shared contracts live as neutral headers in
+`runtime/include/` (e.g. `rootless_tracepoint_id.hpp`).
+
+See `docs/rootless-architecture-boundary.md` for the full rule, the two
+mutually-exclusive interception paths, and the machine-checkable gates.
+
+## Platform compatibility notes
+
+This section collects the non-obvious constraints that keep the runtime
+building and behaving correctly across Linux (glibc/musl, x86-64/arm64) and
+macOS. Each item references the code location that enforces it.
+
+### Constructor priorities and AddressSanitizer
+
+VM backend self-registration lives in `vm/compat/llvm-vm/compat_llvm.cpp` and
+uses a plain `__attribute__((constructor))`, **not** `constructor(0)`.
+Priorities 0-100 are reserved by the toolchain (GCC emits
+`-Wprio-ctor-dtor`). A reserved-priority constructor can run before the
+AddressSanitizer interceptors finish installing their `real_memcpy`/real
+function pointers, which trips `AddressSanitizer: CHECK failed
+"((__interception::real_memcpy)) != (0)"` during process startup under
+ASAN. The VM factory registry is a function-local static constructed on first
+access and each backend registers under a distinct key, so default constructor
+ordering is sufficient and nothing observes the registry before all
+constructors have run. Do not reintroduce an explicit priority here.
+
+### macOS `linux/bpf.h` shim
+
+macOS has no `<linux/bpf.h>`. Apple builds add
+`compat/darwin/include` to the include path only inside the `if(APPLE)` block
+of `runtime/CMakeLists.txt`; Linux builds never see this directory and keep
+using the genuine kernel header. The shim (`compat/darwin/include/linux/bpf.h`)
+declares `BPF_MAP_TYPE_*` as unscoped **enum** constants rather than macros so
+they cannot preprocessor-collide with the members of the project's own
+`enum class bpf_map_type` in `bpftime_shm.hpp`. When adding a new kernel uapi
+constant, mirror it in the shim with the same numeric value and keep the two in
+sync; a missing constant is a compile error on macOS, not a silent divergence.
+
+### Spinlocks
+
+Darwin libpthread does not provide `pthread_spinlock_t`. Code that needs a
+spinlock includes `runtime/include/spinlock_wrapper.hpp`, which supplies a
+`Spinlock`-backed `pthread_spinlock_t` on platforms without
+`_POSIX_SPIN_LOCKS` and forwards to the real pthread spinlock elsewhere.
+Headers that reference `pthread_spinlock_t` must include this wrapper
+directly rather than relying on transitive inclusion.
+
+### Type strictness differences (libc++ vs libstdc++)
+
+arm64 macOS uses libc++, which rejects `std::min`/`std::max` calls whose
+operands are related but distinct integer types (e.g. `uint64_t` =
+`unsigned long long` vs `size_t` = `unsigned long`), while libstdc++ accepts
+them. Cast both operands to the same type explicitly at the call site instead
+of relying on implicit conversion.

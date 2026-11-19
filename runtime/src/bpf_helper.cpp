@@ -4,6 +4,7 @@
  * All rights reserved.
  */
 #include "bpf_attach_ctx.hpp"
+#include "base_attach_impl.hpp"
 #if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
 #include "trap_uprobe_attach_impl.hpp"
 #endif
@@ -74,13 +75,78 @@ __attribute__((weak)) bpftime::bpf_attach_ctx &get_global_attach_ctx()
 	throw std::runtime_error(
 		"Calling mocked get_global_attach_ctx, this is not expected");
 }
+
+#if __linux__ && defined(ENABLE_PROBE_READ_CHECK)
+// Event-scoped read-ahead for fault-safe probe reads.
+//
+// A user-stack walk issues hundreds of small (8/16 byte) probe reads per
+// event; with ENABLE_PROBE_READ_CHECK each one costs a process_vm_readv
+// syscall. Frame-pointer chains and CFA slots land on nearby, frequently
+// overlapping addresses. This window keeps the bytes fetched by the most
+// recent widened read so overlapping and adjacent reads are served by memcpy
+// without another syscall.
+//
+// The window is consulted only while an attach callback runs
+// (current_thread_attach_callback_depth is raised by attach_callback_scope
+// around frida/syscall callbacks; nested tail-call executions stay inside the
+// same event). Outside an event every read keeps its original single-syscall
+// path and timing, so standalone helper calls are unchanged. The window holds
+// a snapshot of userspace bytes for the lifetime of one event; a same-thread
+// probe_write_user invalidates it, and fork resets it. No signal handler, BPF
+// instruction, caller-facing API or persistent state is introduced.
+//
+// Coherence contract (M3): reads inside one event observe a single coherent
+// snapshot instead of each read independently fetching current memory. A
+// store that does not go through bpf_probe_write_user (another thread, or a
+// direct BPF map-pointer write) is therefore only visible from the next event.
+// This matches the probe model where the callback runs synchronously on the
+// hooked thread and the profiled target code is not running concurrently.
+//
+// Destination contract (M2): source-address fault isolation is unchanged - a
+// bad source still returns -EFAULT via the kernel. The hit/fill memcpy writes
+// to the BPF program's own destination buffer, which the BPF verifier requires
+// to be a valid, large-enough stack/map buffer; a fully fault-safe destination
+// is still guaranteed on the out-of-event exact-read path. The trap/SIGTRAP
+// signal path never opens an attach scope, so this window never activates there
+// (bpf_probe_read is also not in the async-signal-safe helper set).
+namespace
+{
+constexpr size_t PROBE_READ_AHEAD_CAP = 128;
+
+struct probe_read_ahead_window {
+	const char *base = nullptr;
+	size_t len = 0;
+	unsigned long long generation = 0;
+	char storage[PROBE_READ_AHEAD_CAP];
+};
+
+thread_local probe_read_ahead_window tls_probe_read_ahead;
+
+inline bool probe_read_ahead_active()
+{
+	return bpftime::attach::current_thread_attach_callback_depth > 0;
+}
+
+inline void probe_read_ahead_invalidate()
+{
+	tls_probe_read_ahead.base = nullptr;
+	tls_probe_read_ahead.len = 0;
+	tls_probe_read_ahead.generation = 0;
+}
+} // namespace
+#endif
 extern "C" {
 
 #if __linux__ && \
 	(defined(ENABLE_PROBE_READ_CHECK) || defined(ENABLE_PROBE_WRITE_CHECK))
 static pid_t probe_access_pid = getpid();
 static const int probe_access_atfork_status = pthread_atfork(
-	nullptr, nullptr, [] { probe_access_pid = getpid(); });
+	nullptr, nullptr, [] {
+		probe_access_pid = getpid();
+#if defined(ENABLE_PROBE_READ_CHECK) && __linux__
+		probe_read_ahead_invalidate();
+#endif
+	});
 #endif
 
 uint64_t bpftime_override_return(uint64_t ctx, uint64_t value);
@@ -110,6 +176,7 @@ long bpftime_strncmp(const char *s1, uint64_t s1_sz, const char *s2)
 }
 
 #ifdef ENABLE_PROBE_READ_CHECK
+static size_t probe_page_remaining(const void *address);
 static bool probe_read_memory(void *dst, const void *src, size_t size)
 {
 	if (size == 0)
@@ -122,11 +189,58 @@ static bool probe_read_memory(void *dst, const void *src, size_t size)
 				      &copied) == KERN_SUCCESS &&
 	       copied == size;
 #elif __linux__
+	pid_t pid = probe_access_atfork_status == 0 ? probe_access_pid :
+							  getpid();
+	if (probe_read_ahead_active()) {
+		auto &window = tls_probe_read_ahead;
+		uintptr_t addr = reinterpret_cast<uintptr_t>(src);
+		uintptr_t base = reinterpret_cast<uintptr_t>(window.base);
+		if (window.base != nullptr &&
+		    window.generation ==
+			    bpftime::attach::
+				    current_thread_attach_event_generation &&
+		    addr >= base && addr - base <= window.len &&
+		    size <= window.len - (addr - base)) {
+			// Full overlap with the bytes fetched by the previous
+			// syscall: no new syscall is needed.
+			memcpy(dst, window.storage + (addr - base), size);
+			return true;
+		}
+		// Miss. Widen the fetch inside the source page so following
+		// adjacent reads hit the window. Requests larger than the
+		// window or crossing a page boundary use the exact read below.
+		size_t room = probe_page_remaining(src);
+		if (size <= PROBE_READ_AHEAD_CAP && size <= room) {
+			size_t fetch = std::min(room, PROBE_READ_AHEAD_CAP);
+			struct iovec wide_local = { window.storage, fetch };
+			struct iovec wide_remote = { const_cast<void *>(src),
+						    fetch };
+			ssize_t got = syscall(SYS_process_vm_readv, pid,
+					      &wide_local, 1, &wide_remote, 1,
+					      0);
+			if (got >= (ssize_t)size) {
+				// The requested prefix is intact even if an
+				// inaccessible neighbour truncated the tail.
+				window.base = static_cast<const char *>(src);
+				window.len = (size_t)got;
+				window.generation =
+					bpftime::attach::
+						current_thread_attach_event_generation;
+				memcpy(dst, window.storage, size);
+				return true;
+			}
+			// The request itself cannot be fully read. Drop the
+			// partial window and let the exact call produce the
+			// canonical failure for the caller's destination.
+			probe_read_ahead_invalidate();
+		} else {
+			probe_read_ahead_invalidate();
+		}
+	}
 	struct iovec local = { dst, size };
 	struct iovec remote = { const_cast<void *>(src), size };
-	return syscall(SYS_process_vm_readv,
-		       probe_access_atfork_status == 0 ? probe_access_pid : getpid(),
-		       &local, 1, &remote, 1, 0) == (ssize_t)size;
+	return syscall(SYS_process_vm_readv, pid, &local, 1, &remote, 1,
+		       0) == (ssize_t)size;
 #else
 #error "Probe memory checks are unsupported on this platform"
 #endif
@@ -155,6 +269,8 @@ static bool probe_write_memory(void *dst, const void *src, size_t size)
 {
 	if (size == 0)
 		return true;
+	// Read-window invalidation is owned by bpftime_probe_write_user() so it
+	// applies to both the fault-safe and raw-memcpy write branches.
 #if __APPLE__
 	mach_vm_size_t copied = 0;
 	return mach_vm_read_overwrite(mach_task_self(), (mach_vm_address_t)src,
@@ -181,6 +297,12 @@ int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
 		SPDLOG_ERROR("Invalid len: {}", len);
 		return -EFAULT;
 	}
+#if defined(ENABLE_PROBE_READ_CHECK) && __linux__
+	// A same-thread write can change bytes the read-ahead window holds.
+	// Do this before the write-check branch so a raw memcpy write (write
+	// checking disabled) still cannot make a later read return stale data.
+	probe_read_ahead_invalidate();
+#endif
 #ifdef ENABLE_PROBE_WRITE_CHECK
 	return probe_write_memory((void *)dst, (void *)src, (size_t)len) ?
 		       0 :
@@ -413,14 +535,105 @@ void bpftime_copy_comm(char *buf, size_t size, const char *comm)
 	buf[size - 1] = '\0';
 }
 
+#if __linux__
+// Process-wide cache of the executable basename reported by
+// bpf_get_current_comm. It deliberately stays in BSS with pthread_once
+// publication so every failure mode of the previous std::string cache
+// (removed by #723) is absent:
+//  - no heap allocation on any call, so an uprobe on malloc/mmap/brk cannot
+//    re-enter a held allocator lock (the first call stays allocation-free,
+//    covered by the [reentry] unit test);
+//  - pthread_once orders the first publication, so concurrent first calls
+//    cannot race on the buffer;
+//  - execve replaces the whole address space and rebuilds this BSS state, so
+//    the new image always resolves its own name; fork inherits an equally
+//    valid name because /proc/self/exe does not change across fork.
+// The init routine performs only a raw readlink syscall and string scans, so
+// a thread blocked in pthread_once cannot wait on an allocator lock.
+//
+// pthread_once is not async-signal-safe: the cache relies on being called from
+// ordinary thread context (the frida backend). Trap-backend BPF links run in
+// SIGTRAP context and admit only an audited async-signal-safe helper set
+// (see attach/trap_uprobe_attach_impl/README.md), so this helper must be
+// re-audited before ever being admitted there.
+//
+// A fork concurrent with another thread running the once routine would let
+// the child inherit an in-progress control word with no thread to finish it.
+// The atfork child handler resets the cache, mirroring the pid/tgid cache
+// handling from #812.
+namespace
+{
+struct current_comm_cache {
+	pthread_once_t once = PTHREAD_ONCE_INIT;
+	char basename[PATH_MAX] = {};
+	bool valid = false;
+};
+
+current_comm_cache &get_current_comm_cache()
+{
+	// constinit turns the BSS/no-dynamic-init requirement above into a
+	// compile-time guarantee: no guard variable and no atexit registration.
+	constinit static current_comm_cache cache;
+	return cache;
+}
+
+void initialize_current_comm_cache()
+{
+	auto &cache = get_current_comm_cache();
+	char path[PATH_MAX];
+	auto len = readlink("/proc/self/exe", path, sizeof(path) - 1);
+	if (len == -1)
+		return;
+	path[len] = '\0';
+	const char *filename = path;
+	for (decltype(len) index = 0; index < len; ++index) {
+		if (path[index] == '/')
+			filename = path + index + 1;
+	}
+	strncpy(cache.basename, filename, sizeof(cache.basename) - 1);
+	cache.basename[sizeof(cache.basename) - 1] = '\0';
+	cache.valid = true;
+}
+
+void reset_current_comm_cache_in_child()
+{
+	// The child has a single thread, so re-arming the once control word
+	// cannot race with a waiter.
+	auto &cache = get_current_comm_cache();
+	cache.once = PTHREAD_ONCE_INIT;
+	cache.valid = false;
+}
+
+const int current_comm_atfork_status =
+	pthread_atfork(nullptr, nullptr, reset_current_comm_cache_in_child);
+} // namespace
+#endif
+
 uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
 				  uint64_t, uint64_t)
 {
+#if __linux__
+	// If the fork handler could not be registered, a forked child might keep
+	// an in-progress once word, so bypass the cache and resolve every call
+	// directly, exactly as #723 did.
+	if (current_comm_atfork_status == 0) {
+		auto &cache = get_current_comm_cache();
+		pthread_once(&cache.once, initialize_current_comm_cache);
+		if (cache.valid) {
+			bpftime_copy_comm((char *)(uintptr_t)buf, (size_t)size,
+					  cache.basename);
+			return 0;
+		}
+	}
+	// First resolution failed (for example /proc unavailable), or the atfork
+	// handler registration failed: keep the historical per-call retry and
+	// its return code.
+#endif
 	// This helper can run from an allocation callback (for example an
 	// uprobe on malloc/mmap) while libc already holds an allocator lock.
 	// A lazily initialized std::string takes the heap on its first long
-	// value, which re-enters the allocator and can self-deadlock. Resolve
-	// the executable basename into a stack buffer on every call instead.
+	// value, which re-enters the allocator and can self-deadlock. The
+	// fallback path resolves the name into a stack buffer without heap.
 	char strbuf[PATH_MAX];
 	auto len = readlink("/proc/self/exe", strbuf, std::size(strbuf) - 1);
 	if (len == -1)
@@ -434,6 +647,21 @@ uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
 	bpftime_copy_comm((char *)(uintptr_t)buf, (size_t)size, filename);
 	return 0;
 }
+// Userspace map backends report failure the libc way: -1 with the host errno
+// set. The kernel's bpf_map_*_elem helpers report a negative errno in the
+// return value instead, and BPF programs branch on -EEXIST/-ENOENT/-E2BIG.
+// Translate here, at the BPF-helper boundary only: the syscall-facing shims
+// keep the -1 + errno contract. A backend that already returns a specific
+// kernel errno (for example -ENOTSUP from an unsupported operation) passes
+// through unchanged.
+static uint64_t kernel_map_helper_result(long result)
+{
+	if (result >= 0)
+		return 0;
+	if (result != -1)
+		return (uint64_t)result;
+	return (uint64_t)-(errno != 0 ? errno : EINVAL);
+}
 
 uint64_t bpftime_map_lookup_elem_helper(uint64_t map, uint64_t key, uint64_t,
 					uint64_t, uint64_t)
@@ -446,37 +674,41 @@ uint64_t bpftime_map_update_elem_helper(uint64_t map, uint64_t key,
 					uint64_t value, uint64_t flags,
 					uint64_t)
 {
-	return (uint64_t)
+	return kernel_map_helper_result(
 		bpftime::shm_holder.global_shared_memory.bpf_map_update_elem(
-			(int)map, (void *)key, (void *)value, flags, false);
+			(int)map, (void *)key, (void *)value, flags, false));
 }
 
 uint64_t bpftime_map_delete_elem_helper(uint64_t map, uint64_t key, uint64_t,
 					uint64_t, uint64_t)
 {
-	return (uint64_t)bpftime::shm_holder.global_shared_memory
-		.bpf_delete_elem((int)map, (void *)key, false);
+	return kernel_map_helper_result(
+		bpftime::shm_holder.global_shared_memory.bpf_delete_elem(
+			(int)map, (void *)key, false));
 }
 
 uint64_t bpftime_map_push_elem_helper(uint64_t map, uint64_t value,
 				      uint64_t flags, uint64_t, uint64_t)
 {
-	return (uint64_t)bpftime::shm_holder.global_shared_memory
-		.bpf_map_push_elem((int)map, (void *)value, flags, false);
+	return kernel_map_helper_result(
+		bpftime::shm_holder.global_shared_memory.bpf_map_push_elem(
+			(int)map, (void *)value, flags, false));
 }
 
 uint64_t bpftime_map_pop_elem_helper(uint64_t map, uint64_t value, uint64_t,
 				     uint64_t, uint64_t)
 {
-	return (uint64_t)bpftime::shm_holder.global_shared_memory
-		.bpf_map_pop_elem((int)map, (void *)value, false);
+	return kernel_map_helper_result(
+		bpftime::shm_holder.global_shared_memory.bpf_map_pop_elem(
+			(int)map, (void *)value, false));
 }
 
 uint64_t bpftime_map_peek_elem_helper(uint64_t map, uint64_t value, uint64_t,
 				      uint64_t, uint64_t)
 {
-	return (uint64_t)bpftime::shm_holder.global_shared_memory
-		.bpf_map_peek_elem((int)map, (void *)value, false);
+	return kernel_map_helper_result(
+		bpftime::shm_holder.global_shared_memory.bpf_map_peek_elem(
+			(int)map, (void *)value, false));
 }
 
 #ifdef ENABLE_PROBE_READ_CHECK
@@ -1063,8 +1295,10 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 		return -EFAULT;
 	}
 
+	// Both operands must be the same type: on arm64 Darwin uint64_t is
+	// unsigned long long while size_t is unsigned long, which libc++ rejects.
 	auto frames_to_copy =
-		std::min(result->size() - frames_to_skip,
+		std::min(static_cast<size_t>(result->size() - frames_to_skip),
 			 static_cast<size_t>(size / sizeof(uint64_t)));
 	auto size_to_copy = frames_to_copy * sizeof(uint64_t);
 	SPDLOG_DEBUG("Copied {} bytes of stack", size_to_copy);

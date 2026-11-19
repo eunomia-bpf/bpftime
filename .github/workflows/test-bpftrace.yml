@@ -67,6 +67,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: "recursive"
+      - name: Enable ccache
+        uses: ./.github/actions/ccache
+        with:
+          variant: ubuntu-2204
 
       - name: System setup and kernel headers
         run: |
@@ -382,7 +386,7 @@ jobs:
 
       - name: Upload to Codecov
         # Only upload when this workflow was run on the main repository
-        if: (success() || failure()) && github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: (success() || failure()) && github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: true
@@ -405,6 +409,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: "recursive"
+      - name: Enable ccache
+        uses: ./.github/actions/ccache
+        with:
+          variant: ubuntu-2204
 
       - name: System setup and kernel headers
         run: |
@@ -754,7 +762,7 @@ jobs:
 
       - name: Upload to Codecov
         # Only upload when this workflow was run on the main repository
-        if: (success() || failure()) && github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: (success() || failure()) && github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: true
@@ -787,6 +795,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: "recursive"
+      - name: Enable ccache
+        uses: ./.github/actions/ccache
+        with:
+          variant: ubuntu-2204
 
       - name: System setup and kernel headers
         run: |
@@ -1143,7 +1155,7 @@ jobs:
           path: combined/combined-coverage.info
 
       - name: Upload combined coverage to Codecov
-        if: github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: false # Changed to false to prevent CI failure on upload issues

@@ -54,6 +54,10 @@ jobs:
       - uses: actions/checkout@v3
         with:
           submodules: "recursive"
+      - name: Enable ccache
+        uses: ./.github/actions/ccache
+        with:
+          variant: benchmarks
 
       - name: install deps
         run: |
@@ -76,8 +80,8 @@ jobs:
       - name: verify llvm-17 installation
         run: llvm-config-17 --version
 
-      - name: clear cmake cache
-        run: rm -rf build
+      # No build tree to clear: every run starts from a fresh checkout, and
+      # deleting build trees defeats the ccache/object reuse policy.
 
       - name: build benchmarks
         run: make benchmark

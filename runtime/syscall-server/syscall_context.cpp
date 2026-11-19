@@ -332,6 +332,12 @@ bool syscall_context::mock_enabled_for_current_thread() const noexcept
 	return mock_disable_depth == 0 &&
 	       enable_mock.load(std::memory_order_relaxed);
 }
+bool syscall_context::mock_active_for_current_thread() const noexcept
+{
+	return mock_enabled_for_current_thread() &&
+	       !initializing_cuda.load(std::memory_order_acquire) &&
+	       enable_mock_after_initialized.load(std::memory_order_relaxed);
+}
 
 syscall_context::syscall_context()
 {
@@ -499,9 +505,7 @@ void syscall_context::try_startup()
 
 int syscall_context::handle_close(int fd)
 {
-	if (!mock_enabled_for_current_thread() ||
-	    initializing_cuda.load(std::memory_order_acquire) ||
-	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
+	if (!mock_active_for_current_thread())
 		return orig_close_fn(fd);
 	SPDLOG_DEBUG("Calling mocked close");
 	try_startup();
@@ -522,9 +526,7 @@ int syscall_context::handle_close(int fd)
 int syscall_context::handle_openat(int fd, const char *file, int oflag,
 				   unsigned short mode)
 {
-	if (!mock_enabled_for_current_thread() ||
-	    initializing_cuda.load(std::memory_order_acquire) ||
-	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
+	if (!mock_active_for_current_thread())
 		return orig_openat_fn(fd, file, oflag, mode);
 	try_startup();
 	auto path = resolve_filename_and_fd_to_full_path(fd, file);
@@ -551,9 +553,7 @@ int syscall_context::handle_openat(int fd, const char *file, int oflag,
 int syscall_context::handle_open(const char *file, int oflag,
 				 unsigned short mode)
 {
-	if (!mock_enabled_for_current_thread() ||
-	    initializing_cuda.load(std::memory_order_acquire) ||
-	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
+	if (!mock_active_for_current_thread())
 		return orig_open_fn(file, oflag, mode);
 	SPDLOG_DEBUG("Calling mocked open");
 	try_startup();
@@ -574,9 +574,7 @@ int syscall_context::handle_open(const char *file, int oflag,
 
 ssize_t syscall_context::handle_read(int fd, void *buf, size_t count)
 {
-	if (!mock_enabled_for_current_thread() ||
-	    initializing_cuda.load(std::memory_order_acquire) ||
-	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
+	if (!mock_active_for_current_thread())
 		return orig_read_fn(fd, buf, count);
 	SPDLOG_DEBUG("Calling mocked read");
 	try_startup();
@@ -726,13 +724,7 @@ int syscall_context::create_kernel_bpf_prog_in_userspace(int cmd,
 
 long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 {
-	const bool mock_enabled = mock_enabled_for_current_thread();
-	const bool cuda_initializing =
-		initializing_cuda.load(std::memory_order_acquire);
-	const bool mock_enabled_after_initialization =
-		enable_mock_after_initialized.load(std::memory_order_relaxed);
-	if (!mock_enabled || cuda_initializing ||
-	    !mock_enabled_after_initialization) {
+	if (!mock_active_for_current_thread()) {
 		return orig_syscall_fn(__NR_bpf, (long)cmd,
 				       (long)(uintptr_t)attr, (long)size);
 	}
@@ -858,10 +850,16 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		// we should write the bytes of the matched value to the pointer
 		// that user gave us. So here needs a memcpy to achive such
 		// thing.
+		// The backend sets a specific errno (ENOENT for an absent key,
+		// EPERM for a write-only map's fd read, EINVAL for a null key).
+		// Only default to ENOENT when it left errno untouched, which the
+		// handle_sysbpf prologue's `errno = 0` exposes.
+		errno = 0;
 		auto value_ptr = bpftime_map_lookup_elem(
 			attr->map_fd, (const void *)(uintptr_t)attr->key);
 		if (value_ptr == nullptr) {
-			errno = ENOENT;
+			if (errno == 0)
+				errno = ENOENT;
 			return -1;
 		}
 		memcpy((void *)(uintptr_t)attr->value, value_ptr,
@@ -896,16 +894,19 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 			attr->map_fd, (const void *)(uintptr_t)attr->key);
 	}
 	case BPF_MAP_LOOKUP_AND_DELETE_ELEM: {
-		SPDLOG_DEBUG("Lookup and delete map {}, value={:x}",
-			     attr->map_fd, (uintptr_t)attr->value);
+		SPDLOG_DEBUG("Lookup and delete map {}, key={:x}, value={:x}",
+			     attr->map_fd, (uintptr_t)attr->key,
+			     (uintptr_t)attr->value);
 		if (run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
 					       (long)size);
 		}
-		// For queue/stack maps, this is equivalent to pop operation
+		// Keyed for the hash map types (the kernel reads attr->key for
+		// those), keyless for queue/stack where it is a pop.
 		return bpftime_map_lookup_and_delete_elem(
-			attr->map_fd, (void *)(uintptr_t)attr->value);
+			attr->map_fd, (const void *)(uintptr_t)attr->key,
+			(void *)(uintptr_t)attr->value);
 	}
 	case BPF_MAP_GET_NEXT_KEY: {
 		SPDLOG_DEBUG("Getting next key for map {}, key={:x}",
@@ -1129,9 +1130,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 				      int group_fd, unsigned long flags)
 {
-	if (!mock_enabled_for_current_thread() ||
-	    initializing_cuda.load(std::memory_order_acquire) ||
-	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
+	if (!mock_active_for_current_thread())
 		return orig_syscall_fn(__NR_perf_event_open,
 				       (uint64_t)(uintptr_t)attr, (uint64_t)pid,
 				       (uint64_t)cpu, (uint64_t)group_fd,
@@ -1530,9 +1529,7 @@ int syscall_context::handle_munmap(void *addr, size_t size)
 
 FILE *syscall_context::handle_fopen(const char *pathname, const char *flags)
 {
-	if (!mock_enabled_for_current_thread() ||
-	    initializing_cuda.load(std::memory_order_acquire) ||
-	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
+	if (!mock_active_for_current_thread())
 		return orig_fopen_fn(pathname, flags);
 	SPDLOG_DEBUG("Calling mocked fopen");
 	try_startup();
@@ -1634,9 +1631,7 @@ long syscall_context::handle_fcntl(int fd, int cmd, unsigned long arg)
 int syscall_context::handle_memfd_create(const char *name, int flags)
 {
 	SPDLOG_DEBUG("Calling mocked memfd_create {}, {}", name, flags);
-	if (!mock_enabled_for_current_thread() ||
-	    initializing_cuda.load(std::memory_order_acquire) ||
-	    !enable_mock_after_initialized.load(std::memory_order_relaxed)) {
+	if (!mock_active_for_current_thread()) {
 #if __linux__
 		SPDLOG_DEBUG("Calling original memfd_create");
 		return orig_syscall_fn(__NR_memfd_create, (long)name,

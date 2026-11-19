@@ -20,7 +20,6 @@
 #include <cstdint>
 #include <map>
 #include <memory>
-#include <syscall_table.hpp>
 #include <bpf_attach_ctx.hpp>
 #include <bpftime_shm_internal.hpp>
 #include <bpftime_prog.hpp>

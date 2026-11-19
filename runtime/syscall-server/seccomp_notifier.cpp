@@ -1,14 +1,20 @@
 /* SPDX-License-Identifier: MIT
  *
- * Seccomp user-notification attach implementation, moved out of the Frida
- * text_segment_transformer. This module is linked into bpftime-agent; it does
- * not link bpftime-syscall-server and reaches the fake kernel only via the
- * get_call_hook() dispatcher. x86_64/Linux only (seccomp user-notif gate).
+ * Rootless seccomp user-notification capture, compiled into the
+ * bpftime-syscall-server shared object itself.
+ *
+ * ARCHITECTURE INVARIANT — DO NOT BREAK: this file must stay free of any
+ * attach/ dependency. There is no frida, no capstone and no text-segment
+ * transformer on the rootless path; intercepted syscalls are emulated by
+ * calling dispatch_syscall(), which lives in this same object. The only
+ * outward seam is the kernel seccomp USER_NOTIF ABI. See runtime/README.md
+ * and attach/README.md. x86_64/Linux only (seccomp user-notif gate).
  */
 #if defined(__linux__) && defined(__x86_64__)
 #include "seccomp_raw_syscall.hpp"
 #include "seccomp_tracer.hpp"
-#include "text_segment_transformer.hpp"
+#include "seccomp_bpf_compat.hpp"
+#include "syscall_server_internal_dispatch.hpp"
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
@@ -16,7 +22,7 @@
 #include <fcntl.h>
 #include <linux/audit.h>
 #include <linux/filter.h>
-#include "seccomp_bpf_compat.hpp"
+
 #include <linux/seccomp.h>
 #include <mutex>
 #include <optional>
@@ -28,18 +34,20 @@
 #include <sys/syscall.h>
 #include <sys/vfs.h>
 #include <thread>
+#include <unistd.h>
 #include <unordered_map>
+
 
 namespace bpftime
 {
 namespace seccomp
 {
-// in bpftime-syscall-server; this transformer reaches it through the
-// get_call_hook() dispatcher, which falls back to the real syscall for
-// anything it does not emulate. No local fd/mmap ledger is kept here.
+// Dispatch is serialized for emulated syscalls that touch shared fake-kernel
+// state; epoll waits run uncontended because they never mutate that state.
 static std::mutex dispatch_mutex;
 static const char *kallsyms_path;
 static std::atomic<int> go_seccomp_listener{ -1 };
+
 
 struct mapped_file_resolution {
 	std::string logical_path;
@@ -165,19 +173,6 @@ static std::optional<int64_t> dispatch_mapped_file_syscall(const int64_t *args)
 				 redirected[6]);
 }
 
-static bool is_tracepoint_id_path(const char *path)
-{
-	if (path == nullptr)
-		return false;
-	constexpr const char *debugfs_prefix =
-		"/sys/kernel/debug/tracing/events/";
-	constexpr const char *tracefs_prefix = "/sys/kernel/tracing/events/";
-	size_t length = strlen(path);
-	return length >= 3 && strcmp(path + length - 3, "/id") == 0 &&
-	       (strncmp(path, debugfs_prefix, strlen(debugfs_prefix)) == 0 ||
-		strncmp(path, tracefs_prefix, strlen(tracefs_prefix)) == 0);
-}
-
 static bool is_tracefs_mount_path(const char *path)
 {
 	return path != nullptr &&
@@ -215,20 +210,20 @@ static int64_t dispatch_seccomp_syscall(const int64_t *args)
 	}
 	if (auto mapped = dispatch_mapped_file_syscall(args); mapped)
 		return *mapped;
-	// Everything else (bpf/perf_event_open/mmap/epoll/fd lifecycle/...) goes
-	// to the syscall server, which owns the emulated resource state and
-	// falls back to the real syscall for anything it does not intercept.
+	// Everything else (bpf/perf_event_open/mmap/epoll/fd lifecycle/...) is
+	// emulated inside this same shared object. No function-pointer seam and
+	// no attach/ component are involved.
 	errno = 0;
 	int64_t result;
 	if (args[0] == __NR_epoll_wait || args[0] == __NR_epoll_pwait) {
-		result = bpftime::get_call_hook()(
+		result = dispatch_syscall(
 			args[0], args[1], args[2], args[3], args[4],
-			args[5], args[6], 0, 0, 0);
+			args[5], args[6]);
 	} else {
 		std::lock_guard lock(dispatch_mutex);
-		result = bpftime::get_call_hook()(
+		result = dispatch_syscall(
 			args[0], args[1], args[2], args[3], args[4],
-			args[5], args[6], 0, 0, 0);
+			args[5], args[6]);
 	}
 	if (result == -1 && errno != 0)
 		result = -errno;
@@ -259,6 +254,7 @@ static void start_go_seccomp_workers()
 						return;
 					}
 					received = true;
+
 					int64_t args[] = {
 						(int64_t)request.data.nr,
 						(int64_t)request.data.args[0],
