@@ -1,0 +1,30 @@
+# CI base image for bpftime's fedora-39 container jobs
+# (test-runtime, test-attach, test-examples, test-tools, test-vm).
+#
+# Built and pushed only by the manual workflow:
+#   .github/workflows/build-ci-images.yml
+# Target: ghcr.io/eunomia-bpf/ci-fedora-39
+FROM fedora:39
+
+# Fedora 39 is end-of-life: its mirrorlist no longer serves the release,
+# so redirect every repository to the archive before installing anything.
+RUN sed -i \
+        -e 's|^metalink=|#metalink=|g' \
+        -e 's|^#baseurl=http://download.example/pub/fedora/linux|baseurl=https://archives.fedoraproject.org/pub/archive/fedora/linux|g' \
+        /etc/yum.repos.d/fedora*.repo
+
+RUN dnf -y --disablerepo=fedora-cisco-openh264 install \
+        git ca-certificates sudo curl wget xz which file \
+        gcc gcc-c++ cmake make ninja-build pkgconf-pkg-config \
+        clang llvm llvm-devel \
+        elfutils-libelf-devel zlib-devel libzstd openssl-devel \
+        boost-devel libasan yaml-cpp-devel binutils-devel \
+        lcov gdb strace tree procps-ng \
+        bpftrace \
+        gnupg pinentry dirmngr \
+        python3 python3-pip python3-requests \
+        ccache \
+    && dnf clean all
+
+# CCACHE_DIR is provided at job time by .github/actions/ccache/action.yml
+# (workspace-local, so the same image works on hosted and self-hosted runners).

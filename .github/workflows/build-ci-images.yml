@@ -1,0 +1,100 @@
+name: Build CI base images
+
+# Manual-only publisher for the container images backing the test
+# workflows. Normal pushes and pull requests never start this workflow;
+# a maintainer dispatches it after changing .github/ci-images/ or when a
+# refreshed image is needed. Images land in the community organization's
+# GHCR namespace: ghcr.io/eunomia-bpf/ci-*
+on:
+  workflow_dispatch:
+    inputs:
+      images:
+        description: Which images to build
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - ubuntu-2204
+          - fedora-39
+          - openeuler-2403
+      push:
+        description: Push the images to ghcr.io (off = build only, for validating a change)
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-ci-images-${{ github.event.inputs.images }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.choice }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # A job-level 'if' cannot read the matrix context, so the input
+        # selects the matrix dimension itself: all three choices, or a
+        # single-element matrix for one dispatched image. No 'include' is
+        # used: non-matching include entries would be added back as extra
+        # combinations, so dockerfile/image names are mapped in a step.
+        choice: ${{ inputs.images == 'all' && fromJSON('["ubuntu-2204","fedora-39","openeuler-2403"]') || fromJSON(format('["{0}"]', inputs.images)) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Map image choice to dockerfile and registry name
+        shell: bash
+        run: |
+          case "${{ matrix.choice }}" in
+            ubuntu-2204)
+              echo "dockerfile=.github/ci-images/Dockerfile.ubuntu-2204" >> "$GITHUB_OUTPUT"
+              echo "image=ci-ubuntu-2204" >> "$GITHUB_OUTPUT"
+              ;;
+            fedora-39)
+              echo "dockerfile=.github/ci-images/Dockerfile.fedora-39" >> "$GITHUB_OUTPUT"
+              echo "image=ci-fedora-39" >> "$GITHUB_OUTPUT"
+              ;;
+            openeuler-2403)
+              echo "dockerfile=.github/ci-images/Dockerfile.openeuler-2403" >> "$GITHUB_OUTPUT"
+              echo "image=ci-openeuler-2403" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unknown image choice: ${{ matrix.choice }}" >&2
+              exit 1
+              ;;
+          esac
+        id: meta
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event.inputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .github/ci-images
+          file: ${{ steps.meta.outputs.dockerfile }}
+          # An immutable per-commit tag plus a moving latest tag; callers
+          # pin the immutable tag once an image is validated.
+          tags: |
+            ghcr.io/eunomia-bpf/${{ steps.meta.outputs.image }}:${{ github.sha }}
+            ghcr.io/eunomia-bpf/${{ steps.meta.outputs.image }}:latest
+          push: ${{ github.event.inputs.push }}
+          # Build-only validation runs load the image into the local
+          # docker store instead of publishing it.
+          load: ${{ github.event.inputs.push != 'true' }}
