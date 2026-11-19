@@ -575,6 +575,9 @@ jobs:
           ls -la build/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
           echo "Checking malloc example binaries:"
           if [ -f "example/malloc/malloc" ] && [ -f "example/malloc/victim" ]; then
+            # The artifact round-trip can drop the executable bit; restore
+            # it explicitly so the LD_PRELOAD test can exec the binaries.
+            chmod +x example/malloc/malloc example/malloc/victim
             echo "SUCCESS: malloc example downloaded successfully"
             ls -la example/malloc/
           else
@@ -921,12 +924,16 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ matrix.log_level }}" = "TRACE" ]; then
-            echo "BUILD_DIR=build-trace" >> "$GITHUB_ENV"
-            echo "BUILD_ARTIFACT=bpftime-build-trace" >> "$GITHUB_ENV"
+            BUILD_DIR=build-trace
+            BUILD_ARTIFACT=bpftime-build-trace
           else
-            echo "BUILD_DIR=build" >> "$GITHUB_ENV"
-            echo "BUILD_ARTIFACT=bpftime-build-info" >> "$GITHUB_ENV"
+            BUILD_DIR=build
+            BUILD_ARTIFACT=bpftime-build-info
           fi
+          # Export for later steps; the local copies make this step's own
+          # echo work under set -u (GITHUB_ENV only applies to later steps).
+          echo "BUILD_DIR=$BUILD_DIR" >> "$GITHUB_ENV"
+          echo "BUILD_ARTIFACT=$BUILD_ARTIFACT" >> "$GITHUB_ENV"
           echo "Using $BUILD_ARTIFACT extracted to $BUILD_DIR"
       - name: Download prebuilt bpftime
         uses: actions/download-artifact@v4
