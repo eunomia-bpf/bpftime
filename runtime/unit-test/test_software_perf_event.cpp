@@ -6,6 +6,7 @@
 #include <atomic>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <cerrno>
+#include <chrono>
 #include <cstring>
 #include <limits>
 #include <string>
@@ -20,13 +21,13 @@
 extern "C" uint64_t bpf_perf_event_output(uint64_t, uint64_t, uint64_t,
 					  uint64_t, uint64_t);
 
-TEST_CASE("Perf output preserves the calling thread's CPU affinity",
+TEST_CASE("Perf output never changes the calling thread's CPU affinity",
 	  "[perf_event][affinity]")
 {
 	cpu_set_t before;
 	REQUIRE(sched_getaffinity(0, sizeof(before), &before) == 0);
 	if (CPU_COUNT(&before) < 2)
-		SKIP("Affinity restoration requires at least two allowed CPUs");
+		SKIP("The out-of-range section requires at least two allowed CPUs");
 
 	const char *old_name = getenv("BPFTIME_GLOBAL_SHM_NAME");
 	struct cleanup {
@@ -120,6 +121,8 @@ TEST_CASE("Perf output preserves the calling thread's CPU affinity",
 	CHECK(ret == expected_ret);
 	if (expected_ret == static_cast<uint64_t>(-1))
 		CHECK(output_errno == expected_errno);
+	// The helper must not touch scheduler state at all: the mask set by the
+	// test itself stays identical on every success and error path.
 	CHECK(CPU_EQUAL(&before, &after));
 }
 #endif
@@ -205,10 +208,22 @@ TEST_CASE("Software perf event buffers shard concurrent producers by thread",
 	REQUIRE_FALSE(output_failed.load(std::memory_order_acquire));
 
 	REQUIRE(perf->has_data());
-	for (int i = 0; i < 64; i++) {
-		REQUIRE(perf->has_data());
+	// Shards of exited threads are only reclaimed once every
+	// `software_perf_event_reclaim_drain_interval` (64) drains, and a joined
+	// thread can still answer `tgkill` until the kernel reaps it, so retry a
+	// few reclamation rounds instead of relying on a single one.
+	bool shards_reclaimed = false;
+	for (int round = 0; round < 32 && !shards_reclaimed; round++) {
+		for (int i = 0; i < 64; i++) {
+			REQUIRE(perf->has_data());
+		}
+		shards_reclaimed = perf->producer_shards.empty();
+		if (!shards_reclaimed) {
+			std::this_thread::sleep_for(
+				std::chrono::milliseconds(10));
+		}
 	}
-	REQUIRE(perf->producer_shards.empty());
+	REQUIRE(shards_reclaimed);
 
 	auto *header = (perf_event_mmap_page *)raw_buffer;
 	auto *base = (uint8_t *)raw_buffer + getpagesize();

@@ -12,8 +12,18 @@
 #include "cuda.h"
 #endif
 #include "syscall_context.hpp"
+#include "synthetic_kallsyms.hpp"
+#if __linux__
+// Self-contained rootless tracepoint id synthesis. The syscall name->number
+// table is generated inside runtime/ (syscall_id_table target); the syscall
+// server must not include or link anything under attach/ to read it.
+#include "syscall_id_list.h"
+#include "platform_utils.hpp"
+#endif
+#include <cstdint>
 #include <cerrno>
 #include <cstdlib>
+#include <dlfcn.h>
 #include <exception>
 #include <fcntl.h>
 #include <filesystem>
@@ -23,6 +33,9 @@
 #include <spdlog/spdlog.h>
 #include <bpftime_shm.hpp>
 #include <string>
+#include <sstream>
+#include <string_view>
+#include <unordered_map>
 #include <system_error>
 #include <unistd.h>
 #ifdef ENABLE_BPFTIME_VERIFIER
@@ -38,6 +51,150 @@ static std::string g_syscall_server_shm_name;
 static pid_t g_syscall_server_shm_owner_pid = -1;
 static bool g_syscall_server_owns_shm = false;
 using namespace bpftime;
+namespace {
+// Probe a tracefs event id file through the next (non-interposed) libc
+// symbols. This translation unit belongs to the LD_PRELOADed syscall server,
+// whose open/openat/fopen handlers call create_mocked_file_based_on_full_path.
+// Opening the file with std::ifstream here re-enters those interposed handlers
+// and recurses until the stack is exhausted, so the real syscalls must be
+// resolved with RTLD_NEXT.
+bool read_real_tracepoint_id(const std::string &path_text, uint32_t &out_id)
+{
+	using openat_fn = int (*)(int, const char *, int, ...);
+	using read_fn = ssize_t (*)(int, void *, size_t);
+	using close_fn = int (*)(int);
+	static openat_fn next_openat =
+		(openat_fn)dlsym(RTLD_NEXT, "openat");
+	static read_fn next_read = (read_fn)dlsym(RTLD_NEXT, "read");
+	static close_fn next_close = (close_fn)dlsym(RTLD_NEXT, "close");
+	if (next_openat == nullptr || next_read == nullptr ||
+	    next_close == nullptr)
+		return false;
+	int fd = next_openat(AT_FDCWD, path_text.c_str(),
+			     O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return false;
+	char buffer[32];
+	size_t filled = 0;
+	while (filled < sizeof(buffer) - 1) {
+		ssize_t n = next_read(fd, buffer + filled,
+				      sizeof(buffer) - 1 - filled);
+		if (n > 0) {
+			filled += static_cast<size_t>(n);
+			continue;
+		}
+		if (n == 0)
+			break;
+		if (errno != EINTR)
+			break;
+	}
+	next_close(fd);
+	if (filled == 0)
+		return false;
+	buffer[filled] = '\0';
+	char *end = nullptr;
+	unsigned long id = strtoul(buffer, &end, 10);
+	if (end == buffer || id == 0 || id > UINT32_MAX)
+		return false;
+	out_id = static_cast<uint32_t>(id);
+	return true;
+}
+
+// Whether the real /proc/kallsyms hides its addresses, read through
+// RTLD_NEXT for the same reason as read_real_tracepoint_id above. Only a
+// small sample is needed: one nonzero address means kptr_restrict does not
+// apply here, and the real file must then be served unchanged.
+bool real_kallsyms_hides_addresses()
+{
+	using openat_fn = int (*)(int, const char *, int, ...);
+	using read_fn = ssize_t (*)(int, void *, size_t);
+	using close_fn = int (*)(int);
+	static openat_fn next_openat =
+		(openat_fn)dlsym(RTLD_NEXT, "openat");
+	static read_fn next_read = (read_fn)dlsym(RTLD_NEXT, "read");
+	static close_fn next_close = (close_fn)dlsym(RTLD_NEXT, "close");
+	if (next_openat == nullptr || next_read == nullptr ||
+	    next_close == nullptr)
+		return false;
+	int fd = next_openat(AT_FDCWD, "/proc/kallsyms", O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return false;
+	char buffer[1024];
+	size_t filled = 0;
+	while (filled < sizeof(buffer)) {
+		ssize_t n = next_read(fd, buffer + filled,
+				      sizeof(buffer) - filled);
+		if (n > 0) {
+			filled += static_cast<size_t>(n);
+			continue;
+		}
+		if (n == 0)
+			break;
+		if (errno != EINTR)
+			break;
+	}
+	next_close(fd);
+	if (filled == 0)
+		return false;
+	return kallsyms_addresses_hidden(std::string_view(buffer, filled));
+}
+
+#if __linux__
+// Rootless synthetic tracepoint id base. Must match the encoding consumed on
+// the attach side so a synthesized ".../id" resolves to the same event.
+constexpr int32_t rootless_synthetic_id_base = 0x40000000;
+
+// Syscall name -> number map built once from the runtime-generated table.
+// Local to this translation unit on purpose: reaching into attach/ for this
+// mapping would re-introduce the layering inversion the self-contained
+// syscall server exists to avoid.
+const std::unordered_map<std::string, int32_t> &
+rootless_syscall_name_to_nr()
+{
+	static const auto map = [] {
+		std::unordered_map<std::string, int32_t> built;
+		std::istringstream ss(table);
+		std::string name;
+		int32_t nr = 0;
+		while (ss >> name >> nr)
+			built.emplace(name, nr);
+		// Tracepoint spelling vs kernel syscall name.
+		if (auto it = built.find("umount2"); it != built.end())
+			built.emplace("umount", it->second);
+		return built;
+	}();
+	return map;
+}
+
+// Behaviourally identical to the attach-side synthetic tracepoint id
+// encoder (same base, prefixes, bounds and return values), reimplemented
+// here so the syscall server keeps zero attach/frida dependencies.
+// Returns 0 for events that cannot be encoded so the caller falls back to
+// the normal tracefs/open path.
+int32_t rootless_synthetic_id_for_event(std::string_view event)
+{
+	if (event == "raw_syscalls/sys_enter")
+		return rootless_synthetic_id_base;
+	if (event == "raw_syscalls/sys_exit")
+		return rootless_synthetic_id_base + 1;
+	constexpr std::string_view enter_prefix = "syscalls/sys_enter_";
+	constexpr std::string_view exit_prefix = "syscalls/sys_exit_";
+	bool enter = event.starts_with(enter_prefix);
+	if (!enter && !event.starts_with(exit_prefix))
+		return 0;
+	auto name = event.substr(
+		enter ? enter_prefix.size() : exit_prefix.size());
+	const auto &names = rootless_syscall_name_to_nr();
+	auto found = names.find(std::string(name));
+	if (name.empty() || found == names.end() || found->second < 0 ||
+	    found->second >=
+		    (INT32_MAX - rootless_synthetic_id_base) / 2 - 1)
+		return 0;
+	return rootless_synthetic_id_base + 2 * (found->second + 1) +
+	       (enter ? 0 : 1);
+}
+#endif
+} // namespace
 // Why not use string_view? because parse_uint_from_file requires a c-string
 static const std::string UPROBE_TYPE_FILE_NAME =
 	"/sys/bus/event_source/devices/uprobe/type";
@@ -56,6 +213,21 @@ static bool pid_is_alive(int pid)
 static void remove_syscall_server_global_shm() noexcept
 {
 	if (g_syscall_server_shm_name.empty()) {
+		return;
+	}
+	// Static teardown (__destruct_shm) may already have unmapped the segment
+	// before this atexit handler runs; touching the in-segment pid-set mutex
+	// would then fault. The liveness flag lives in ordinary .bss and stays
+	// readable, so once cleared only a name-based unlink is safe.
+	if (!bpftime_global_shm_is_initialized()) {
+		if (g_syscall_server_owns_shm &&
+		    getpid() == g_syscall_server_shm_owner_pid) {
+			try {
+				boost::interprocess::shared_memory_object::remove(
+					g_syscall_server_shm_name.c_str());
+			} catch (...) {
+			}
+		}
 		return;
 	}
 	if (getpid() != g_syscall_server_shm_owner_pid) {
@@ -299,6 +471,58 @@ int determine_kprobe_retprobe_bit()
 std::optional<std::unique_ptr<mocked_file_provider>>
 create_mocked_file_based_on_full_path(const std::filesystem::path &path)
 {
+	auto path_text = path.string();
+	constexpr std::string_view debug_tracepoint_root =
+		"/sys/kernel/debug/tracing/events/";
+	constexpr std::string_view tracepoint_root =
+		"/sys/kernel/tracing/events/";
+	const bool is_tracepoint_id =
+		(path_text.starts_with(debug_tracepoint_root) ||
+		 path_text.starts_with(tracepoint_root)) &&
+		path_text.ends_with("/id");
+	// Rootless containers expose an all-zero /proc/kallsyms. Serve a
+	// built-in synthetic table so an unmodified profiler can initialize
+	// without an external System.map, but only while the real file hides
+	// its addresses: a privileged kernel reports real ones, and its
+	// addresses must survive. An explicit BPFTIME_KALLSYMS_PATH redirect
+	// is handled before this function is reached and takes precedence.
+	if (is_synthetic_kallsyms_path(path_text) &&
+	    real_kallsyms_hides_addresses()) {
+		SPDLOG_DEBUG("serving built-in synthetic /proc/kallsyms");
+		return std::make_unique<mocked_file_provider>(
+			synthetic_kallsyms_content());
+	}
+	if (is_tracepoint_id) {
+		// When tracefs is accessible, the real id file carries a valid
+		// kernel tracepoint id. Returning no provider lets the normal
+		// open path read that ID and keeps kernel-mode opens unchanged.
+		uint32_t real_id = 0;
+		if (read_real_tracepoint_id(path_text, real_id))
+			return {};
+		// Encode only syscall events understood by the receiving attach
+		// implementation. The same event has one ID under both mounts.
+#if __linux__
+		const size_t root_size = path_text.starts_with(tracepoint_root) ?
+			tracepoint_root.size() : debug_tracepoint_root.size();
+		const auto event = std::string_view(path_text).substr(
+			root_size, path_text.size() - root_size - 3);
+		int32_t id = rootless_synthetic_id_for_event(event);
+		if (id != 0)
+			return std::make_unique<mocked_file_provider>(std::to_string(id) + "\n");
+		// rootless_synthetic_id_for_event only encodes
+		// syscalls/sys_enter_* and syscalls/sys_exit_*. Every other
+		// tracepoint (sched/..., raw_syscalls/...) falls back to the
+		// same path-derived id used to build the rootless tracepoint
+		// table, so the id the profiler reads resolves back to this
+		// event when it attaches. Without this fallback an unreadable
+		// tracefs id file yields ENOENT and an unmodified profiler
+		// aborts during startup.
+		return std::make_unique<mocked_file_provider>(
+			std::to_string(rootless::synthetic_tracepoint_id(path_text)) +
+			"\n");
+#endif
+		return {};
+	}
 	if (path == UPROBE_TYPE_FILE_NAME) {
 		SPDLOG_DEBUG("{} is uprobe type file", path.c_str());
 		return std::make_unique<mocked_file_provider>(

@@ -57,6 +57,13 @@ using hash_map_impl = var_size_hash_map_impl;
 using hash_map_impl = fix_size_hash_map_impl;
 #endif
 
+namespace {
+// Stable per-thread slot for the syscall map-in-map inner fd. The 4-byte value
+// is copied here while map_lock is held, so the caller's subsequent memcpy
+// cannot read a hash node freed by a concurrent delete.
+thread_local int tl_map_in_map_fd_snapshot;
+} // namespace
+
 bpftime_map_ops global_map_ops_table[(int)bpf_map_type::BPF_MAP_TYPE_MAX] = {
 	{ 0 }
 };
@@ -125,11 +132,24 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 			return impl->elem_lookup_userspace(key);
 		}
 	};
-
+	// Var-size/LRU hash backends enforce BPF_F_RDONLY/BPF_F_WRONLY only
+	// for fd-based syscall access; BPF helpers call with from_syscall=false.
+	const auto do_lookup_with_origin = [&](auto *impl) -> const void * {
+		if (impl->should_lock) {
+			bpftime_lock_guard guard(map_lock);
+			return impl->elem_lookup(key, from_syscall);
+		} else {
+			return impl->elem_lookup(key, from_syscall);
+		}
+	};
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
+#ifdef BPFTIME_USE_VAR_HASH_MAP
+		return do_lookup_with_origin(impl);
+#else
 		return do_lookup(impl);
+#endif
 	}
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
 		auto impl = static_cast<array_map_impl *>(map_impl_ptr.get());
@@ -177,7 +197,7 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
 		auto impl = static_cast<lru_var_hash_map_impl *>(
 			map_impl_ptr.get());
-		return do_lookup(impl);
+		return do_lookup_with_origin(impl);
 	}
 	case bpf_map_type::BPF_MAP_TYPE_LPM_TRIE: {
 		auto impl =
@@ -214,7 +234,30 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
 		auto impl = static_cast<array_map_of_maps_impl *>(
 			map_impl_ptr.get());
-		return do_lookup(impl);
+		if (!from_syscall)
+			return do_lookup(impl);
+		bpftime_lock_guard guard(map_lock);
+		const int *stored =
+			static_cast<const int *>(impl->elem_lookup_userspace(key));
+		if (stored == nullptr)
+			return nullptr;
+		// Copy inside the lock; return thread-local stable storage so the
+		// caller's memcpy cannot touch a concurrently freed map node.
+		tl_map_in_map_fd_snapshot = *stored;
+		return &tl_map_in_map_fd_snapshot;
+	}
+	case bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS: {
+		auto impl = static_cast<hash_map_of_maps_impl *>(
+			map_impl_ptr.get());
+		if (!from_syscall)
+			return do_lookup(impl);
+		bpftime_lock_guard guard(map_lock);
+		const int *stored =
+			static_cast<const int *>(impl->elem_lookup_userspace(key));
+		if (stored == nullptr)
+			return nullptr;
+		tl_map_in_map_fd_snapshot = *stored;
+		return &tl_map_in_map_fd_snapshot;
 	}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_GPU_HASH_MAP: {
@@ -287,10 +330,26 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 			return impl->elem_update_userspace(key, value, flags);
 		}
 	};
+	// Var-size/LRU hash backends enforce BPF_F_RDONLY only for fd-based
+	// syscall access; BPF helpers call with from_syscall=false.
+	const auto do_update_with_origin = [&](auto *impl) -> long {
+		if (impl->should_lock) {
+			bpftime_lock_guard guard(map_lock);
+			return impl->elem_update(key, value, flags,
+						 from_syscall);
+		} else {
+			return impl->elem_update(key, value, flags,
+						 from_syscall);
+		}
+	};
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
+#ifdef BPFTIME_USE_VAR_HASH_MAP
+		return do_update_with_origin(impl);
+#else
 		return do_update(impl);
+#endif
 	}
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
 		auto impl = static_cast<array_map_impl *>(map_impl_ptr.get());
@@ -371,10 +430,19 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 			map_impl_ptr.get());
 		return do_update(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS: {
+		if (!from_syscall) {
+			// Map in maps only support update from syscall
+			return -EINVAL;
+		}
+		auto impl = static_cast<hash_map_of_maps_impl *>(
+			map_impl_ptr.get());
+		return do_update(impl);
+	}
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
 		auto impl = static_cast<lru_var_hash_map_impl *>(
 			map_impl_ptr.get());
-		return do_update(impl);
+		return do_update_with_origin(impl);
 	}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_GPU_HASH_MAP: {
@@ -443,10 +511,26 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 			return impl->map_get_next_key(key, next_key);
 		}
 	};
+	// Var-size/LRU hash backends enforce BPF_F_WRONLY only for fd-based
+	// syscall access; BPF helpers call with from_syscall=false.
+	const auto do_get_next_key_with_origin = [&](auto *impl) -> int {
+		if (impl->should_lock) {
+			bpftime_lock_guard guard(map_lock);
+			return impl->map_get_next_key(key, next_key,
+						      from_syscall);
+		} else {
+			return impl->map_get_next_key(key, next_key,
+						      from_syscall);
+		}
+	};
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
+#ifdef BPFTIME_USE_VAR_HASH_MAP
+		return do_get_next_key_with_origin(impl);
+#else
 		return do_get_next_key(impl);
+#endif
 	}
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
 		auto impl = static_cast<array_map_impl *>(map_impl_ptr.get());
@@ -521,10 +605,15 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 			map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS: {
+		auto impl = static_cast<hash_map_of_maps_impl *>(
+			map_impl_ptr.get());
+		return do_get_next_key(impl);
+	}
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
 		auto impl = static_cast<lru_var_hash_map_impl *>(
 			map_impl_ptr.get());
-		return do_get_next_key(impl);
+		return do_get_next_key_with_origin(impl);
 	}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_GPU_HASH_MAP: {
@@ -601,11 +690,25 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 			return impl->elem_delete_userspace(key);
 		}
 	};
+	// Var-size/LRU hash backends enforce BPF_F_RDONLY only for fd-based
+	// syscall access; BPF helpers call with from_syscall=false.
+	const auto do_delete_with_origin = [&](auto *impl) -> long {
+		if (impl->should_lock) {
+			bpftime_lock_guard guard(map_lock);
+			return impl->elem_delete(key, from_syscall);
+		} else {
+			return impl->elem_delete(key, from_syscall);
+		}
+	};
 
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
+#ifdef BPFTIME_USE_VAR_HASH_MAP
+		return do_delete_with_origin(impl);
+#else
 		return do_delete(impl);
+#endif
 	}
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
 		auto impl = static_cast<array_map_impl *>(map_impl_ptr.get());
@@ -686,10 +789,19 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 			map_impl_ptr.get());
 		return do_delete(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS: {
+		if (!from_syscall) {
+			// Map in maps only support update from syscall
+			return -EINVAL;
+		}
+		auto impl = static_cast<hash_map_of_maps_impl *>(
+			map_impl_ptr.get());
+		return do_delete(impl);
+	}
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
 		auto impl = static_cast<lru_var_hash_map_impl *>(
 			map_impl_ptr.get());
-		return do_delete(impl);
+		return do_delete_with_origin(impl);
 	}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_GPU_HASH_MAP: {
@@ -814,7 +926,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 			SPDLOG_ERROR(
 				"Failed to create ringbuf map, max_entries must be a power of 2, current: {}",
 				max_entries);
-			return -1;
+			return -EINVAL;
 		}
 		map_impl_ptr = memory.construct<ringbuf_map_impl>(
 			boost::interprocess::anonymous_instance)(max_entries,
@@ -862,7 +974,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		if (key_size != 0) {
 			SPDLOG_ERROR("Bloom filter key_size must be 0, got {}",
 				     key_size);
-			return -1;
+			return -EINVAL;
 		}
 		// Extract nr_hashes from map_extra (lower 4 bits)
 		unsigned int nr_hashes =
@@ -932,16 +1044,31 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	}
 #endif
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
+		// inner fd is stored as a uint32; reject mismatched value_size so
+		// the syscall memcpy path can never over-read/truncate (M13 follow-up).
+		if (value_size != sizeof(uint32_t))
+			return -EINVAL;
 		map_impl_ptr = memory.construct<array_map_of_maps_impl>(
 			boost::interprocess::anonymous_instance)(memory,
 								 max_entries);
 		init_refcnt();
 		return 0;
 	}
+	case bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS: {
+		if (value_size != sizeof(uint32_t))
+			return -EINVAL;
+		map_impl_ptr = memory.construct<hash_map_of_maps_impl>(
+			boost::interprocess::anonymous_instance)(
+			memory, key_size, max_entries,
+			static_cast<uint32_t>(flags));
+		init_refcnt();
+		return 0;
+	}
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
 		map_impl_ptr = memory.construct<lru_var_hash_map_impl>(
 			boost::interprocess::anonymous_instance)(
-			memory, key_size, value_size, max_entries);
+			memory, key_size, value_size, max_entries,
+			static_cast<uint32_t>(flags));
 		init_refcnt();
 		return 0;
 	}
@@ -1137,7 +1264,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		} else {
 			SPDLOG_ERROR("[map_init] Unsupported map type: {}",
 				     (int)type);
-			return -1;
+			return -EOPNOTSUPP;
 		}
 	}
 	return 0;
@@ -1217,6 +1344,9 @@ void bpf_map_handler::map_free(managed_shared_memory &memory) const
 #endif
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS:
 		memory.destroy_ptr(static_cast<array_map_of_maps_impl *>(impl));
+		break;
+	case bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS:
+		memory.destroy_ptr(static_cast<hash_map_of_maps_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH:
 		memory.destroy_ptr(static_cast<lru_var_hash_map_impl *>(impl));
@@ -1440,6 +1570,78 @@ long bpf_map_handler::map_pop_elem(void *value, bool from_syscall) const
 		SPDLOG_ERROR("map_pop_elem not supported for map type: {}",
 			     (int)type);
 		return -ENOTSUP;
+	}
+}
+
+long bpf_map_handler::map_lookup_and_delete_elem(const void *key, void *value,
+						 bool from_syscall) const
+{
+	// The kernel dispatches by map type: queue/stack take the keyless pop
+	// path, the hash variants (HASH, PERCPU_HASH, LRU_HASH,
+	// LRU_PERCPU_HASH, STACK_TRACE) take a keyed lookup-then-delete. See
+	// map_lookup_and_delete_elem() in kernel/bpf/syscall.c.
+	const auto do_lookup_and_delete = [&](auto *impl) -> long {
+		if (impl->should_lock) {
+			bpftime_lock_guard guard(map_lock);
+			return impl->lookup_and_delete(key, value, from_syscall);
+		} else {
+			return impl->lookup_and_delete(key, value, from_syscall);
+		}
+	};
+	const auto do_lookup_and_delete_userspace = [&](auto *impl)
+		-> long {
+		if (impl->should_lock) {
+			bpftime_lock_guard guard(map_lock);
+			return impl->lookup_and_delete_userspace(key, value);
+		} else {
+			return impl->lookup_and_delete_userspace(key, value);
+		}
+	};
+	// Queue and stack take the keyless pop, and both declare
+	// should_lock = true: the handler owns their lock.
+	const auto do_pop = [&](auto *impl) -> long {
+		if (impl->should_lock) {
+			bpftime_lock_guard guard(map_lock);
+			return impl->map_pop_elem(value);
+		} else {
+			return impl->map_pop_elem(value);
+		}
+	};
+
+	switch (type) {
+	case bpf_map_type::BPF_MAP_TYPE_HASH: {
+		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
+		return do_lookup_and_delete(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
+		auto impl = static_cast<per_cpu_hash_map_impl *>(
+			map_impl_ptr.get());
+		return do_lookup_and_delete_userspace(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
+		auto impl = static_cast<lru_var_hash_map_impl *>(
+			map_impl_ptr.get());
+		return do_lookup_and_delete(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_STACK_TRACE: {
+		auto impl =
+			static_cast<stack_trace_map_impl *>(map_impl_ptr.get());
+		return do_lookup_and_delete(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
+		auto impl = static_cast<queue_map_impl *>(map_impl_ptr.get());
+		return do_pop(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_STACK: {
+		auto impl = static_cast<stack_map_impl *>(map_impl_ptr.get());
+		return do_pop(impl);
+	}
+	default:
+		SPDLOG_ERROR(
+			"map_lookup_and_delete_elem not supported for map type: {}",
+			(int)type);
+		errno = ENOTSUP;
+		return -1;
 	}
 }
 

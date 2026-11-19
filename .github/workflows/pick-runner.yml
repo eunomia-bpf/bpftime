@@ -1,0 +1,83 @@
+name: Pick runner
+
+# Picks where a workflow's Linux jobs run: the organization's VM runners
+# ([self-hosted, linux, x64, vm]) or GitHub's runners, whichever would
+# finish them sooner. It compares the jobs already running and waiting on
+# each side, plus this workflow's jobs, against each side's capacity. A VM
+# job waiting over 15 minutes marks the VM runners unavailable, and every
+# error falls back to GitHub, so a fork or a down cluster still runs CI.
+# The repository or organization variable BPFTIME_LINUX_RUNNER, a JSON list
+# of runner labels, overrides the choice.
+
+on:
+  workflow_call:
+    inputs:
+      hosted:
+        description: GitHub-hosted runner label used when GitHub is picked
+        type: string
+        required: true
+      jobs:
+        description: Number of jobs this workflow sends to the picked runners
+        type: number
+        required: true
+    outputs:
+      runner:
+        description: JSON value for runs-on
+        value: ${{ jobs.pick.outputs.runner }}
+
+jobs:
+  pick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      runner: ${{ steps.pick.outputs.runner }}
+    steps:
+      - id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HOSTED: ${{ inputs.hosted }}
+          JOBS: ${{ inputs.jobs }}
+          FORCED: ${{ vars.BPFTIME_LINUX_RUNNER }}
+          # Concurrent jobs: the VM runner scale set runs up to 4; GitHub
+          # runs 20 jobs at once per organization.
+          VM_SLOTS: 4
+          HOSTED_SLOTS: 20
+        run: |
+          set -u
+          hosted=$(jq -cn --arg l "$HOSTED" '$l')
+          vm='["self-hosted","linux","x64","vm"]'
+          pick() { echo "runner=$1" >> "$GITHUB_OUTPUT"; echo "::notice title=Runner::$2"; exit 0; }
+          [ -n "$FORCED" ] && pick "$FORCED" "BPFTIME_LINUX_RUNNER picks $FORCED"
+          [ "$GITHUB_REPOSITORY" = eunomia-bpf/bpftime ] || pick "$hosted" "GitHub: the VM runners serve eunomia-bpf/bpftime only"
+          # Every run starts with this job, so a job waiting for a runner
+          # belongs to a run in progress.
+          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?status=in_progress&per_page=15" --jq '.workflow_runs[].id') ||
+            pick "$hosted" "GitHub: the Actions API did not answer"
+          jobs=""
+          for id in $runs; do
+            j=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?filter=latest&per_page=100" --jq '
+              .jobs[] | select(.status != "completed") |
+              (if (.labels | index("vm")) then "vm"
+               elif any(.labels[]; test("^(ubuntu|windows|macos)")) then "hosted"
+               else "other" end) + " " + .status + " " + .created_at') ||
+              pick "$hosted" "GitHub: the Actions API did not answer"
+            jobs+="$j"$'\n'
+          done
+          count() { grep -c "^$1 $2 " <<<"$jobs" || true; }
+          vm_run=$(count vm in_progress); vm_wait=$(count vm queued)
+          h_run=$(count hosted in_progress); h_wait=$(count hosted queued)
+          # A run that has not started waits for a GitHub runner for at least
+          # its first job.
+          queued_runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?status=queued&per_page=1" --jq .total_count) ||
+            pick "$hosted" "GitHub: the Actions API did not answer"
+          h_wait=$((h_wait + queued_runs))
+          stale=$(awk -v t="$(date -u -d '-15 min' +%FT%TZ)" '$1 == "vm" && $2 == "queued" && $3 < t' <<<"$jobs" | wc -l)
+          load="VM runners $vm_run running, $vm_wait waiting of $VM_SLOTS; GitHub $h_run running, $h_wait waiting of $HOSTED_SLOTS; this workflow $JOBS jobs"
+          [ "$stale" -gt 0 ] && pick "$hosted" "GitHub: $stale VM jobs have waited over 15 minutes; $load"
+          # Compare the expected waits (queue length over capacity).
+          if [ $(( (vm_run + vm_wait + JOBS) * HOSTED_SLOTS )) -lt $(( (h_run + h_wait + JOBS) * VM_SLOTS )) ]; then
+            pick "$vm" "VM runners: $load"
+          fi
+          pick "$hosted" "GitHub: $load"

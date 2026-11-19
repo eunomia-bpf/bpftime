@@ -34,9 +34,11 @@ var_size_hash_map_impl::var_size_hash_map_impl(managed_shared_memory &memory,
 {
 }
 
-void *var_size_hash_map_impl::elem_lookup(const void *key)
+void *var_size_hash_map_impl::elem_lookup(const void *key, bool from_syscall)
 {
-	if (flags & BPF_F_WRONLY) {
+	// BPF_F_WRONLY only blocks fd-based syscall reads; BPF helpers keep
+	// full access (program-side access uses the separate *_PROG flags).
+	if (from_syscall && (flags & BPF_F_WRONLY)) {
 		errno = EPERM;
 		return nullptr;
 	}
@@ -55,8 +57,16 @@ void *var_size_hash_map_impl::elem_lookup(const void *key)
 }
 
 long var_size_hash_map_impl::elem_update(const void *key, const void *value,
-					 uint64_t flags)
+					 uint64_t flags, bool from_syscall)
 {
+	// A BPF_F_RDONLY map can never be modified through a syscall, whether
+	// the element already exists or not. The kernel rejects every write
+	// to a read-only map fd with EPERM before any existence check. BPF
+	// helpers (from_syscall == false) are unaffected.
+	if (from_syscall && (this->flags & BPF_F_RDONLY)) {
+		errno = EPERM;
+		return -1;
+	}
 	// Check flags
 	if (!is_good_update_flag(flags)) {
 		errno = EINVAL;
@@ -79,16 +89,16 @@ long var_size_hash_map_impl::elem_update(const void *key, const void *value,
 		errno = E2BIG;
 		return -1;
 	}
-	if (element_exists == false && (this->flags & BPF_F_RDONLY)) {
-		errno = EPERM;
-		return -1;
-	}
 	map_impl.insert_or_assign(key_vec, value_vec);
 	return 0;
 }
 
-long var_size_hash_map_impl::elem_delete(const void *key)
+long var_size_hash_map_impl::elem_delete(const void *key, bool from_syscall)
 {
+	if (from_syscall && (flags & BPF_F_RDONLY)) {
+		errno = EPERM;
+		return -1;
+	}
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
 	auto itr = map_impl.find(key_vec);
 	if (itr == map_impl.end()) {
@@ -98,8 +108,16 @@ long var_size_hash_map_impl::elem_delete(const void *key)
 	map_impl.erase(itr);
 	return 0;
 }
-int var_size_hash_map_impl::lookup_and_delete(const void *key, void *value_out)
+int var_size_hash_map_impl::lookup_and_delete(const void *key, void *value_out,
+					      bool from_syscall)
 {
+	// The operation both reads a value and deletes the entry, so the
+	// syscall path requires both read and write permissions: either
+	// BPF_F_WRONLY (no read) or BPF_F_RDONLY (no write) rejects it.
+	if (from_syscall && (flags & (BPF_F_RDONLY | BPF_F_WRONLY))) {
+		errno = EPERM;
+		return -1;
+	}
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
 	auto itr = map_impl.find(key_vec);
 	if (itr == map_impl.end()) {
@@ -110,9 +128,10 @@ int var_size_hash_map_impl::lookup_and_delete(const void *key, void *value_out)
 	map_impl.erase(itr);
 	return 0;
 }
-int var_size_hash_map_impl::map_get_next_key(const void *key, void *next_key)
+int var_size_hash_map_impl::map_get_next_key(const void *key, void *next_key,
+					     bool from_syscall)
 {
-	if (flags & BPF_F_WRONLY) {
+	if (from_syscall && (flags & BPF_F_WRONLY)) {
 		errno = EPERM;
 		return -1;
 	}
@@ -134,7 +153,7 @@ int var_size_hash_map_impl::map_get_next_key(const void *key, void *next_key)
 	auto itr = map_impl.find(key_vec);
 	if (itr == map_impl.end()) {
 		// not found, should be refer to the first key
-		return map_get_next_key(nullptr, next_key);
+		return map_get_next_key(nullptr, next_key, from_syscall);
 	}
 	itr++;
 	if (itr == map_impl.end()) {

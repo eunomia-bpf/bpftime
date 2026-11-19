@@ -56,7 +56,9 @@ my_bpf_syscall_fd(long cmd, union bpf_attr *attr, unsigned long size)
 	long fd;
 	do {
 		fd = libc_syscall(__NR_bpf, cmd, attr, size);
-	} while (fd < 0 && fd == -EAGAIN && --attempts > 0);
+		// libc syscall() returns -1 and sets errno on failure; it never
+		// returns -EAGAIN directly, so the retry must inspect errno.
+	} while (fd < 0 && errno == EAGAIN && --attempts > 0);
 	return fd;
 }
 

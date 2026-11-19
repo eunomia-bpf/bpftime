@@ -27,4 +27,5 @@ constexpr uint64_t PERF_UPROBE_REF_CTR_OFFSET_BITS = 32;
 constexpr uint64_t PERF_UPROBE_REF_CTR_OFFSET_SHIFT = 32;
 
 } // namespace bpftime
+
 #endif

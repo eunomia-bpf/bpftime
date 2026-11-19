@@ -21,12 +21,27 @@ on:
       - "CMakeLists.txt"
       - "Makefile"
       - ".gitmodules"
+
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 jobs:
+  pick-runner:
+    uses: ./.github/workflows/pick-runner.yml
+    permissions:
+      actions: read
+    with:
+      hosted: ubuntu-latest
+      jobs: 2
+
   build:
-    runs-on: ubuntu-latest
+    needs: pick-runner
+    # The VM runners or GitHub's, whichever is picked for this run; job
+    # containers on a VM runner run --privileged against that VM's own kernel.
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-latest"') }}
     strategy:
       matrix:
         container:
@@ -37,15 +52,13 @@ jobs:
       options: --privileged
     steps:
 
-    - name: cache dependencies
-      uses: actions/cache@v4
-      id: cache
-      with:
-        path: ${{ github.workspace }}/${{ env.INSTALL_LOCATION }}
-        key: ${{ runner.os }}-dependencies
     - uses: actions/checkout@v2
       with:
         submodules: 'recursive'
+    - name: Enable ccache
+      uses: ./.github/actions/ccache
+      with:
+        variant: ${{ matrix.container }}
     - uses: actions/setup-python@v4
       if: startsWith(matrix.container,'ubuntu')
       with:

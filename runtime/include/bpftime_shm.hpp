@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <functional>
 #if __linux__
+#include <linux/types.h>
 #include <sys/epoll.h>
 #elif __APPLE__
 #include "bpftime_epoll.h"
@@ -228,6 +229,10 @@ void bpftime_initialize_global_shm(bpftime::shm_open_type type);
 void bpftime_destroy_global_shm();
 // remove the global shared memory from system
 void bpftime_remove_global_shm();
+// true while the global SHM segment is constructed/mapped; backed by an
+// ordinary .bss flag, so it stays readable during process teardown after the
+// segment itself has been unmapped. Used to make atexit cleanup teardown-safe.
+bool bpftime_global_shm_is_initialized();
 
 // enable memory protect, e.g. mpk
 void bpftime_protect_enable();
@@ -338,10 +343,22 @@ long bpftime_map_update_elem(int fd, const void *key, const void *value,
 			     uint64_t flags);
 // use from bpf syscall to delete the elem
 long bpftime_map_delete_elem(int fd, const void *key);
+// Explicit-access-origin variants of the map element shims. from_syscall
+// must be true for an intercepted bpf() syscall (subject to the
+// BPF_F_RDONLY/BPF_F_WRONLY fd-mode checks) and false for a BPF program
+// helper request, including GPU program requests relayed through
+// cuda_shared_mem, which are not restricted by those fd flags.
+const void *bpftime_map_lookup_elem_with_origin(int fd, const void *key,
+						bool from_syscall);
+long bpftime_map_update_elem_with_origin(int fd, const void *key,
+					 const void *value, uint64_t flags,
+					 bool from_syscall);
+long bpftime_map_delete_elem_with_origin(int fd, const void *key,
+					 bool from_syscall);
 
-// use from bpf syscall to lookup and delete the elem (equivalent to pop for
-// queue/stack maps)
-long bpftime_map_lookup_and_delete_elem(int fd, void *value);
+// use from bpf syscall to look up and delete the elem: keyed for the hash
+// map types, keyless (a pop) for queue/stack maps
+long bpftime_map_lookup_and_delete_elem(int fd, const void *key, void *value);
 
 // Queue/stack map helper functions for push/pop/peek operations
 long bpftime_map_push_elem(int fd, const void *value, uint64_t flags);
@@ -389,6 +406,7 @@ int bpftime_add_software_perf_event_fd_to_epoll(int swpe_fd, int epoll_fd,
 						epoll_data_t extra_data);
 
 int bpftime_epoll_create();
+int bpftime_epoll_create_at(int fd);
 void *bpftime_get_ringbuf_consumer_page(int ringbuf_fd);
 void *bpftime_get_ringbuf_producer_page(int ringbuf_fd);
 
@@ -414,6 +432,8 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 
 int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 				    int64_t config);
+int bpftime_add_software_perf_event_at(int fd, int cpu, int32_t sample_type,
+				       int64_t config);
 int bpftime_is_software_perf_event(int fd);
 void *bpftime_get_software_perf_event_raw_buffer(int fd, size_t expected_size);
 int bpftime_perf_event_output(int fd, const void *buf, size_t sz);

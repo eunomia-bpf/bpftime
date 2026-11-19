@@ -27,19 +27,30 @@ set(TEST_SOURCES
     maps/test_stack_map.cpp
     maps/test_bloom_filter_map.cpp
     maps/test_lpm_trie_map.cpp
+    maps/test_ringbuf_map.cpp
+    maps/test_lpm_trie_inline_value.cpp
 
     maps/test_lru_var_hash_map.cpp
     maps/test_lru_hash_map.cpp
+    maps/test_map_flags_enforcement.cpp
+    maps/test_map_helper_errno.cpp
+    maps/test_map_syscall_semantics.cpp
 
     test_bpftime_shm_json.cpp
     test_probe.cpp
+    test_cpu_execution.cpp
     test_get_current_pid_tgid.cpp
     test_get_stack.cpp
+    test_tracepoint_id.cpp
     test_config.cpp
     test_shm_allocation_failure.cpp
     test_software_perf_event.cpp
+    test_software_perf_event_cache.cpp
     test_ringbuf_tail_wrap.cpp
     test_epoll.cpp
+    test_unregistered_helper.cpp
+    test_xdp_adjust_head.cpp
+    test_synthetic_kallsyms.cpp
 
     attach_with_ebpf/test_attach_uprobe_with_ebpf_trap.cpp
     attach_with_ebpf/test_helpers.cpp
@@ -67,12 +78,31 @@ endif()
 option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})
 
+# Compile the header fallback without CMake's DEFAULT_VM_NAME override.
+# Keep this object unlinked so its runtime_config definition cannot violate ODR.
+add_library(bpftime_config_header_test OBJECT test_default_vm_header.cpp)
+target_include_directories(bpftime_config_header_test PRIVATE
+    ${BPFTIME_RUNTIME_INCLUDE} ${Boost_INCLUDE_DIRS})
+target_compile_definitions(bpftime_config_header_test PRIVATE
+    $<$<BOOL:${BPFTIME_LLVM_JIT}>:BPFTIME_LLVM_JIT=1>
+    $<$<BOOL:${BPFTIME_UBPF_JIT}>:BPFTIME_UBPF_JIT=1>)
+set_property(TARGET bpftime_config_header_test PROPERTY CXX_STANDARD 20)
+add_dependencies(bpftime_runtime_tests bpftime_config_header_test)
+
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_sources(bpftime_runtime_tests PRIVATE
+        ../syscall-server/syscall_server_utils.cpp
+        ../syscall-server/syscall_context.cpp)
+    target_include_directories(bpftime_runtime_tests PRIVATE ../syscall-server)
+    target_link_libraries(bpftime_runtime_tests PRIVATE bpftime_syscall_trace_attach_impl ${CMAKE_DL_LIBS})
+    target_link_options(bpftime_runtime_tests PRIVATE -Wl,--wrap=dlsym)
     target_sources(bpftime_runtime_tests PRIVATE
         test_get_current_uid_gid.cpp
         test_get_current_comm.cpp)
     target_link_options(bpftime_runtime_tests PRIVATE
         -Wl,--wrap=getuid -Wl,--wrap=getgid
+        # Runtime unit tests require BPFTIME_BUILD_WITH_LIBBPF.
+        -Wl,--wrap=btf__parse_raw
         -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc)
 endif()
 
@@ -89,16 +119,20 @@ if(UNIX AND NOT APPLE)
         assets/shm_allocation_test_helper.c)
     add_executable(bpftime-runtime-options-test-helper
         assets/runtime_options_test_helper.c)
+    add_executable(bpftime-map-syscall-test-helper
+        assets/map_syscall_test_helper.c)
     set_property(TARGET bpftime-shm-allocation-test-helper PROPERTY C_STANDARD 99)
     set_property(TARGET bpftime-runtime-options-test-helper PROPERTY C_STANDARD 99)
+    set_property(TARGET bpftime-map-syscall-test-helper PROPERTY C_STANDARD 99)
     add_dependencies(bpftime_runtime_tests
         bpftime-agent
         bpftime-syscall-server
         bpftime-runtime-options-test-helper
+        bpftime-map-syscall-test-helper
         bpftime-shm-allocation-test-helper)
     file(GENERATE
         OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/shm_allocation_test_paths.hpp"
-        CONTENT "#define BPFTIME_SHM_ALLOCATION_TEST_HELPER \"$<TARGET_FILE:bpftime-shm-allocation-test-helper>\"\n#define BPFTIME_SYSCALL_SERVER_LIBRARY \"$<TARGET_FILE:bpftime-syscall-server>\"\n#define BPFTIME_AGENT_LIBRARY \"$<TARGET_FILE:bpftime-agent>\"\n")
+        CONTENT "#define BPFTIME_SHM_ALLOCATION_TEST_HELPER \"$<TARGET_FILE:bpftime-shm-allocation-test-helper>\"\n#define BPFTIME_MAP_SYSCALL_TEST_HELPER \"$<TARGET_FILE:bpftime-map-syscall-test-helper>\"\n#define BPFTIME_SYSCALL_SERVER_LIBRARY \"$<TARGET_FILE:bpftime-syscall-server>\"\n#define BPFTIME_AGENT_LIBRARY \"$<TARGET_FILE:bpftime-agent>\"\n")
     target_include_directories(bpftime_runtime_tests PRIVATE
         "${CMAKE_CURRENT_BINARY_DIR}")
 endif()
@@ -140,7 +174,7 @@ else()
     target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain ${CUDA_LIBS})
 endif()
 
-target_include_directories(bpftime_runtime_tests PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS} ${Catch2_INCLUDE} ${Boost_INCLUDE})
+target_include_directories(bpftime_runtime_tests PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS} ${Catch2_INCLUDE} ${Boost_INCLUDE} "${CMAKE_CURRENT_SOURCE_DIR}/../syscall-server")
 add_test(NAME bpftime_runtime_tests COMMAND bpftime_runtime_tests)
 
 # These are necessary ebpf program required by the test

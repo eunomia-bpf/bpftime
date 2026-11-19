@@ -178,7 +178,7 @@ ringbuf::ringbuf(uint32_t max_ent,
 	  raw_buffer(boost::interprocess::make_managed_unique_ptr(
 		  memory.construct<buf_vec>(
 			  boost::interprocess::anonymous_instance)(
-			  getpagesize() * 2 + max_ent * 2,
+			  getpagesize() * 2 + size_t(max_ent) * 2,
 			  vec_allocator(memory.get_segment_manager())),
 		  memory))
 {
@@ -322,6 +322,8 @@ void *ringbuf::reserve(size_t size, int self_fd)
 	header->len = size | BPF_RINGBUF_BUSY_BIT;
 	header->fd = self_fd;
 	smp_store_release_ul(producer_pos.get(), prod_pos + total_size);
+	// `off` is the header slot after any end-of-lap padding, so the sample
+	// always follows its header and never wraps on its own.
 	auto ptr = data.get() + off + BPF_RINGBUF_HDR_SZ;
 	SPDLOG_TRACE("ringbuf: reserved {} bytes at {}, fd {}", size,
 		     (void *)ptr, self_fd);

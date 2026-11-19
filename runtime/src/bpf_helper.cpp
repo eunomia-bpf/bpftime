@@ -4,6 +4,7 @@
  * All rights reserved.
  */
 #include "bpf_attach_ctx.hpp"
+#include "base_attach_impl.hpp"
 
 #include <csetjmp>
 #include <csignal>
@@ -23,11 +24,14 @@
 #include <pthread.h>
 #elif __linux__
 #include <pthread.h>
+#include <fcntl.h>
 #include <sys/syscall.h>
 #include <sys/uio.h>
 #endif
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include "bpf/bpf.h"
+#include "bpf/btf.h"
+#include "bpf/libbpf.h"
 #include "bpf/libbpf_common.h"
 #endif
 #include "bpftime_helper_group.hpp"
@@ -42,6 +46,8 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <cstring>
+#include <cstdlib>
+#include <mutex>
 #include <time.h>
 #include <unistd.h>
 #include <ctime>
@@ -67,13 +73,78 @@ __attribute__((weak)) bpftime::bpf_attach_ctx &get_global_attach_ctx()
 	throw std::runtime_error(
 		"Calling mocked get_global_attach_ctx, this is not expected");
 }
+
+#if __linux__ && defined(ENABLE_PROBE_READ_CHECK)
+// Event-scoped read-ahead for fault-safe probe reads.
+//
+// A user-stack walk issues hundreds of small (8/16 byte) probe reads per
+// event; with ENABLE_PROBE_READ_CHECK each one costs a process_vm_readv
+// syscall. Frame-pointer chains and CFA slots land on nearby, frequently
+// overlapping addresses. This window keeps the bytes fetched by the most
+// recent widened read so overlapping and adjacent reads are served by memcpy
+// without another syscall.
+//
+// The window is consulted only while an attach callback runs
+// (current_thread_attach_callback_depth is raised by attach_callback_scope
+// around frida/syscall callbacks; nested tail-call executions stay inside the
+// same event). Outside an event every read keeps its original single-syscall
+// path and timing, so standalone helper calls are unchanged. The window holds
+// a snapshot of userspace bytes for the lifetime of one event; a same-thread
+// probe_write_user invalidates it, and fork resets it. No signal handler, BPF
+// instruction, caller-facing API or persistent state is introduced.
+//
+// Coherence contract (M3): reads inside one event observe a single coherent
+// snapshot instead of each read independently fetching current memory. A
+// store that does not go through bpf_probe_write_user (another thread, or a
+// direct BPF map-pointer write) is therefore only visible from the next event.
+// This matches the probe model where the callback runs synchronously on the
+// hooked thread and the profiled target code is not running concurrently.
+//
+// Destination contract (M2): source-address fault isolation is unchanged - a
+// bad source still returns -EFAULT via the kernel. The hit/fill memcpy writes
+// to the BPF program's own destination buffer, which the BPF verifier requires
+// to be a valid, large-enough stack/map buffer; a fully fault-safe destination
+// is still guaranteed on the out-of-event exact-read path. The trap/SIGTRAP
+// signal path never opens an attach scope, so this window never activates there
+// (bpf_probe_read is also not in the async-signal-safe helper set).
+namespace
+{
+constexpr size_t PROBE_READ_AHEAD_CAP = 128;
+
+struct probe_read_ahead_window {
+	const char *base = nullptr;
+	size_t len = 0;
+	unsigned long long generation = 0;
+	char storage[PROBE_READ_AHEAD_CAP];
+};
+
+thread_local probe_read_ahead_window tls_probe_read_ahead;
+
+inline bool probe_read_ahead_active()
+{
+	return bpftime::attach::current_thread_attach_callback_depth > 0;
+}
+
+inline void probe_read_ahead_invalidate()
+{
+	tls_probe_read_ahead.base = nullptr;
+	tls_probe_read_ahead.len = 0;
+	tls_probe_read_ahead.generation = 0;
+}
+} // namespace
+#endif
 extern "C" {
 
 #if __linux__ && \
 	(defined(ENABLE_PROBE_READ_CHECK) || defined(ENABLE_PROBE_WRITE_CHECK))
 static pid_t probe_access_pid = getpid();
 static const int probe_access_atfork_status = pthread_atfork(
-	nullptr, nullptr, [] { probe_access_pid = getpid(); });
+	nullptr, nullptr, [] {
+		probe_access_pid = getpid();
+#if defined(ENABLE_PROBE_READ_CHECK) && __linux__
+		probe_read_ahead_invalidate();
+#endif
+	});
 #endif
 
 uint64_t bpftime_override_return(uint64_t ctx, uint64_t value);
@@ -85,12 +156,16 @@ uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
 	va_list args;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#pragma GCC diagnostic ignored "-Wvarargs"
-	va_start(args, fmt_str);
+	va_start(args, fmt_size);
 	long ret = vprintf(fmt_str, args);
 #pragma GCC diagnostic pop
 	va_end(args);
 	return 0;
+}
+
+uint64_t bpftime_seq_write(uint64_t, uint64_t, uint64_t)
+{
+	return -EOPNOTSUPP;
 }
 
 long bpftime_strncmp(const char *s1, uint64_t s1_sz, const char *s2)
@@ -99,6 +174,7 @@ long bpftime_strncmp(const char *s1, uint64_t s1_sz, const char *s2)
 }
 
 #ifdef ENABLE_PROBE_READ_CHECK
+static size_t probe_page_remaining(const void *address);
 #if defined(__linux__)
 /*
  * Fast path for probe reads of the agent's own address space.
@@ -193,15 +269,65 @@ static bool probe_read_memory(void *dst, const void *src, size_t size)
 				      &copied) == KERN_SUCCESS &&
 	       copied == size;
 #elif __linux__
-	/* Fast path: own address space, fault-guarded memcpy (no syscall). */
-	if (probe_read_local_guarded(dst, src, size))
+	pid_t pid = probe_access_atfork_status == 0 ? probe_access_pid :
+							  getpid();
+	/* Fast path: own address space, fault-guarded memcpy (no syscall).
+	 * Only sound for this process's own memory: a cross-process or
+	 * pre-fork address either faults (falling through to the readv
+	 * paths) or, worse, aliases an unrelated local mapping. */
+	if (probe_access_atfork_status == 0 && pid == getpid() &&
+	    probe_read_local_guarded(dst, src, size))
 		return true;
-	/* Faulted or cross-process: fall back to process_vm_readv. */
+	if (probe_read_ahead_active()) {
+		auto &window = tls_probe_read_ahead;
+		uintptr_t addr = reinterpret_cast<uintptr_t>(src);
+		uintptr_t base = reinterpret_cast<uintptr_t>(window.base);
+		if (window.base != nullptr &&
+		    window.generation ==
+			    bpftime::attach::
+				    current_thread_attach_event_generation &&
+		    addr >= base && addr - base <= window.len &&
+		    size <= window.len - (addr - base)) {
+			// Full overlap with the bytes fetched by the previous
+			// syscall: no new syscall is needed.
+			memcpy(dst, window.storage + (addr - base), size);
+			return true;
+		}
+		// Miss. Widen the fetch inside the source page so following
+		// adjacent reads hit the window. Requests larger than the
+		// window or crossing a page boundary use the exact read below.
+		size_t room = probe_page_remaining(src);
+		if (size <= PROBE_READ_AHEAD_CAP && size <= room) {
+			size_t fetch = std::min(room, PROBE_READ_AHEAD_CAP);
+			struct iovec wide_local = { window.storage, fetch };
+			struct iovec wide_remote = { const_cast<void *>(src),
+						    fetch };
+			ssize_t got = syscall(SYS_process_vm_readv, pid,
+					      &wide_local, 1, &wide_remote, 1,
+					      0);
+			if (got >= (ssize_t)size) {
+				// The requested prefix is intact even if an
+				// inaccessible neighbour truncated the tail.
+				window.base = static_cast<const char *>(src);
+				window.len = (size_t)got;
+				window.generation =
+					bpftime::attach::
+						current_thread_attach_event_generation;
+				memcpy(dst, window.storage, size);
+				return true;
+			}
+			// The request itself cannot be fully read. Drop the
+			// partial window and let the exact call produce the
+			// canonical failure for the caller's destination.
+			probe_read_ahead_invalidate();
+		} else {
+			probe_read_ahead_invalidate();
+		}
+	}
 	struct iovec local = { dst, size };
 	struct iovec remote = { const_cast<void *>(src), size };
-	return syscall(SYS_process_vm_readv,
-		       probe_access_atfork_status == 0 ? probe_access_pid : getpid(),
-		       &local, 1, &remote, 1, 0) == (ssize_t)size;
+	return syscall(SYS_process_vm_readv, pid, &local, 1, &remote, 1,
+		       0) == (ssize_t)size;
 #else
 #error "Probe memory checks are unsupported on this platform"
 #endif
@@ -230,6 +356,8 @@ static bool probe_write_memory(void *dst, const void *src, size_t size)
 {
 	if (size == 0)
 		return true;
+	// Read-window invalidation is owned by bpftime_probe_write_user() so it
+	// applies to both the fault-safe and raw-memcpy write branches.
 #if __APPLE__
 	mach_vm_size_t copied = 0;
 	return mach_vm_read_overwrite(mach_task_self(), (mach_vm_address_t)src,
@@ -256,6 +384,12 @@ int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
 		SPDLOG_ERROR("Invalid len: {}", len);
 		return -EFAULT;
 	}
+#if defined(ENABLE_PROBE_READ_CHECK) && __linux__
+	// A same-thread write can change bytes the read-ahead window holds.
+	// Do this before the write-check branch so a raw memcpy write (write
+	// checking disabled) still cannot make a later read return stale data.
+	probe_read_ahead_invalidate();
+#endif
 #ifdef ENABLE_PROBE_WRITE_CHECK
 	return probe_write_memory((void *)dst, (void *)src, (size_t)len) ?
 		       0 :
@@ -295,6 +429,42 @@ uint64_t bpftime_ktime_get_boot_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 	return spec.tv_sec * (uint64_t)1000000000 + spec.tv_nsec;
 }
 
+#if __linux__
+static int get_host_nspid(const char *procfs, const char *entry, int fallback)
+{
+	if (procfs == nullptr || procfs[0] == '\0')
+		return fallback;
+	char path[PATH_MAX];
+	int length = snprintf(path, sizeof(path), "%s/%s/status", procfs, entry);
+	if (length < 0 || static_cast<size_t>(length) >= sizeof(path))
+		return fallback;
+	FILE *file = fopen(path, "re");
+	if (file == nullptr)
+		return fallback;
+	char *line = nullptr;
+	size_t capacity = 0;
+	int result = fallback;
+	// The Groups line can be arbitrarily long and precedes NSpid in procfs.
+	// getline also avoids accepting a PID truncated at a read boundary.
+	while (getline(&line, &capacity, file) >= 0) {
+		if (strncmp(line, "NSpid:", 6) != 0)
+			continue;
+		char *end = nullptr;
+		errno = 0;
+		long value = strtol(line + 6, &end, 10);
+		if (errno == 0 && end != line + 6 && value > 0 &&
+		    value <= INT32_MAX && (*end == ' ' || *end == '\t' ||
+					  *end == '\n' || *end == '\0'))
+			result = static_cast<int>(value);
+		break;
+	}
+	free(line);
+	fclose(file);
+	return result;
+}
+static thread_local uint64_t bpftime_cached_host_identity = 0;
+#endif
+
 // bpf_get_current_pid_tgid caches the identity so it does not pay a syscall on
 // every call. The cache cannot be function-local: a forked child inherits the
 // parent's cached values, and would report the parent's pid and tid. These live
@@ -325,11 +495,14 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 {
 	// If registering the fork handler failed, the cache is still the
 	// parent's after a fork, so read the identity directly. The probe
-	// access cache above falls back the same way.
+	// access cache above falls back the same way. This exceptional path
+	// also recomputes procfs translation on each call.
 	if (bpftime_identity_atfork_status != 0) {
 #if __linux__
-		return ((uint64_t)getpid() << 32) |
-		       static_cast<uint32_t>(syscall(SYS_gettid));
+		const char *procfs = getenv("BPFTIME_HOST_PROCFS");
+		return (uint64_t(get_host_nspid(procfs, "self", getpid())) << 32) |
+		       uint32_t(get_host_nspid(procfs, "thread-self",
+					      syscall(SYS_gettid)));
 #elif __APPLE__
 		uint64_t tid = 0;
 		pthread_threadid_np(NULL, &tid);
@@ -339,13 +512,87 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 #if __linux__
 	if (bpftime_cached_tid == -1) {
 		bpftime_cached_tid = static_cast<int>(syscall(SYS_gettid));
+		const char *procfs = getenv("BPFTIME_HOST_PROCFS");
+		bpftime_cached_host_identity =
+			(uint64_t(get_host_nspid(procfs, "self", bpftime_cached_tgid)) << 32) |
+			uint32_t(get_host_nspid(procfs, "thread-self", bpftime_cached_tid));
 	}
 #elif __APPLE__
 	if (bpftime_cached_tid == UINT64_MAX) {
 		pthread_threadid_np(NULL, &bpftime_cached_tid);
 	}
 #endif
+#if __linux__
+	return bpftime_cached_host_identity;
+#else
 	return ((uint64_t)bpftime_cached_tgid << 32) | bpftime_cached_tid;
+#endif
+}
+
+uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t, uint64_t,
+				  uint64_t)
+{
+#if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))
+	// Keep the per-thread task storage on the heap through a pthread key
+	// instead of a thread_local buffer. This library can be linked into a
+	// dlopen'ed module that carries initial-exec TLS; a multi-KB thread_local
+	// would land in its static TLS block and exhaust the limited static TLS
+	// surplus ("cannot allocate memory in static TLS block").
+	static const size_t task_storage_size = []() -> size_t {
+		// Covers current kernels when BTF is unavailable. A host with a
+		// larger task_struct uses its actual BTF size instead.
+		constexpr size_t fallback = 64 * 1024;
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
+		struct btf *btf = btf__parse_raw("/sys/kernel/btf/vmlinux");
+		if (btf != nullptr && libbpf_get_error(btf) == 0) {
+			int id = btf__find_by_name_kind(btf, "task_struct", BTF_KIND_STRUCT);
+			int64_t size = id > 0 ? btf__resolve_size(btf, id) : -1;
+			btf__free(btf);
+			if (size >= static_cast<int64_t>(sizeof(void *)))
+				return static_cast<size_t>(size);
+		}
+#endif
+		return fallback;
+	}();
+	static pthread_key_t task_key;
+	static const int task_key_status = pthread_key_create(&task_key, free);
+	if (task_key_status != 0)
+		return 0;
+	uint8_t *task = static_cast<uint8_t *>(pthread_getspecific(task_key));
+	if (task == nullptr) {
+		void *raw = nullptr;
+		if (posix_memalign(&raw, 64, task_storage_size) != 0)
+			return 0;
+		task = static_cast<uint8_t *>(raw);
+		memset(task, 0, task_storage_size);
+		if (pthread_setspecific(task_key, task) != 0) {
+			free(task);
+			return 0;
+		}
+	}
+	static const size_t tpbase_offset = [] {
+		const char *text =
+			getenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET");
+		if (text == nullptr)
+			return SIZE_MAX;
+		char *end = nullptr;
+		errno = 0;
+		unsigned long value = strtoul(text, &end, 0);
+		return errno == 0 && end != text && *end == '\0' &&
+				       value <= task_storage_size -
+						       sizeof(void *) ?
+			       (size_t)value :
+			       SIZE_MAX;
+	}();
+	if (tpbase_offset != SIZE_MAX) {
+		void *thread_pointer = __builtin_thread_pointer();
+		memcpy(task + tpbase_offset, &thread_pointer,
+		       sizeof(thread_pointer));
+	}
+	return (uint64_t)(uintptr_t)task;
+#else
+	return 0;
+#endif
 }
 
 uint64_t bpf_get_current_uid_gid(uint64_t, uint64_t, uint64_t, uint64_t,
@@ -363,14 +610,117 @@ uint64_t bpftime_ktime_get_ns(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 	return ns.time_since_epoch().count();
 }
 
+// Copy a task name into the caller buffer with bpf_get_current_comm
+// semantics. strncpy alone leaves the destination without a terminator
+// when the name fills the whole buffer, so the last byte is forced to
+// NUL. A zero-sized buffer must not be touched at all.
+void bpftime_copy_comm(char *buf, size_t size, const char *comm)
+{
+	if (size == 0)
+		return;
+	strncpy(buf, comm, size);
+	buf[size - 1] = '\0';
+}
+
+#if __linux__
+// Process-wide cache of the executable basename reported by
+// bpf_get_current_comm. It deliberately stays in BSS with pthread_once
+// publication so every failure mode of the previous std::string cache
+// (removed by #723) is absent:
+//  - no heap allocation on any call, so an uprobe on malloc/mmap/brk cannot
+//    re-enter a held allocator lock (the first call stays allocation-free,
+//    covered by the [reentry] unit test);
+//  - pthread_once orders the first publication, so concurrent first calls
+//    cannot race on the buffer;
+//  - execve replaces the whole address space and rebuilds this BSS state, so
+//    the new image always resolves its own name; fork inherits an equally
+//    valid name because /proc/self/exe does not change across fork.
+// The init routine performs only a raw readlink syscall and string scans, so
+// a thread blocked in pthread_once cannot wait on an allocator lock.
+//
+// pthread_once is not async-signal-safe: the cache relies on being called from
+// ordinary thread context (the frida backend). Trap-backend BPF links run in
+// SIGTRAP context and admit only an audited async-signal-safe helper set
+// (see attach/trap_uprobe_attach_impl/README.md), so this helper must be
+// re-audited before ever being admitted there.
+//
+// A fork concurrent with another thread running the once routine would let
+// the child inherit an in-progress control word with no thread to finish it.
+// The atfork child handler resets the cache, mirroring the pid/tgid cache
+// handling from #812.
+namespace
+{
+struct current_comm_cache {
+	pthread_once_t once = PTHREAD_ONCE_INIT;
+	char basename[PATH_MAX] = {};
+	bool valid = false;
+};
+
+current_comm_cache &get_current_comm_cache()
+{
+	// constinit turns the BSS/no-dynamic-init requirement above into a
+	// compile-time guarantee: no guard variable and no atexit registration.
+	constinit static current_comm_cache cache;
+	return cache;
+}
+
+void initialize_current_comm_cache()
+{
+	auto &cache = get_current_comm_cache();
+	char path[PATH_MAX];
+	auto len = readlink("/proc/self/exe", path, sizeof(path) - 1);
+	if (len == -1)
+		return;
+	path[len] = '\0';
+	const char *filename = path;
+	for (decltype(len) index = 0; index < len; ++index) {
+		if (path[index] == '/')
+			filename = path + index + 1;
+	}
+	strncpy(cache.basename, filename, sizeof(cache.basename) - 1);
+	cache.basename[sizeof(cache.basename) - 1] = '\0';
+	cache.valid = true;
+}
+
+void reset_current_comm_cache_in_child()
+{
+	// The child has a single thread, so re-arming the once control word
+	// cannot race with a waiter.
+	auto &cache = get_current_comm_cache();
+	cache.once = PTHREAD_ONCE_INIT;
+	cache.valid = false;
+}
+
+const int current_comm_atfork_status =
+	pthread_atfork(nullptr, nullptr, reset_current_comm_cache_in_child);
+} // namespace
+#endif
+
 uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
 				  uint64_t, uint64_t)
 {
+#if __linux__
+	// If the fork handler could not be registered, a forked child might keep
+	// an in-progress once word, so bypass the cache and resolve every call
+	// directly, exactly as #723 did.
+	if (current_comm_atfork_status == 0) {
+		auto &cache = get_current_comm_cache();
+		pthread_once(&cache.once, initialize_current_comm_cache);
+		if (cache.valid) {
+			bpftime_copy_comm((char *)(uintptr_t)buf, (size_t)size,
+					  cache.basename);
+			return 0;
+		}
+	}
+	// First resolution failed (for example /proc unavailable), or the atfork
+	// handler registration failed: keep the historical per-call retry and
+	// its return code.
+#endif
 	// This helper can run from an allocation callback (for example an
 	// uprobe on malloc/mmap) while libc already holds an allocator lock.
 	// A lazily initialized std::string takes the heap on its first long
-	// value, which re-enters the allocator and can self-deadlock. Resolve
-	// the executable basename into a stack buffer on every call instead.
+	// value, which re-enters the allocator and can self-deadlock. The
+	// fallback path resolves the name into a stack buffer without heap.
 	char strbuf[PATH_MAX];
 	auto len = readlink("/proc/self/exe", strbuf, std::size(strbuf) - 1);
 	if (len == -1)
@@ -381,8 +731,23 @@ uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
 		if (strbuf[index] == '/')
 			filename = strbuf + index + 1;
 	}
-	strncpy((char *)(uintptr_t)buf, filename, (size_t)size);
+	bpftime_copy_comm((char *)(uintptr_t)buf, (size_t)size, filename);
 	return 0;
+}
+// Userspace map backends report failure the libc way: -1 with the host errno
+// set. The kernel's bpf_map_*_elem helpers report a negative errno in the
+// return value instead, and BPF programs branch on -EEXIST/-ENOENT/-E2BIG.
+// Translate here, at the BPF-helper boundary only: the syscall-facing shims
+// keep the -1 + errno contract. A backend that already returns a specific
+// kernel errno (for example -ENOTSUP from an unsupported operation) passes
+// through unchanged.
+static uint64_t kernel_map_helper_result(long result)
+{
+	if (result >= 0)
+		return 0;
+	if (result != -1)
+		return (uint64_t)result;
+	return (uint64_t)-(errno != 0 ? errno : EINVAL);
 }
 
 uint64_t bpftime_map_lookup_elem_helper(uint64_t map, uint64_t key, uint64_t,
@@ -396,37 +761,41 @@ uint64_t bpftime_map_update_elem_helper(uint64_t map, uint64_t key,
 					uint64_t value, uint64_t flags,
 					uint64_t)
 {
-	return (uint64_t)
+	return kernel_map_helper_result(
 		bpftime::shm_holder.global_shared_memory.bpf_map_update_elem(
-			(int)map, (void *)key, (void *)value, flags, false);
+			(int)map, (void *)key, (void *)value, flags, false));
 }
 
 uint64_t bpftime_map_delete_elem_helper(uint64_t map, uint64_t key, uint64_t,
 					uint64_t, uint64_t)
 {
-	return (uint64_t)bpftime::shm_holder.global_shared_memory
-		.bpf_delete_elem((int)map, (void *)key, false);
+	return kernel_map_helper_result(
+		bpftime::shm_holder.global_shared_memory.bpf_delete_elem(
+			(int)map, (void *)key, false));
 }
 
 uint64_t bpftime_map_push_elem_helper(uint64_t map, uint64_t value,
 				      uint64_t flags, uint64_t, uint64_t)
 {
-	return (uint64_t)bpftime::shm_holder.global_shared_memory
-		.bpf_map_push_elem((int)map, (void *)value, flags, false);
+	return kernel_map_helper_result(
+		bpftime::shm_holder.global_shared_memory.bpf_map_push_elem(
+			(int)map, (void *)value, flags, false));
 }
 
 uint64_t bpftime_map_pop_elem_helper(uint64_t map, uint64_t value, uint64_t,
 				     uint64_t, uint64_t)
 {
-	return (uint64_t)bpftime::shm_holder.global_shared_memory
-		.bpf_map_pop_elem((int)map, (void *)value, false);
+	return kernel_map_helper_result(
+		bpftime::shm_holder.global_shared_memory.bpf_map_pop_elem(
+			(int)map, (void *)value, false));
 }
 
 uint64_t bpftime_map_peek_elem_helper(uint64_t map, uint64_t value, uint64_t,
 				      uint64_t, uint64_t)
 {
-	return (uint64_t)bpftime::shm_holder.global_shared_memory
-		.bpf_map_peek_elem((int)map, (void *)value, false);
+	return kernel_map_helper_result(
+		bpftime::shm_holder.global_shared_memory.bpf_map_peek_elem(
+			(int)map, (void *)value, false));
 }
 
 #ifdef ENABLE_PROBE_READ_CHECK
@@ -522,10 +891,8 @@ uint64_t bpf_ringbuf_output(uint64_t rb, uint64_t data, uint64_t size,
 			    uint64_t flags, uint64_t)
 {
 	int fd = (int)rb;
-	if (flags != 0) {
-		SPDLOG_WARN(
-			"Currently only supports ringbuf_output with flags=0");
-	}
+	if (flags & ~(BPF_RB_NO_WAKEUP | BPF_RB_FORCE_WAKEUP))
+		return (uint64_t)-EINVAL;
 	auto buf = bpftime_ringbuf_reserve(fd, size);
 	if (!buf) {
 		SPDLOG_ERROR("Failed to reserve when executing ringbuf output");
@@ -582,26 +949,22 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 			"Unable to get current cpu when running perf event output");
 		return (uint64_t)-1;
 	}
-	cpu_set_t mask, orig;
-	CPU_ZERO(&mask);
-	CPU_SET(current_cpu, &mask);
-	if (sched_getaffinity(0, sizeof(orig), &orig) < 0)
-		return (uint64_t)-1;
-	// Bind to the current cpu
-	if (sched_setaffinity(0, sizeof(mask), &mask) < 0) {
-		SPDLOG_ERROR("Failed to set cpu affinity: {}", errno);
-		errno = EINVAL;
-		return (uint64_t)(-1);
-	}
+	// Software perf events are sharded by (pid, tid) and the consumer polls
+	// every slot, so no per-cpu invariant has to be emulated in userspace.
+	// Pinning the thread to the current cpu around each output cost three
+	// scheduler syscalls (getaffinity + two setaffinity) and forced two
+	// migrations per event for no correctness benefit. The cpu index comes
+	// from the vDSO via my_sched_getcpu(); a thread migrating between calls
+	// only selects a different array slot, which the consumer already
+	// enumerates.
 	int fd = (int)map;
 	// Check map type. userspace perf event array, or shared perf event
 	// array?
 	bpftime::bpf_map_type map_ty;
-	int ret = -1;
 	if (int err = bpftime_map_get_info(fd, nullptr, nullptr, &map_ty);
 	    err < 0) {
 		SPDLOG_ERROR("Unable to query map type of fd {}", fd);
-		goto restore_affinity;
+		return (uint64_t)-1;
 	}
 	if (map_ty == bpftime::bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY) {
 		const int32_t *val_ptr =
@@ -612,33 +975,82 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 			SPDLOG_ERROR("Invalid map fd for perf event output: {}",
 				     fd);
 			errno = EINVAL;
-			goto restore_affinity;
+			return (uint64_t)-1;
 		}
 		int32_t perf_handler_fd = *val_ptr;
-		ret = bpftime_perf_event_output(perf_handler_fd,
-						(const void *)(uintptr_t)data,
-						(size_t)size);
+		return (uint64_t)bpftime_perf_event_output(
+			perf_handler_fd, (const void *)(uintptr_t)data,
+			(size_t)size);
 	}
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 	else if (map_ty == bpftime::bpf_map_type::
 				   BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY) {
-		ret = bpftime_shared_perf_event_output(
+		return (uint64_t)bpftime_shared_perf_event_output(
 			fd, (const void *)(uintptr_t)data, (size_t)size);
 	}
 #endif
 	else {
 		SPDLOG_ERROR(
 			"Attempting to run perf_output on a non-perf array map");
-		ret = -1;
-	}
-
-restore_affinity:
-	// Cleanup must not overwrite an error from the output operation.
-	const int saved_errno = errno;
-	if (sched_setaffinity(0, sizeof(orig), &orig) < 0 && ret >= 0)
 		return (uint64_t)-1;
-	errno = saved_errno;
-	return (uint64_t)ret;
+	}
+}
+
+// Tail-call targets always receive a 64-byte context buffer.
+//
+// The helper's ctx may be either host-owned memory from the region passed
+// to bpftime_prog::bpftime_prog_exec (whose pointer and size are published
+// per thread), or a replacement context the running BPF program built on
+// its own BPF stack and passed as r1. The BPF ABI carries no size for the
+// latter, so only pointers contained in the host entry region are bounded;
+// replacement contexts keep the historical full 64-byte copy.
+//
+// Safety of a replacement context (the pointer actually lands on the
+// program's BPF stack and 64 bytes are readable there) is a verifier/ABI
+// precondition this helper cannot enforce without BPF-stack metadata; a
+// malformed program pointing r1 outside its stack frame is tracked under
+// the verifier-bypass work (issue #699).
+static void bpftime_prepare_tail_call_context(char (&context)[64],
+					      uint64_t ctx)
+{
+	constexpr size_t tail_call_context_size = 64;
+	if (ctx == 0) {
+		memset(context, 0, tail_call_context_size);
+		return;
+	}
+	const uintptr_t ctx_addr = (uintptr_t)ctx;
+	size_t copy_size = tail_call_context_size;
+	if (bpftime::current_thread_exec_ctx.has_value()) {
+		const auto &entry = *bpftime::current_thread_exec_ctx;
+		const uintptr_t entry_begin =
+			reinterpret_cast<uintptr_t>(entry.ptr);
+		const uintptr_t entry_end = entry_begin + entry.size;
+		if (ctx_addr >= entry_begin && ctx_addr < entry_end) {
+			// Inside the host entry region (exact base or an
+			// interior alias such as entry + 4): only the bytes
+			// from the alias to the region end are known valid.
+			copy_size = std::min(
+				static_cast<size_t>(entry_end - ctx_addr),
+				tail_call_context_size);
+		}
+		// Fully outside the region: a program-owned replacement
+		// context; copy all 64 bytes as the ABI historically does.
+	} else {
+		// Helper reached without any published exec context: the
+		// real size is unknown, so keep the historical 64-byte copy
+		// (still capped to the destination buffer) and warn once.
+		static std::once_flag tail_call_ctx_info_warn_once;
+		std::call_once(tail_call_ctx_info_warn_once, [] {
+			SPDLOG_WARN(
+				"tail_call: exec context info is unavailable; copying the full 64-byte tail-call context");
+		});
+	}
+	memcpy(context, reinterpret_cast<const void *>(ctx_addr),
+	       copy_size);
+	if (copy_size < tail_call_context_size) {
+		memset(context + copy_size, 0,
+		       tail_call_context_size - copy_size);
+	}
 }
 
 uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
@@ -700,12 +1112,7 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 		}
 
 		char context[64];
-		if (ctx) {
-			memcpy(context, (const void *)(uintptr_t)ctx,
-			       sizeof(context));
-		} else {
-			memset(context, 0, sizeof(context));
-		}
+		bpftime_prepare_tail_call_context(context, ctx);
 		uint64_t retval = 0;
 		int err = prog->bpftime_prog_exec(context, sizeof(context),
 						  &retval);
@@ -721,11 +1128,7 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 
 #if __linux__ && defined(BPFTIME_BUILD_WITH_LIBBPF)
 	char context[64];
-	if (ctx) {
-		memcpy(context, (const void *)(uintptr_t)ctx, 64);
-	} else {
-		memset(context, 0, sizeof(context));
-	}
+	bpftime_prepare_tail_call_context(context, ctx);
 	LIBBPF_OPTS(bpf_test_run_opts, run_opts, .ctx_in = context,
 		    // .ctx_out = context_out,
 		    .ctx_size_in = sizeof(context),
@@ -823,11 +1226,18 @@ long bpftime_xdp_adjust_head(struct xdp_md_userspace *xdp, int offset)
 	if (unlikely(data > xdp->data_end - ETH_HLEN) || data > xdp->buffer_end)
 		return -EINVAL;
 	if (data < xdp->buffer_start) {
-		// move the data so the buffer can place the new header
-		memmove(reinterpret_cast<void *>(xdp->buffer_start +
-						 (xdp->buffer_start - data)),
-			reinterpret_cast<void *>(xdp->data),
-			xdp->data_end - xdp->data);
+		// The requested head is before the buffer, so the head can only
+		// move as far as buffer_start. Move the packet there so that the
+		// bytes xdp->data is about to point at are the packet, and so the
+		// move stays inside [buffer_start, buffer_end): the old form
+		// computed the destination as
+		// buffer_start + (buffer_start - data), which both lands past the
+		// requested head and can run beyond buffer_end.
+		uint64_t len = xdp->data_end - xdp->data;
+		if (len > xdp->buffer_end - xdp->buffer_start)
+			return -EINVAL;
+		memmove(reinterpret_cast<void *>(xdp->buffer_start),
+			reinterpret_cast<void *>(xdp->data), len);
 		data = xdp->buffer_start;
 	}
 	xdp->data = data;
@@ -881,12 +1291,12 @@ int64_t bpftime_get_stackid(uint64_t ctx_raw, uint64_t map_raw, uint64_t flags,
 	auto raw_ptr = (*attach_impl)
 			       ->call_attach_specific_function("generate_stack",
 							       nullptr);
-	if (raw_ptr == nullptr) {
-		SPDLOG_ERROR("Unable to get stack trace");
-		return -ENOENT;
-	}
+	// No frames is normal when the probe has no unwinding context, such as a
+	// syscall-trace or tracepoint program whose pt_regs was synthesized:
+	// treat it as an empty stack rather than an error.
 	std::unique_ptr<std::vector<uint64_t>> result(
-		(std::vector<uint64_t> *)raw_ptr);
+		raw_ptr != nullptr ? (std::vector<uint64_t> *)raw_ptr :
+				     new std::vector<uint64_t>());
 
 	auto frames_to_skip = flags & BPF_F_SKIP_FIELD_MASK;
 	SPDLOG_DEBUG("Skipping {} frames", frames_to_skip);
@@ -911,14 +1321,16 @@ int64_t bpftime_get_stackid(uint64_t ctx_raw, uint64_t map_raw, uint64_t flags,
 					 flags & BPF_F_FAST_STACK_CMP);
 
 	SPDLOG_DEBUG("Got stackid {}", ret);
-	return (uint32_t)ret;
+	// Keep negative errno values (e.g. -EEXIST on a collision) intact;
+	// valid stack ids are non-negative and unchanged by the conversion.
+	return ret;
 }
 
 int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 			  uint64_t flags, uint64_t)
 {
 	if (!(flags & BPF_F_USER_STACK)) {
-		SPDLOG_ERROR(
+		SPDLOG_DEBUG(
 			"bpftime_get_stack only supports collect user stack!");
 		return -ENOTSUP;
 	}
@@ -949,8 +1361,15 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 			       ->call_attach_specific_function("generate_stack",
 							       nullptr);
 	if (raw_ptr == nullptr) {
-		SPDLOG_ERROR("Unable to get stack trace");
-		return -ENOENT;
+		// No frames: the probe ran where no userspace stack can be
+		// unwound, such as a syscall-trace or tracepoint program
+		// whose pt_regs was synthesized. The kernel reports that as
+		// an empty stack, so copy nothing and report zero bytes
+		// instead of an error the program would have to special-case.
+		SPDLOG_DEBUG("No stack frames available");
+		if (size > 0)
+			memset(buffer, 0, size);
+		return 0;
 	}
 	std::unique_ptr<std::vector<uint64_t>> result(
 		(std::vector<uint64_t> *)raw_ptr);
@@ -963,8 +1382,10 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 		return -EFAULT;
 	}
 
+	// Both operands must be the same type: on arm64 Darwin uint64_t is
+	// unsigned long long while size_t is unsigned long, which libc++ rejects.
 	auto frames_to_copy =
-		std::min(result->size() - frames_to_skip,
+		std::min(static_cast<size_t>(result->size() - frames_to_skip),
 			 static_cast<size_t>(size / sizeof(uint64_t)));
 	auto size_to_copy = frames_to_copy * sizeof(uint64_t);
 	SPDLOG_DEBUG("Copied {} bytes of stack", size_to_copy);
@@ -1333,6 +1754,12 @@ bpftime_helper_group::get_kernel_utils_helper_group()
 			    .name = "bpf_ktime_get_boot_ns",
 			    .fn = (void *)bpftime_ktime_get_boot_ns,
 		    } },
+		  { BPF_FUNC_seq_write,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_seq_write,
+			    .name = "bpf_seq_write",
+			    .fn = (void *)bpftime_seq_write,
+		    } },
 		  { BPF_FUNC_trace_printk,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_trace_printk,
@@ -1356,6 +1783,16 @@ bpftime_helper_group::get_kernel_utils_helper_group()
 			    .index = BPF_FUNC_get_current_uid_gid,
 			    .name = "bpf_get_current_uid_gid",
 			    .fn = (void *)bpf_get_current_uid_gid } },
+		  { BPF_FUNC_get_current_task,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_get_current_task,
+			    .name = "bpf_get_current_task",
+			    .fn = (void *)bpftime_get_current_task } },
+		  { BPF_FUNC_get_current_task_btf,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_get_current_task_btf,
+			    .name = "bpf_get_current_task_btf",
+			    .fn = (void *)bpftime_get_current_task } },
 		  { BPF_FUNC_get_current_comm,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_get_current_comm,

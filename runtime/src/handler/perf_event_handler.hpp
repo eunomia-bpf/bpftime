@@ -21,6 +21,8 @@
 #endif
 #include "bpftime_shm.hpp"
 #include <pthread.h>
+// Darwin libpthread lacks pthread_spinlock_t; use the cross-platform wrapper.
+#include "spinlock_wrapper.hpp"
 #include <variant>
 
 namespace bpftime
@@ -238,6 +240,12 @@ struct bpf_perf_event_handler {
 	bpf_perf_event_handler(int type, const char *attach_arg,
 			       boost::interprocess::managed_shared_memory &mem);
 };
+
+#if defined(BPFTIME_UNIT_TESTING)
+// Number of live entries in this thread's software perf shard cache. Exists so
+// the unit tests can tell a round-robin replacement from a clear-all eviction.
+size_t cached_software_perf_event_shard_count();
+#endif
 
 } // namespace bpftime
 

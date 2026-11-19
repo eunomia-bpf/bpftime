@@ -78,6 +78,11 @@ extern "C" void bpftime_destroy_global_shm()
 	}
 }
 
+extern "C" bool bpftime_global_shm_is_initialized()
+{
+	return global_shm_initialized;
+}
+
 extern "C" void bpftime_remove_global_shm()
 {
 	using namespace bpftime;
@@ -162,7 +167,12 @@ public:
 		if (locked && mutex != nullptr) {
 			try {
 				mutex->unlock();
+			} catch (const std::exception &ex) {
+				SPDLOG_WARN(
+					"Unable to unlock bpftime pid set: {}",
+					ex.what());
 			} catch (...) {
+				SPDLOG_WARN("Unable to unlock bpftime pid set");
 			}
 		}
 	}
@@ -313,6 +323,17 @@ long bpftime_shm::bpf_map_pop_elem(int fd, void *value, bool from_syscall) const
 {
 	auto *handler = try_get_map_handler(fd);
 	return handler ? handler->map_pop_elem(value, from_syscall) : -1;
+}
+
+long bpftime_shm::bpf_map_lookup_and_delete_elem(int fd, const void *key,
+						 void *value,
+						 bool from_syscall) const
+{
+	auto *handler = try_get_map_handler(fd);
+	return handler ?
+		       handler->map_lookup_and_delete_elem(key, value,
+							   from_syscall) :
+		       -1;
 }
 
 long bpftime_shm::bpf_map_peek_elem(int fd, void *value,
@@ -547,10 +568,24 @@ int bpftime_shm::add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd,
 int bpftime_shm::epoll_create()
 {
 	int fd = open_fake_fd();
+	if (fd < 0)
+		return fd;
+	if (epoll_create_at(fd) < 0) {
+		int saved_errno = errno;
+		close(fd);
+		errno = saved_errno;
+		return -1;
+	}
+	return fd;
+}
+
+int bpftime_shm::epoll_create_at(int fd)
+{
 	if (manager->is_allocated(fd)) {
 		SPDLOG_ERROR(
 			"Creating epoll instance, but fd {} is already occupied",
 			fd);
+		errno = EEXIST;
 		return -1;
 	}
 	fd = manager->set_handler(fd, bpftime::epoll_handler(segment), segment);
@@ -678,11 +713,14 @@ int bpftime_shm::open_fake_fd()
 	while (fd <= 2 && fd >= 0 && --cnt > 0) {
 		fd = dup(fd);
 	}
-	if (fd >= 0 && (std::size_t)fd >= manager->size()) {
+	if (fd < 0) {
+		// open/dup failed; errno is already set by libc.
+		return -errno;
+	}
+	if ((std::size_t)fd >= manager->size()) {
 		SPDLOG_ERROR("open_fake_fd: fd {} exceeds handler pool size {}", fd, manager->size());
 		close(fd);
-		errno = ENOSPC;
-		return -1;
+		return -ENOSPC;
 	}
 	return fd;
 }
@@ -826,6 +864,9 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		epoch_state = segment.find<bpftime_global_epoch_state>(
 					     "bpftime_global_epoch_state")
 				      .first;
+		cpu_exec_locks = segment.find<bpftime_cpu_exec_locks>(
+					 "bpftime_cpu_exec_locks")
+				  .first;
 		SPDLOG_DEBUG("done: bpftime_shm for client setup");
 	} else if (type == shm_open_type::SHM_CREATE_OR_OPEN ||
 		   type == shm_open_type::SHM_CREATE_ONLY) {
@@ -877,6 +918,9 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		epoch_state =
 			segment.find_or_construct<bpftime_global_epoch_state>(
 				"bpftime_global_epoch_state")();
+		cpu_exec_locks =
+			segment.find_or_construct<bpftime_cpu_exec_locks>(
+				"bpftime_cpu_exec_locks")();
 		SPDLOG_DEBUG("done: bpftime_shm for open_or_create setup");
 	} else if (type == shm_open_type::SHM_REMOVE_AND_CREATE) {
 		SPDLOG_DEBUG(
@@ -927,6 +971,8 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 				bpftime::DEFAULT_PID_SET_LOCK_NAME)();
 		epoch_state = segment.construct<bpftime_global_epoch_state>(
 			"bpftime_global_epoch_state")();
+		cpu_exec_locks = segment.construct<bpftime_cpu_exec_locks>(
+			"bpftime_cpu_exec_locks")();
 		SPDLOG_DEBUG("done: bpftime_shm for server setup.");
 	} else if (type == shm_open_type::SHM_NO_CREATE) {
 		// not create any shm
@@ -994,6 +1040,53 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 #endif
 }
 
+void bpftime_shm::lock_bpf_cpu(int cpu)
+{
+	if (cpu_exec_locks != nullptr && cpu >= 0 && cpu < BPFTIME_MAX_CPU_COUNT)
+		cpu_exec_locks->locks[cpu].lock();
+}
+
+void bpftime_shm::unlock_bpf_cpu(int cpu)
+{
+	if (cpu_exec_locks == nullptr || cpu < 0 ||
+	    cpu >= BPFTIME_MAX_CPU_COUNT)
+		return;
+	try {
+		cpu_exec_locks->locks[cpu].unlock();
+	} catch (const std::exception &ex) {
+		SPDLOG_WARN("Unable to unlock bpftime cpu {} lock: {}", cpu,
+			    ex.what());
+	} catch (...) {
+		SPDLOG_WARN("Unable to unlock bpftime cpu {} lock", cpu);
+	}
+}
+
+bool bpftime_shm::acquire_bpf_cpu(int cpu)
+{
+	if (cpu_exec_locks == nullptr || cpu < 0 ||
+	    cpu >= BPFTIME_MAX_CPU_COUNT)
+		return false;
+	// Preserve the blocking serialization semantics of lock(): per-CPU
+	// correctness requires waiting for a normally-held lock even under
+	// contention, so a fixed timeout would spuriously skip valid BPF
+	// execution. The host-safety fix here is to contain locking
+	// exceptions, which otherwise propagate through the Frida C trampoline
+	// into std::terminate. A non-robust mutex whose owner died while
+	// holding it is a separate robustness concern that needs a robust
+	// mutex, not a timeout that also breaks ordinary contention.
+	try {
+		cpu_exec_locks->locks[cpu].lock();
+		return true;
+	} catch (const std::exception &ex) {
+		SPDLOG_WARN("Unable to lock bpftime cpu {}: {}", cpu,
+			    ex.what());
+		return false;
+	} catch (...) {
+		SPDLOG_WARN("Unable to lock bpftime cpu {}", cpu);
+		return false;
+	}
+}
+
 std::uint64_t bpftime_shm::read_stable_epoch_seq(int max_tries) const
 {
 	if (!epoch_state)
@@ -1048,9 +1141,13 @@ int bpftime_shm::translate_shared_map_type_to_kernel_map_type(int type)
 int bpftime_shm::add_bpf_map(int fd, const char *name,
 			     bpftime::bpf_map_attr attr)
 {
+	bool fd_self_allocated = false;
 	if (fd < 0) {
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
+		fd_self_allocated = true;
+		if (fd < 0)
+			return fd;
 	}
 	if (!manager) {
 		return -1;
@@ -1072,8 +1169,14 @@ int bpftime_shm::add_bpf_map(int fd, const char *name,
 			"Creating map handler at {}, which must destroy the existing handler");
 		manager->clear_id_at(fd, segment);
 	}
-	return manager->set_handler(
+	int rc = manager->set_handler(
 		fd, bpftime::bpf_map_handler(fd, name, segment, attr), segment);
+	if (rc < 0 && fd_self_allocated) {
+		// set_handler already rolled back the handler slot; close the OS
+		// fd allocated in this call so failed creates do not leak fds.
+		close(fd);
+	}
+	return rc;
 }
 
 int bpftime_shm::dup_bpf_map(int oldfd, int newfd)

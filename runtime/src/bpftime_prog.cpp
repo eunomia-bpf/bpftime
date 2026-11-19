@@ -8,7 +8,9 @@
 #include "bpftime_config.hpp"
 #include "bpftime_helper_group.hpp"
 #include "bpftime_internal.h"
+#include "bpftime_shm_internal.hpp"
 #include "bpftime_vm_compat.hpp"
+#include "platform_utils.hpp"
 #include "ebpf-vm.h"
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 #include "nvPTXCompiler.h"
@@ -20,9 +22,42 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+
+#if defined(__x86_64__)
+// The pinned uBPF x86_64 JIT emulates fetch-ALU atomics (add/or/and/xor with
+// BPF_FETCH) with a cmpxchg retry loop. When the destination register is r0
+// (mapped to native RAX), the initial load overwrites RAX with the old memory
+// value and the retried cmpxchg dereferences that value as the address,
+// crashing the host process. The interpreter and the aarch64 JIT are correct.
+// Until the defect is fixed upstream, keep the historical fail-closed
+// contract for this single encoding by steering it to the interpreter.
+static bool
+ubpf_x86_jit_unsafe_fetch_into_r0(const struct ebpf_inst *insn, size_t cnt)
+{
+	for (size_t i = 0; i < cnt; i++) {
+		const struct ebpf_inst &in = insn[i];
+		if (in.code != EBPF_ATOMIC_OPCODE_32 &&
+		    in.code != EBPF_ATOMIC_OPCODE_64)
+			continue;
+		if (in.dst_reg != 0)
+			continue;
+		// Only fetch-ALU is affected; non-fetch, XCHG and CMPXCHG use
+		// safe single-instruction sequences.
+		if (!(in.imm & EBPF_FETCH))
+			continue;
+		if (in.imm == EBPF_XCHG || in.imm == EBPF_CMPXCHG)
+			continue;
+		return true;
+	}
+	return false;
+}
+#endif
+
+#include <atomic>
+#include <chrono>
+#include <functional>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
-#include "bpftime_vm_compat.hpp"
 #include <cstdio>
 
 #define NVPTXCOMPILER_SAFE_CALL(x)                                             \
@@ -38,6 +73,89 @@
 using namespace std;
 namespace bpftime
 {
+namespace
+{
+class bpf_cpu_execution_guard {
+    public:
+	bpf_cpu_execution_guard()
+	{
+		if (bpftime_get_current_bpf_cpu() >= 0)
+			return;
+		// Map-free programs may use only process-local runtime config.
+		if (!shm_holder.global_shared_memory.get_manager())
+			return;
+		cpu = bpftime_get_native_cpu();
+		if (cpu < 0) {
+			warn_throttled([] { SPDLOG_WARN("sched_getcpu failed; BPF execution skipped"); });
+			return;
+		}
+		if (cpu >= BPFTIME_MAX_CPU_COUNT) {
+			// `cpu` is a member, so it cannot be captured by a lambda;
+			// copy it into a local first.
+			const int cpu_for_log = cpu;
+			warn_throttled([cpu_for_log] {
+				SPDLOG_WARN(
+					"logical cpu {} exceeds BPFTIME_MAX_CPU_COUNT={}; BPF execution skipped",
+					cpu_for_log, BPFTIME_MAX_CPU_COUNT);
+			});
+			return;
+		}
+		if (!shm_holder.global_shared_memory.acquire_bpf_cpu(cpu)) {
+			const int cpu_for_log = cpu;
+			warn_throttled([cpu_for_log] {
+				SPDLOG_WARN(
+					"per-CPU lock for cpu {} unavailable; BPF execution skipped",
+					cpu_for_log);
+			});
+			return;
+		}
+		bpftime_set_current_bpf_cpu(cpu);
+		owns_lock = true;
+	}
+
+	~bpf_cpu_execution_guard() { release(); }
+
+	bool entered() const
+	{
+		return owns_lock || bpftime_get_current_bpf_cpu() >= 0 ||
+		       !shm_holder.global_shared_memory.get_manager();
+	}
+
+	void release()
+	{
+		if (!owns_lock)
+			return;
+		bpftime_set_current_bpf_cpu(-1);
+		shm_holder.global_shared_memory.unlock_bpf_cpu(cpu);
+		owns_lock = false;
+	}
+
+    private:
+	// Rate-limit degradation warnings: a hot BPF path must not spam the log on
+	// every event when the environment is outside the supported CPU range.
+	// Shared 5s rate limiter; the emit callable runs SPDLOG_WARN only when admitted.
+	template <class F> static void warn_throttled(F &&emit)
+	{
+		static std::atomic<std::int64_t> last_log_ns{0};
+		constexpr std::int64_t MIN_INTERVAL_NS = 5'000'000'000LL;
+		std::int64_t now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+				   std::chrono::steady_clock::now().time_since_epoch())
+				   .count();
+		std::int64_t prev = last_log_ns.load(std::memory_order_relaxed);
+		if (now - prev < MIN_INTERVAL_NS)
+			return;
+		if (!last_log_ns.compare_exchange_strong(prev, now,
+							      std::memory_order_relaxed))
+			return;
+		emit();
+	}
+
+	int cpu = -1;
+	bool owns_lock = false;
+};
+
+} // namespace
+
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 std::optional<std::vector<char>> compile_ptx_to_elf(const std::string &ptx_code,
 						    const char *cpu_target)
@@ -104,6 +222,7 @@ std::optional<std::vector<char>> compile_ptx_to_elf(const std::string &ptx_code,
 #endif
 thread_local std::optional<uint64_t> current_thread_bpf_cookie;
 thread_local std::optional<uint64_t> current_thread_tail_call_ret;
+thread_local std::optional<exec_context_info> current_thread_exec_ctx;
 
 bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 			   const char *name)
@@ -182,6 +301,44 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 		SPDLOG_ERROR("Failed to load insn: {}", errmsg);
 		return res;
 	}
+
+	// Reject programs that call helpers which were never registered into
+	// this VM. The LLVM JIT used to fail late and ambiguously: compilation
+	// returned "Ext func not found: _bpf_helper_ext_XXXX", the failure was
+	// demoted to a warning, jitted was set to false and the load still
+	// succeeded, so every invocation died at runtime with "Unable to run
+	// ebpf callback" instead of a load-time error (see #704). Local calls
+	// (call) are handled by the VM itself and are not audited here,
+	// mirroring prepare_for_signal_execution().
+	//
+	// CUDA programs (cuda__*) are exempt: their helpers (e.g. 503 =
+	// bpf_get_block_idx) are resolved on the device side. They are never
+	// registered into this host VM; ptxpass generates device PTX from an
+	// isolated VM with its own helper table, and the runtime trampoline
+	// provides the actual implementations (e.g. _bpf_helper_ext_0503).
+	// This VM is only used here to produce that device code, so the
+	// host-side audit does not apply.
+	if (!is_cuda()) {
+		for (size_t i = 0; i < insns.size(); ++i) {
+			const struct ebpf_inst &inst = insns[i];
+			if (inst.code == 0x18) {
+				// Second instruction of a LDDW is data, not code.
+				++i;
+				continue;
+			}
+			if (inst.code == 0x8d) // Indirect CALLX cannot be audited here.
+				break;
+			if (inst.code != 0x85 || inst.src_reg != 0)
+				continue;
+			if (registered_helper_ids.count(
+				    static_cast<unsigned>(inst.imm)) == 0) {
+				SPDLOG_ERROR(
+					"Program {} calls helper {} which is not registered in the VM. Register the helper (e.g. bpftime_helper_group::add_helper_group_to_prog) or check the bytecode before loading.",
+					name, inst.imm);
+				return -EINVAL;
+			}
+		}
+	}
 	if (is_cuda()) {
 		// SPDLOG_INFO("Compiling CUDA program");
 
@@ -206,13 +363,28 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 		// }
 	} else {
 		if (jit) {
-			ebpf_jit_fn jit_fn = ebpf_compile(vm, &errmsg);
-			if (jit_fn == NULL) {
-				SPDLOG_WARN("JIT compilation failed ({}), falling back to interpreter", errmsg);
+#if defined(__x86_64__)
+			// The defect is in the uBPF x86_64 JIT only; the LLVM backend
+			// handles r0 atomics correctly, so do not change its path.
+			const char *cur_vm_name =
+				bpftime::bpftime_get_runtime_config()
+					.get_vm_name();
+			if (std::string(cur_vm_name) == "ubpf" &&
+			    ubpf_x86_jit_unsafe_fetch_into_r0(insns.data(),
+							      insns.size())) {
+				SPDLOG_WARN("uBPF x86_64 JIT cannot safely compile a fetch-atomic targeting r0; using the interpreter instead");
 				jitted = false;
-			} else {
-				jitted = true;
-				fn = jit_fn;
+			} else
+#endif
+			{
+				ebpf_jit_fn jit_fn = ebpf_compile(vm, &errmsg);
+				if (jit_fn == NULL) {
+					SPDLOG_WARN("JIT compilation failed ({}), falling back to interpreter", errmsg);
+					jitted = false;
+				} else {
+					jitted = true;
+					fn = jit_fn;
+				}
 			}
 		} else {
 			jitted = false;
@@ -246,6 +418,25 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 		*return_val = fn(memory, memory_size);
 		return 0;
 	}
+	// Publish the caller-provided context pointer and size so helpers
+	// that copy the context (e.g. bpftime_tail_call) can tell the
+	// host-owned entry context from a program-built replacement context.
+	// Tail calls run nested exec calls, so save and restore the outer
+	// value to keep the depth correct.
+	struct exec_ctx_guard {
+		std::optional<exec_context_info> saved_ctx;
+		explicit exec_ctx_guard(const void *ptr, size_t size)
+			: saved_ctx(current_thread_exec_ctx)
+		{
+			current_thread_exec_ctx = exec_context_info{
+				ptr, size
+			};
+		}
+		~exec_ctx_guard()
+		{
+			current_thread_exec_ctx = saved_ctx;
+		}
+	} exec_ctx_guard(memory, memory_size);
 	if (is_cuda()) {
 		throw std::runtime_error("Unable to execute CUDA program");
 	}
@@ -253,6 +444,11 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 	int res = 0;
 	// set share memory read and write able
 	bpftime_protect_disable();
+	bpf_cpu_execution_guard cpu_guard;
+	if (!cpu_guard.entered()) {
+		bpftime_protect_enable();
+		return -EAGAIN;
+	}
 	SPDLOG_DEBUG(
 		"Calling bpftime_prog::bpftime_prog_exec, memory={:x}, memory_size={}, return_val={:x}, prog_name={}",
 		(uintptr_t)memory, memory_size, (uintptr_t)return_val,
@@ -270,6 +466,7 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 	}
 	*return_val = current_thread_tail_call_ret.value_or(val);
 	current_thread_tail_call_ret.reset();
+	cpu_guard.release();
 	// set share memory read only
 	bpftime_protect_enable();
 	return res;
@@ -282,6 +479,7 @@ int bpftime_prog::bpftime_prog_register_raw_helper(
 	if (result == 0) {
 		signal_ready = false;
 		signal_safe_helpers[info.index] = helper_is_async_signal_safe(info.index, info.fn);
+		registered_helper_ids.insert(info.index);
 	}
 	return result;
 }
@@ -328,6 +526,17 @@ int bpftime_prog::prepare_for_signal_execution()
 			return -ENOTSUP;
 		}
 	}
+#if defined(__x86_64__)
+	// The uBPF x86 JIT corrupts RAX when a fetch-ALU atomic uses r0 as
+	// its memory base. The ordinary load path falls back to the interpreter,
+	// but a trap callback must be JIT-compiled. Reject this attach rather
+	// than compiling host-crashing code in the signal-admission path.
+	if (strcmp(backend, "ubpf") == 0 &&
+	    ubpf_x86_jit_unsafe_fetch_into_r0(insns.data(), insns.size())) {
+		SPDLOG_WARN("Rejecting trap attach: uBPF x86 JIT cannot safely compile a fetch-atomic targeting r0");
+		return -ENOTSUP;
+	}
+#endif
 	if (!jitted) {
 		auto compiled = ebpf_compile(vm, &errmsg);
 		if (!compiled)

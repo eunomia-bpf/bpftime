@@ -112,11 +112,12 @@ int bpftime_helper_map_get_next_key(int fd, const void *key, void *next_key)
 	}
 }
 
-const void *bpftime_map_lookup_elem(int fd, const void *key)
+const void *bpftime_map_lookup_elem_with_origin(int fd, const void *key,
+						bool from_syscall)
 {
 	try {
 		return shm_holder.global_shared_memory.bpf_map_lookup_elem(
-			fd, key, true);
+			fd, key, from_syscall);
 	} catch (std::exception &ex) {
 		SPDLOG_ERROR(
 			"Exception happened when performing map lookup elem: {}",
@@ -125,12 +126,18 @@ const void *bpftime_map_lookup_elem(int fd, const void *key)
 	}
 }
 
-long bpftime_map_update_elem(int fd, const void *key, const void *value,
-			     uint64_t flags)
+const void *bpftime_map_lookup_elem(int fd, const void *key)
+{
+	return bpftime_map_lookup_elem_with_origin(fd, key, true);
+}
+
+long bpftime_map_update_elem_with_origin(int fd, const void *key,
+					 const void *value, uint64_t flags,
+					 bool from_syscall)
 {
 	try {
 		return shm_holder.global_shared_memory.bpf_map_update_elem(
-			fd, key, value, flags, true);
+			fd, key, value, flags, from_syscall);
 	} catch (std::exception &ex) {
 		SPDLOG_ERROR(
 			"Exception happened when performing map update: {}",
@@ -139,11 +146,18 @@ long bpftime_map_update_elem(int fd, const void *key, const void *value,
 	}
 }
 
-long bpftime_map_delete_elem(int fd, const void *key)
+long bpftime_map_update_elem(int fd, const void *key, const void *value,
+			     uint64_t flags)
+{
+	return bpftime_map_update_elem_with_origin(fd, key, value, flags, true);
+}
+
+long bpftime_map_delete_elem_with_origin(int fd, const void *key,
+					 bool from_syscall)
 {
 	try {
-		return shm_holder.global_shared_memory.bpf_delete_elem(fd, key,
-								       true);
+		return shm_holder.global_shared_memory.bpf_delete_elem(
+			fd, key, from_syscall);
 	} catch (std::exception &ex) {
 		SPDLOG_ERROR(
 			"Exception happened when performing map delete elem: {}",
@@ -152,11 +166,16 @@ long bpftime_map_delete_elem(int fd, const void *key)
 	}
 }
 
-long bpftime_map_lookup_and_delete_elem(int fd, void *value)
+long bpftime_map_delete_elem(int fd, const void *key)
+{
+	return bpftime_map_delete_elem_with_origin(fd, key, true);
+}
+
+long bpftime_map_lookup_and_delete_elem(int fd, const void *key, void *value)
 {
 	try {
-		return shm_holder.global_shared_memory.bpf_map_pop_elem(
-			fd, value, true);
+		return shm_holder.global_shared_memory
+			.bpf_map_lookup_and_delete_elem(fd, key, value, true);
 	} catch (std::exception &ex) {
 		SPDLOG_ERROR(
 			"Exception happened when performing map lookup and delete elem: {}",
@@ -277,6 +296,11 @@ int bpftime_add_ringbuf_fd_to_epoll(int ringbuf_fd, int epoll_fd,
 int bpftime_epoll_create()
 {
 	return shm_holder.global_shared_memory.epoll_create();
+}
+
+int bpftime_epoll_create_at(int fd)
+{
+	return shm_holder.global_shared_memory.epoll_create_at(fd);
 }
 
 void bpftime_close(int fd)
@@ -462,6 +486,47 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 			break;
 		}
 
+		// A perpetually ready source must not starve signal delivery.
+		// The no-data branch below was previously the only place that
+		// consumed a blocked SIGINT/SIGTERM; under a high-frequency
+		// tracepoint the ready path (next_id > 0) is taken every
+		// iteration, so the signal stayed pending and was never
+		// delivered, leaving the process unresponsive to SIGINT/SIGTERM.
+		// Poll for a pending blocked signal here so it is honored
+		// regardless of event readiness. sigpending is a cheap
+		// non-consuming probe; only when it reports a pending SIGINT/
+		// SIGTERM do we take the heavier sigtimedwait path to dequeue and
+		// dispatch it, keeping the common no-signal ready path inexpensive.
+		{
+			sigset_t pending_now;
+			if (sigpending(&pending_now) == 0 &&
+			    (sigismember(&pending_now, SIGINT) ||
+			     sigismember(&pending_now, SIGTERM))) {
+				siginfo_t sig_info;
+				const timespec nonblock{ .tv_sec = 0,
+							 .tv_nsec = 0 };
+				if (int sig = sigtimedwait(&to_block, &sig_info,
+							   &nonblock);
+				    sig > 0) {
+					SPDLOG_DEBUG(
+						"epoll_wait interrupted by pending signal {}",
+						sig);
+					// Invoke the original signal handler
+					struct sigaction act;
+					sigaction(sig, nullptr, &act);
+					if ((act.sa_flags & SA_SIGINFO) &&
+					    act.sa_sigaction) {
+						act.sa_sigaction(sig, &sig_info,
+								 nullptr);
+					} else if (auto f = act.sa_handler) {
+						f(sig);
+					}
+					failed_with_intr = true;
+					break;
+				}
+			}
+		}
+
 		for (const auto &p : epoll_inst.files) {
 			if (std::holds_alternative<software_perf_event_weak_ptr>(
 				    p.file)) {
@@ -543,6 +608,13 @@ int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 {
 	auto &shm = shm_holder.global_shared_memory;
 	return shm.add_software_perf_event(cpu, sample_type, config);
+}
+
+int bpftime_add_software_perf_event_at(int fd, int cpu, int32_t sample_type,
+				       int64_t config)
+{
+	auto &shm = shm_holder.global_shared_memory;
+	return shm.add_software_perf_event(fd, cpu, sample_type, config);
 }
 
 int bpftime_add_ureplace_or_override(int fd, int pid, const char *name,

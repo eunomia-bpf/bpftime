@@ -189,6 +189,7 @@ These variables are read at process startup (no rebuild required).
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `BPFTIME_PTXPASS_LIBRARIES` | _(bundled default paths)_ | Colon-separated list of PTX-pass shared library (`.so`) paths. When set, overrides the default bundled pass executables. Example: `BPFTIME_PTXPASS_LIBRARIES=/path/to/libptxpass_kprobe.so:/path/to/libptxpass_kretprobe.so`. |
+| `BPFTIME_PTX_COMPILER_LIB` | _(bundled default path)_ | Path to the PTX compiler shared library (`libnv_attach_impl_ptx_compiler.so`). When set to a non-empty value, it fully overrides the default bundled path; unset or empty keeps the default. Use it together with `BPFTIME_PTXPASS_LIBRARIES` when the build-time absolute paths are not valid at runtime (for example, relocated or containerized deployments). |
 
 #### Internal Variables (for reference only)
 
