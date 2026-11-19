@@ -6,6 +6,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-bpftrace.yml"
+      - ".github/actions/ccache/**"
       - "attach/**"
       - "example/malloc/**"
       - "example/tracing/bpftrace/**"
@@ -19,6 +20,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-bpftrace.yml"
+      - ".github/actions/ccache/**"
       - "attach/**"
       - "example/malloc/**"
       - "example/tracing/bpftrace/**"
