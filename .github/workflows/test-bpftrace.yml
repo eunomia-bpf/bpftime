@@ -51,10 +51,112 @@ jobs:
       actions: read
     with:
       hosted: ubuntu-22.04
-      jobs: 3
+      jobs: 5
+
+  # Single compile job for the whole workflow. The three test jobs below
+  # previously ran the identical CMake configure/build independently; they
+  # now download the artifacts produced here. RelWithDebInfo defaults to
+  # SPDLOG_LEVEL_INFO, so the default build serves the syscall, malloc and
+  # INFO one-liner jobs, while the TRACE build only differs by the explicitly
+  # compiled-in spdlog level required by the TRACE one-liner matrix entry.
+  build-bpftime:
+    needs: pick-runner
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-22.04"') }}
+    container:
+      image: "manjusakalza/bpftime-base-image:ubuntu-2204"
+      options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+
+      - name: System setup and kernel headers
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends \
+          lcov tree strace gdb sudo libc6-dev bpftrace \
+          linux-headers-generic linux-tools-generic \
+          $(apt-cache show linux-headers-$(uname -r) >/dev/null 2>&1 && echo linux-headers-$(uname -r)) \
+          libelf-dev libssl-dev procps gnupg gnupg-agent pinentry-curses dirmngr
+          if [ ! -d "/lib/modules/$(uname -r)/build" ]; then
+            echo "BPFTRACE_KERNEL_SOURCE=$(ls -d /usr/src/linux-headers-*-generic | sort -V | tail -n 1)" >> "$GITHUB_ENV"
+          fi
+          mkdir -p logs build
+          sudo mkdir -p "$BPFTIME_SHARED_MEMORY_PATH"
+          sudo chmod 1777 "$BPFTIME_SHARED_MEMORY_PATH"
+
+      - name: Build bpftime (default, SPDLOG_LEVEL_INFO via RelWithDebInfo)
+        run: |
+          set -euo pipefail
+          echo "Building bpftime with CMake (INFO)"
+          cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
+            -DBPFTIME_LLVM_JIT=1 \
+            -DBUILD_BPFTIME_DAEMON=OFF \
+            -DBUILD_AGENT=1 \
+            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
+            -DTEST_LCOV=YES \
+            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
+          cmake --build build --config RelWithDebInfo --target bpftime-agent bpftime-syscall-server bpftime_text_segment_transformer -j$(nproc)
+
+      - name: Build bpftime (SPDLOG_LEVEL_TRACE)
+        run: |
+          set -euo pipefail
+          echo "Building bpftime with CMake (TRACE)"
+          cmake -Bbuild-trace -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
+            -DBPFTIME_LLVM_JIT=1 \
+            -DBUILD_BPFTIME_DAEMON=OFF \
+            -DBUILD_AGENT=1 \
+            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
+            -DTEST_LCOV=YES \
+            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'" \
+            -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE
+          cmake --build build-trace --config RelWithDebInfo --target bpftime-agent bpftime-syscall-server bpftime_text_segment_transformer -j$(nproc)
+
+      - name: Build malloc example
+        run: |
+          set -euo pipefail
+          make -C example/malloc
+          test -f example/malloc/malloc
+          test -f example/malloc/victim
+
+      - name: Verify built libraries
+        run: |
+          set -euo pipefail
+          for d in build build-trace; do
+            echo "== $d =="
+            ls -la "$d"/runtime/agent/
+            ls -la "$d"/runtime/syscall-server/
+            ls -la "$d"/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
+            test -f "$d/runtime/agent/libbpftime-agent.so"
+            test -f "$d/runtime/syscall-server/libbpftime-syscall-server.so"
+          done
+
+      - name: Upload INFO build
+        uses: actions/upload-artifact@v4
+        with:
+          name: bpftime-build-info
+          path: build/
+          retention-days: 14
+      - name: Upload TRACE build
+        uses: actions/upload-artifact@v4
+        with:
+          name: bpftime-build-trace
+          path: build-trace/
+          retention-days: 14
+      - name: Upload malloc example binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: bpftime-malloc-example
+          path: |
+            example/malloc/malloc
+            example/malloc/victim
+          retention-days: 14
 
   build-and-run-syscall-tracing-load-start-test:
-    needs: pick-runner
+    needs: [pick-runner, build-bpftime]
     # The VM runners or GitHub's, whichever is picked for this run; job
     # containers on a VM runner run --privileged against that VM's own kernel.
     runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-22.04"') }}
@@ -116,22 +218,11 @@ jobs:
           sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
           sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
 
-      - name: Build bpftime
-        run: |
-          echo "Building bpftime with CMake"
-          cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
-            -DBPFTIME_LLVM_JIT=1 \
-            -DBUILD_BPFTIME_DAEMON=OFF \
-            -DBUILD_AGENT=1 \
-            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
-            -DTEST_LCOV=YES \
-            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
-          cmake --build build --config RelWithDebInfo --target bpftime-agent bpftime-syscall-server bpftime_text_segment_transformer -j$(nproc)
-
-          echo "Checking built libraries:"
-          ls -la build/runtime/agent/
-          ls -la build/runtime/syscall-server/
-          ls -la build/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
+      - name: Download prebuilt bpftime
+        uses: actions/download-artifact@v4
+        with:
+          name: bpftime-build-info
+          path: build
 
       - name: Find all necessary libraries
         run: |
@@ -396,7 +487,7 @@ jobs:
           verbose: true
 
   build-and-run-malloc-example-test:
-    needs: pick-runner
+    needs: [pick-runner, build-bpftime]
     # The VM runners or GitHub's, whichever is picked for this run; job
     # containers on a VM runner run --privileged against that VM's own kernel.
     runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-22.04"') }}
@@ -459,42 +550,30 @@ jobs:
           sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
           sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
 
-      - name: Build bpftime
+      - name: Download prebuilt bpftime
+        uses: actions/download-artifact@v4
+        with:
+          name: bpftime-build-info
+          path: build
+      - name: Download prebuilt malloc example
+        uses: actions/download-artifact@v4
+        with:
+          name: bpftime-malloc-example
+          path: example/malloc
+      - name: Verify downloaded build results
         run: |
-          echo "Building bpftime with CMake"
-          cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
-            -DBPFTIME_LLVM_JIT=1 \
-            -DBUILD_BPFTIME_DAEMON=OFF \
-            -DBUILD_AGENT=1 \
-            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
-            -DTEST_LCOV=YES \
-            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
-          cmake --build build --config RelWithDebInfo --target bpftime-agent bpftime-syscall-server bpftime_text_segment_transformer -j$(nproc)
-
+          set -euo pipefail
           echo "Checking built libraries:"
           ls -la build/runtime/agent/
           ls -la build/runtime/syscall-server/
           ls -la build/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
-
-      - name: Build malloc example
-        run: |
-          echo "Building malloc example"
-          make -C example/malloc
-
-          # Check build results - note that executables may be in .output directory or current directory
+          echo "Checking malloc example binaries:"
           if [ -f "example/malloc/malloc" ] && [ -f "example/malloc/victim" ]; then
-            echo "SUCCESS: Malloc example built successfully"
+            echo "SUCCESS: malloc example downloaded successfully"
             ls -la example/malloc/
-          elif [ -f "example/malloc/.output/malloc" ] && [ -f "example/malloc/victim" ]; then
-            echo "SUCCESS: Malloc example built successfully (malloc in .output directory)"
-            ls -la example/malloc/ example/malloc/.output/
           else
-            echo "FAILURE: Malloc example build failed"
-            echo "Searching for malloc and victim executables:"
-            find example/malloc -type f -name "malloc" -o -name "victim" | sort
-            echo "Directory contents:"
-            ls -la example/malloc/
-            ls -la example/malloc/.output/ 2>/dev/null || echo "No .output directory"
+            echo "FAILURE: malloc example binaries missing after artifact download"
+            find example/malloc -maxdepth 1 -type f | sort
             exit 1
           fi
 
@@ -772,7 +851,7 @@ jobs:
           verbose: true
 
   build-and-run-one-liners-test:
-    needs: pick-runner
+    needs: [pick-runner, build-bpftime]
     name: build-and-run-one-liners-test (${{ matrix.log_level }})
     strategy:
       fail-fast: false
@@ -831,35 +910,42 @@ jobs:
           echo "TEST_DATA_LINE_1_ABC" > build/install_manifest.txt
           echo "TEST_DATA_LINE_2_XYZ" >> build/install_manifest.txt
 
-      - name: Build bpftime
+      - name: Select build for the log level
         run: |
-          echo "Building bpftime with CMake"
-          cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
-            -DBPFTIME_LLVM_JIT=1 \
-            -DBUILD_BPFTIME_DAEMON=OFF \
-            -DBUILD_AGENT=1 \
-            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
-            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'" \
-            -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_${{ matrix.log_level }}
-          cmake --build build --config RelWithDebInfo --target bpftime-agent bpftime-syscall-server bpftime_text_segment_transformer -j$(nproc)
-
-          echo "Checking built libraries:"
-          ls -la build/runtime/agent/
-          ls -la build/runtime/syscall-server/
-          ls -la build/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
+          set -euo pipefail
+          if [ "${{ matrix.log_level }}" = "TRACE" ]; then
+            echo "BUILD_DIR=build-trace" >> "$GITHUB_ENV"
+            echo "BUILD_ARTIFACT=bpftime-build-trace" >> "$GITHUB_ENV"
+          else
+            echo "BUILD_DIR=build" >> "$GITHUB_ENV"
+            echo "BUILD_ARTIFACT=bpftime-build-info" >> "$GITHUB_ENV"
+          fi
+          echo "Using $BUILD_ARTIFACT extracted to $BUILD_DIR"
+      - name: Download prebuilt bpftime
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BUILD_ARTIFACT }}
+          path: ${{ env.BUILD_DIR }}
+      - name: Verify downloaded libraries
+        run: |
+          set -euo pipefail
+          echo "Checking built libraries in $BUILD_DIR:"
+          ls -la "$BUILD_DIR"/runtime/agent/
+          ls -la "$BUILD_DIR"/runtime/syscall-server/
+          ls -la "$BUILD_DIR"/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
 
       - name: Find all necessary libraries
         run: |
           echo "=== Finding all necessary libraries ==="
 
-          find build -name "*.so" | sort
+          find "$BUILD_DIR" -name "*.so" | sort
 
-          AGENT_LIB="build/runtime/agent/libbpftime-agent.so"
-          SERVER_LIB="build/runtime/syscall-server/libbpftime-syscall-server.so"
-          TRANSFORMER_LIB="build/attach/text_segment_transformer/libbpftime-agent-transformer.so"
+          AGENT_LIB="$BUILD_DIR/runtime/agent/libbpftime-agent.so"
+          SERVER_LIB="$BUILD_DIR/runtime/syscall-server/libbpftime-syscall-server.so"
+          TRANSFORMER_LIB="$BUILD_DIR/attach/text_segment_transformer/libbpftime-agent-transformer.so"
 
           if [ ! -f "$AGENT_LIB" ]; then
-            AGENT_LIB=$(find build -name "libbpftime-agent.so" | head -1)
+            AGENT_LIB=$(find "$BUILD_DIR" -name "libbpftime-agent.so" | head -1)
             if [ -z "$AGENT_LIB" ]; then
               echo "ERROR: Agent library not found anywhere"
               exit 1
@@ -867,7 +953,7 @@ jobs:
           fi
 
           if [ ! -f "$SERVER_LIB" ]; then
-            SERVER_LIB=$(find build -name "libbpftime-syscall-server.so" | head -1)
+            SERVER_LIB=$(find "$BUILD_DIR" -name "libbpftime-syscall-server.so" | head -1)
             if [ -z "$SERVER_LIB" ]; then
               echo "ERROR: Syscall server library not found anywhere"
               exit 1
