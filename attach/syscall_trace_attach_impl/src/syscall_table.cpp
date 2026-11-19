@@ -4,6 +4,7 @@
  * All rights reserved.
  */
 #include "syscall_table.hpp"
+#include "platform_utils.hpp"
 #include "spdlog/spdlog.h"
 #include <filesystem>
 #include <fstream>
@@ -14,15 +15,6 @@
 static const char *SYSCALL_TRACEPOINT_ROOT =
 	"/sys/kernel/tracing/events/syscalls";
 static const char *TRACEPOINT_ROOT = "/sys/kernel/tracing/events";
-static int32_t synthetic_tracepoint_id(const std::string &path)
-{
-	uint32_t hash = 2166136261U;
-	for (unsigned char ch : path) {
-		hash ^= ch;
-		hash *= 16777619U;
-	}
-	return (int32_t)(1024U + hash % 100000000U);
-}
 
 static bpftime::attach::syscall_id_pair generate_syscall_id_table()
 {
@@ -82,7 +74,7 @@ syscall_tracepoint_table create_syscall_tracepoint_id_table()
 					       const std::string &mapped_name) {
 			std::string path = std::string(TRACEPOINT_ROOT) + "/" +
 					   name + "/id";
-			result[synthetic_tracepoint_id(path)] = mapped_name;
+			result[rootless::synthetic_tracepoint_id(path)] = mapped_name;
 		};
 		for (const auto &[name, unused] :
 		     std::get<0>(get_global_syscall_id_table())) {
