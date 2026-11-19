@@ -1563,20 +1563,6 @@ int bpftime_helper_group::register_helper(const bpftime_helper_info &info)
 	return 0;
 }
 
-int bpftime_helper_group::append(const bpftime_helper_group &another_group)
-{
-	for (const auto &it : another_group.helper_map) {
-		if (helper_map.find(it.first) != helper_map.end()) {
-			SPDLOG_ERROR("Helper id already exists for {}",
-				     it.second.name);
-			return -1;
-		}
-	}
-	helper_map.insert(another_group.helper_map.begin(),
-			  another_group.helper_map.end());
-	return 0;
-}
-
 int bpftime_helper_group::add_helper_group_to_prog(bpftime_prog *prog) const
 {
 	for (auto it : helper_map) {

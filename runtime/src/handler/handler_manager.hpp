@@ -31,9 +31,6 @@
 #include <handler/map_handler.hpp>
 #include <handler/perf_event_handler.hpp>
 
-#ifdef ENABLE_BPFTIME_VERIFIER
-#include <bpftime-verifier.hpp>
-#endif
 namespace bpftime
 {
 using managed_shared_memory = boost::interprocess::managed_shared_memory;

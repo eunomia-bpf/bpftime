@@ -51,11 +51,7 @@ using boost::interprocess::sharable_lock;
 namespace bpftime
 {
 
-#ifdef BPFTIME_USE_VAR_HASH_MAP
-using hash_map_impl = var_size_hash_map_impl;
-#else
 using hash_map_impl = fix_size_hash_map_impl;
-#endif
 
 namespace {
 // Stable per-thread slot for the syscall map-in-map inner fd. The 4-byte value
@@ -145,11 +141,7 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
-#ifdef BPFTIME_USE_VAR_HASH_MAP
-		return do_lookup_with_origin(impl);
-#else
 		return do_lookup(impl);
-#endif
 	}
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
 		auto impl = static_cast<array_map_impl *>(map_impl_ptr.get());
@@ -345,11 +337,7 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
-#ifdef BPFTIME_USE_VAR_HASH_MAP
-		return do_update_with_origin(impl);
-#else
 		return do_update(impl);
-#endif
 	}
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
 		auto impl = static_cast<array_map_impl *>(map_impl_ptr.get());
@@ -526,11 +514,7 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
-#ifdef BPFTIME_USE_VAR_HASH_MAP
-		return do_get_next_key_with_origin(impl);
-#else
 		return do_get_next_key(impl);
-#endif
 	}
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
 		auto impl = static_cast<array_map_impl *>(map_impl_ptr.get());
@@ -704,11 +688,7 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
-#ifdef BPFTIME_USE_VAR_HASH_MAP
-		return do_delete_with_origin(impl);
-#else
 		return do_delete(impl);
-#endif
 	}
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
 		auto impl = static_cast<array_map_impl *>(map_impl_ptr.get());
@@ -895,16 +875,9 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
-#ifdef BPFTIME_USE_VAR_HASH_MAP
-		map_impl_ptr = memory.construct<hash_map_impl>(
-			boost::interprocess::anonymous_instance)(
-			memory, key_size, value_size, max_entries,
-			static_cast<uint32_t>(flags));
-#else
 		map_impl_ptr = memory.construct<hash_map_impl>(
 			boost::interprocess::anonymous_instance)(
 			memory, max_entries, key_size, value_size);
-#endif
 		init_refcnt();
 		return 0;
 	}

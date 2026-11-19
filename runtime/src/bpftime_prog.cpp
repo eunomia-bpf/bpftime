@@ -339,56 +339,32 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 			}
 		}
 	}
-	if (is_cuda()) {
-		// SPDLOG_INFO("Compiling CUDA program");
-
-		// this->bpftime_prog_register_raw_helper(bpftime_helper_info{
-		// 	.index = 501,
-		// 	.name = "puts",
-		// 	.fn = (void *)&puts,
-		// });
-
-		// ptx_code = ((struct ebpf_vm *)vm)
-		// 		   ->vm_instance->generate_ptx("sm_60");
-
-		// if (!ptx_code.has_value()) {
-		// 	throw std::runtime_error("Failed to generate ptx code");
-		// }
-		// *ptx_code =
-		// 	wrap_ptx_with_trampoline(patch_helper_names_and_header(
-		// 		patch_main_from_func_to_entry(*ptx_code)));
-		// cuda_elf_binary = compile_ptx_to_elf(*ptx_code, "sm_60");
-		// if (!cuda_elf_binary.has_value()) {
-		// 	throw std::runtime_error("unable to compile ptx code");
-		// }
-	} else {
-		if (jit) {
+	if (jit) {
 #if defined(__x86_64__)
-			// The defect is in the uBPF x86_64 JIT only; the LLVM backend
-			// handles r0 atomics correctly, so do not change its path.
-			const char *cur_vm_name =
-				bpftime::bpftime_get_runtime_config()
-					.get_vm_name();
-			if (std::string(cur_vm_name) == "ubpf" &&
-			    ubpf_x86_jit_unsafe_fetch_into_r0(insns.data(),
+		// The defect is in the uBPF x86_64 JIT only; the LLVM backend
+		// handles r0 atomics correctly, so do not change its path.
+		const char *cur_vm_name =
+			bpftime::bpftime_get_runtime_config()
+				.get_vm_name();
+		if (std::string(cur_vm_name) == "ubpf" &&
+		    ubpf_x86_jit_unsafe_fetch_into_r0(insns.data(),
 							      insns.size())) {
-				SPDLOG_WARN("uBPF x86_64 JIT cannot safely compile a fetch-atomic targeting r0; using the interpreter instead");
-				jitted = false;
-			} else
-#endif
-			{
-				ebpf_jit_fn jit_fn = ebpf_compile(vm, &errmsg);
-				if (jit_fn == NULL) {
-					SPDLOG_WARN("JIT compilation failed ({}), falling back to interpreter", errmsg);
-					jitted = false;
-				} else {
-					jitted = true;
-					fn = jit_fn;
-				}
-			}
-		} else {
+			SPDLOG_WARN("uBPF x86_64 JIT cannot safely compile a fetch-atomic targeting r0; using the interpreter instead");
 			jitted = false;
+		} else
+#endif
+		{
+			ebpf_jit_fn jit_fn = ebpf_compile(vm, &errmsg);
+			if (jit_fn == NULL) {
+				SPDLOG_WARN("JIT compilation failed ({}), falling back to interpreter", errmsg);
+				jitted = false;
+			} else {
+				jitted = true;
+				fn = jit_fn;
+			}
 		}
+	} else {
+		jitted = false;
 	}
 
 	program_loaded = true;

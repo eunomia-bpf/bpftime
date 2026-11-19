@@ -124,10 +124,6 @@ class bpftime_shm {
 #endif
 
     public:
-	shm_open_type get_shm_open_type() const
-	{
-		return open_type;
-	}
 	void set_enable_mock(bool flag)
 	{
 		if (mock_setter.has_value())
