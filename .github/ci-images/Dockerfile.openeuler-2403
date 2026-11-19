@@ -1,0 +1,26 @@
+# CI base image for the openEuler 24.03 LTS SP1 container job in
+# test-runtime.yml. The workflow currently starts from the vanilla
+# openeuler image and runs a full 'dnf update' plus a toolchain install on
+# every run; baking them here removes that per-job cost.
+#
+# Built and pushed only by the manual workflow:
+#   .github/workflows/build-ci-images.yml
+# Target: ghcr.io/eunomia-bpf/ci-openeuler-2403
+FROM openeuler/openeuler:24.03-lts-sp1
+
+RUN if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi \
+    && $PM -y update \
+    && $PM -y install \
+        git ca-certificates sudo curl wget which file \
+        cmake make gcc gcc-c++ \
+        clang llvm llvm-devel \
+        zlib-devel elfutils-libelf-devel pkgconf-pkg-config \
+        libasan boost-devel openssl-devel \
+        lcov gdb strace tree procps-ng \
+        gnupg pinentry dirmngr \
+        python3 python3-pip \
+        ccache \
+    && $PM clean all
+
+# CCACHE_DIR is provided at job time by .github/actions/ccache/action.yml
+# (workspace-local, so the same image works on hosted and self-hosted runners).
