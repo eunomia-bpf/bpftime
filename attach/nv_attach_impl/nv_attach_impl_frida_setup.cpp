@@ -364,8 +364,6 @@ static void example_listener_on_enter_impl(GumInvocationContext *ic)
 		auto &current_fatbin = context->impl->current_fatbin;
 
 		current_fatbin = nullptr;
-	} else if (context->to_function == AttachedToFunction::CudaMalloc) {
-		SPDLOG_DEBUG("Entering cudaMalloc..");
 	} else if (context->to_function ==
 			   AttachedToFunction::CudaMemcpyToSymbol ||
 		   context->to_function ==

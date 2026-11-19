@@ -76,8 +76,6 @@ class frida_attach_impl final : public base_attach_impl {
 	// Attach at a certain function, with a ebpf function as callback
 	int attach_at_with_ebpf_callback(void *func_addr,
 					 ebpf_callback_args &&cb);
-	// Iterate over all attaches managed by this attach impl instance
-	void iterate_attaches(attach_iterate_callback cb);
 	// Detach all attach entry at a specified function address
 	int detach_by_func_addr(const void *func);
 
