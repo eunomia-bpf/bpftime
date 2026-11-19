@@ -144,6 +144,11 @@ class syscall_context {
 	// segfault.
 	// try_startup() is public: see the declaration near the ctor.
 	bool mock_enabled_for_current_thread() const noexcept;
+	// Single gate every mocked handler checks before emulating a syscall:
+	// mocking is active only when enabled for this thread, CUDA is not being
+	// initialized, and post-initialization mocking is still on. Handlers
+	// must call this instead of re-reading the three conditions separately.
+	bool mock_active_for_current_thread() const noexcept;
 
 	// enable userspace eBPF runing with kernel eBPF.
 	bool run_with_kernel = false;
