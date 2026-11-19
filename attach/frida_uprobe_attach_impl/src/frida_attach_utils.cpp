@@ -149,12 +149,6 @@ void *get_module_base_addr(const char *module_name)
 	gum_module_load(module_name, nullptr);
 	return (void *)gum_module_find_base_address(module_name);
 }
-void *find_module_export_by_name(const char *module_name,
-				 const char *symbol_name)
-{
-	return (void *)(uintptr_t)gum_module_find_export_by_name(module_name,
-								 symbol_name);
-}
 int from_cb_idx_to_attach_type(int idx)
 {
 	switch (idx) {

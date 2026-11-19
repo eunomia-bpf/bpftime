@@ -64,13 +64,6 @@ struct syscall_trace_attach_entry {
 extern std::optional<class syscall_trace_attach_impl *>
 	global_syscall_trace_attach_impl;
 
-// Used by text segment transformer to setup syscall callback
-// Text segment transformer should provide a pointer to its syscall executor
-// function. syscall trace attach impl will save the original syscall function,
-// and replace it with one that was handled by syscall trace attach impl
-extern "C" void
-_bpftime__setup_syscall_hooker_callback(syscall_hooker_func_t *hooker);
-
 // Attach implementation of syscall trace
 // It provides a callback to receive original syscall calls, and dispatch the
 // concrete stuff to individual callbacks
