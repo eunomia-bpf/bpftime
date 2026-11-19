@@ -10,7 +10,7 @@ FROM fedora:39
 # so redirect every repository to the archive before installing anything.
 RUN sed -i \
         -e 's|^metalink=|#metalink=|g' \
-        -e 's|^#baseurl=http://download.example/pub/fedora/linux|baseurl=https://archives.fedoraproject.org/pub/archive/fedora|g' \
+        -e 's|^#baseurl=http://download.example/pub/fedora/linux|baseurl=https://archives.fedoraproject.org/pub/archive/fedora/linux|g' \
         /etc/yum.repos.d/fedora*.repo
 
 RUN dnf -y install \
