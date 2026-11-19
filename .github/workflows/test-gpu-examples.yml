@@ -8,6 +8,7 @@ on:
       # GPU/CUDA scopes, the runtime, attach and VM code the GPU examples
       # load (helpers, maps, handlers, the agent), and build inputs.
       - ".github/workflows/test-gpu-examples.yml"
+      - ".github/actions/ccache/**"
       - ".github/script/run_gpu_example.sh"
       - ".github/script/run_gpu_examples.py"
       - "attach/**"
