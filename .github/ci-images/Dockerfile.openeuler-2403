@@ -20,7 +20,7 @@ RUN if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi \
         clang llvm llvm-devel \
         zlib-devel elfutils-libelf-devel pkgconf-pkg-config \
         libasan boost-devel openssl-devel \
-        lcov gdb strace tree procps-ng \
+        gdb strace tree procps-ng \
         gnupg pinentry dirmngr \
         python3 python3-pip \
         ccache \
