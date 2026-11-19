@@ -42,21 +42,36 @@ jobs:
       matrix:
         # A job-level 'if' cannot read the matrix context, so the input
         # selects the matrix dimension itself: all three choices, or a
-        # single-element matrix for one dispatched image.
+        # single-element matrix for one dispatched image. No 'include' is
+        # used: non-matching include entries would be added back as extra
+        # combinations, so dockerfile/image names are mapped in a step.
         choice: ${{ inputs.images == 'all' && fromJSON('["ubuntu-2204","fedora-39","openeuler-2403"]') || fromJSON(format('["{0}"]', inputs.images)) }}
-        include:
-          - choice: ubuntu-2204
-            dockerfile: .github/ci-images/Dockerfile.ubuntu-2204
-            image: ci-ubuntu-2204
-          - choice: fedora-39
-            dockerfile: .github/ci-images/Dockerfile.fedora-39
-            image: ci-fedora-39
-          - choice: openeuler-2403
-            dockerfile: .github/ci-images/Dockerfile.openeuler-2403
-            image: ci-openeuler-2403
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Map image choice to dockerfile and registry name
+        shell: bash
+        run: |
+          case "${{ matrix.choice }}" in
+            ubuntu-2204)
+              echo "dockerfile=.github/ci-images/Dockerfile.ubuntu-2204" >> "$GITHUB_OUTPUT"
+              echo "image=ci-ubuntu-2204" >> "$GITHUB_OUTPUT"
+              ;;
+            fedora-39)
+              echo "dockerfile=.github/ci-images/Dockerfile.fedora-39" >> "$GITHUB_OUTPUT"
+              echo "image=ci-fedora-39" >> "$GITHUB_OUTPUT"
+              ;;
+            openeuler-2403)
+              echo "dockerfile=.github/ci-images/Dockerfile.openeuler-2403" >> "$GITHUB_OUTPUT"
+              echo "image=ci-openeuler-2403" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unknown image choice: ${{ matrix.choice }}" >&2
+              exit 1
+              ;;
+          esac
+        id: meta
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
@@ -73,13 +88,13 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .github/ci-images
-          file: ${{ matrix.dockerfile }}
+          file: ${{ steps.meta.outputs.dockerfile }}
           # An immutable per-commit tag plus a moving latest tag; callers
           # pin the immutable tag once an image is validated.
           tags: |
-            ghcr.io/eunomia-bpf/${{ matrix.image }}:${{ github.sha }}
-            ghcr.io/eunomia-bpf/${{ matrix.image }}:latest
+            ghcr.io/eunomia-bpf/${{ steps.meta.outputs.image }}:${{ github.sha }}
+            ghcr.io/eunomia-bpf/${{ steps.meta.outputs.image }}:latest
           push: ${{ github.event.inputs.push }}
-          # Keep build output readable in the run summary without uploading
-          # the image as a workflow artifact.
+          # Build-only validation runs load the image into the local
+          # docker store instead of publishing it.
           load: ${{ github.event.inputs.push != 'true' }}

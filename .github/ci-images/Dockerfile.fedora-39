@@ -13,12 +13,12 @@ RUN sed -i \
         -e 's|^#baseurl=http://download.example/pub/fedora/linux|baseurl=https://archives.fedoraproject.org/pub/archive/fedora/linux|g' \
         /etc/yum.repos.d/fedora*.repo
 
-RUN dnf -y install \
+RUN dnf -y --disablerepo=fedora-cisco-openh264 install \
         git ca-certificates sudo curl wget xz which file \
         gcc gcc-c++ cmake make ninja-build pkgconf-pkg-config \
         clang llvm llvm-devel \
         elfutils-libelf-devel zlib-devel libzstd openssl-devel \
-        boost-devel libasan libyaml-cpp binutils-devel \
+        boost-devel libasan yaml-cpp-devel binutils-devel \
         lcov gdb strace tree procps-ng \
         bpftrace \
         gnupg pinentry dirmngr \
