@@ -325,6 +325,17 @@ long bpftime_shm::bpf_map_pop_elem(int fd, void *value, bool from_syscall) const
 	return handler ? handler->map_pop_elem(value, from_syscall) : -1;
 }
 
+long bpftime_shm::bpf_map_lookup_and_delete_elem(int fd, const void *key,
+						 void *value,
+						 bool from_syscall) const
+{
+	auto *handler = try_get_map_handler(fd);
+	return handler ?
+		       handler->map_lookup_and_delete_elem(key, value,
+							   from_syscall) :
+		       -1;
+}
+
 long bpftime_shm::bpf_map_peek_elem(int fd, void *value,
 				    bool from_syscall) const
 {

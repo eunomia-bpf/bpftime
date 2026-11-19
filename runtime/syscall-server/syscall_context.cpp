@@ -858,10 +858,16 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		// we should write the bytes of the matched value to the pointer
 		// that user gave us. So here needs a memcpy to achive such
 		// thing.
+		// The backend sets a specific errno (ENOENT for an absent key,
+		// EPERM for a write-only map's fd read, EINVAL for a null key).
+		// Only default to ENOENT when it left errno untouched, which the
+		// handle_sysbpf prologue's `errno = 0` exposes.
+		errno = 0;
 		auto value_ptr = bpftime_map_lookup_elem(
 			attr->map_fd, (const void *)(uintptr_t)attr->key);
 		if (value_ptr == nullptr) {
-			errno = ENOENT;
+			if (errno == 0)
+				errno = ENOENT;
 			return -1;
 		}
 		memcpy((void *)(uintptr_t)attr->value, value_ptr,
@@ -896,16 +902,19 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 			attr->map_fd, (const void *)(uintptr_t)attr->key);
 	}
 	case BPF_MAP_LOOKUP_AND_DELETE_ELEM: {
-		SPDLOG_DEBUG("Lookup and delete map {}, value={:x}",
-			     attr->map_fd, (uintptr_t)attr->value);
+		SPDLOG_DEBUG("Lookup and delete map {}, key={:x}, value={:x}",
+			     attr->map_fd, (uintptr_t)attr->key,
+			     (uintptr_t)attr->value);
 		if (run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
 					       (long)size);
 		}
-		// For queue/stack maps, this is equivalent to pop operation
+		// Keyed for the hash map types (the kernel reads attr->key for
+		// those), keyless for queue/stack where it is a pop.
 		return bpftime_map_lookup_and_delete_elem(
-			attr->map_fd, (void *)(uintptr_t)attr->value);
+			attr->map_fd, (const void *)(uintptr_t)attr->key,
+			(void *)(uintptr_t)attr->value);
 	}
 	case BPF_MAP_GET_NEXT_KEY: {
 		SPDLOG_DEBUG("Getting next key for map {}, key={:x}",

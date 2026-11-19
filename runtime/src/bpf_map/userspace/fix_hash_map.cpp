@@ -7,6 +7,7 @@
 #include <bpf_map/userspace/fix_hash_map.hpp>
 #include <algorithm>
 #include <cerrno>
+#include <cstring>
 #include <functional>
 #include <linux/bpf.h>
 #include <unistd.h>
@@ -70,6 +71,28 @@ long fix_size_hash_map_impl::elem_update(const void *key, const void *value,
 long fix_size_hash_map_impl::elem_delete(const void *key)
 {
 	if (!map_impl.elem_delete(key)) {
+		errno = ENOENT;
+		return -1;
+	}
+	return 0;
+}
+
+// BPF_MAP_LOOKUP_AND_DELETE_ELEM on BPF_MAP_TYPE_HASH. The fixed-size
+// backend stores keys and values in one bucket, so the value is copied out
+// before the bucket is released; the caller's pointer would otherwise be
+// stale storage.
+int fix_size_hash_map_impl::lookup_and_delete(const void *key, void *value_out,
+					      bool from_syscall)
+{
+	void *stored = map_impl.elem_lookup(key);
+	if (stored == nullptr) {
+		errno = ENOENT;
+		return -1;
+	}
+	memcpy(value_out, stored, _value_size);
+	if (!map_impl.elem_delete(key)) {
+		// Unreachable while map_lock is held: the lookup above found the
+		// key. Keep the kernel errno rather than reporting success.
 		errno = ENOENT;
 		return -1;
 	}

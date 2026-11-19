@@ -641,6 +641,21 @@ uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
 	bpftime_copy_comm((char *)(uintptr_t)buf, (size_t)size, filename);
 	return 0;
 }
+// Userspace map backends report failure the libc way: -1 with the host errno
+// set. The kernel's bpf_map_*_elem helpers report a negative errno in the
+// return value instead, and BPF programs branch on -EEXIST/-ENOENT/-E2BIG.
+// Translate here, at the BPF-helper boundary only: the syscall-facing shims
+// keep the -1 + errno contract. A backend that already returns a specific
+// kernel errno (for example -ENOTSUP from an unsupported operation) passes
+// through unchanged.
+static uint64_t kernel_map_helper_result(long result)
+{
+	if (result >= 0)
+		return 0;
+	if (result != -1)
+		return (uint64_t)result;
+	return (uint64_t)-(errno != 0 ? errno : EINVAL);
+}
 
 uint64_t bpftime_map_lookup_elem_helper(uint64_t map, uint64_t key, uint64_t,
 					uint64_t, uint64_t)
@@ -653,37 +668,41 @@ uint64_t bpftime_map_update_elem_helper(uint64_t map, uint64_t key,
 					uint64_t value, uint64_t flags,
 					uint64_t)
 {
-	return (uint64_t)
+	return kernel_map_helper_result(
 		bpftime::shm_holder.global_shared_memory.bpf_map_update_elem(
-			(int)map, (void *)key, (void *)value, flags, false);
+			(int)map, (void *)key, (void *)value, flags, false));
 }
 
 uint64_t bpftime_map_delete_elem_helper(uint64_t map, uint64_t key, uint64_t,
 					uint64_t, uint64_t)
 {
-	return (uint64_t)bpftime::shm_holder.global_shared_memory
-		.bpf_delete_elem((int)map, (void *)key, false);
+	return kernel_map_helper_result(
+		bpftime::shm_holder.global_shared_memory.bpf_delete_elem(
+			(int)map, (void *)key, false));
 }
 
 uint64_t bpftime_map_push_elem_helper(uint64_t map, uint64_t value,
 				      uint64_t flags, uint64_t, uint64_t)
 {
-	return (uint64_t)bpftime::shm_holder.global_shared_memory
-		.bpf_map_push_elem((int)map, (void *)value, flags, false);
+	return kernel_map_helper_result(
+		bpftime::shm_holder.global_shared_memory.bpf_map_push_elem(
+			(int)map, (void *)value, flags, false));
 }
 
 uint64_t bpftime_map_pop_elem_helper(uint64_t map, uint64_t value, uint64_t,
 				     uint64_t, uint64_t)
 {
-	return (uint64_t)bpftime::shm_holder.global_shared_memory
-		.bpf_map_pop_elem((int)map, (void *)value, false);
+	return kernel_map_helper_result(
+		bpftime::shm_holder.global_shared_memory.bpf_map_pop_elem(
+			(int)map, (void *)value, false));
 }
 
 uint64_t bpftime_map_peek_elem_helper(uint64_t map, uint64_t value, uint64_t,
 				      uint64_t, uint64_t)
 {
-	return (uint64_t)bpftime::shm_holder.global_shared_memory
-		.bpf_map_peek_elem((int)map, (void *)value, false);
+	return kernel_map_helper_result(
+		bpftime::shm_holder.global_shared_memory.bpf_map_peek_elem(
+			(int)map, (void *)value, false));
 }
 
 #ifdef ENABLE_PROBE_READ_CHECK

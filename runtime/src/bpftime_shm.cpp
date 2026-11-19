@@ -171,11 +171,11 @@ long bpftime_map_delete_elem(int fd, const void *key)
 	return bpftime_map_delete_elem_with_origin(fd, key, true);
 }
 
-long bpftime_map_lookup_and_delete_elem(int fd, void *value)
+long bpftime_map_lookup_and_delete_elem(int fd, const void *key, void *value)
 {
 	try {
-		return shm_holder.global_shared_memory.bpf_map_pop_elem(
-			fd, value, true);
+		return shm_holder.global_shared_memory
+			.bpf_map_lookup_and_delete_elem(fd, key, value, true);
 	} catch (std::exception &ex) {
 		SPDLOG_ERROR(
 			"Exception happened when performing map lookup and delete elem: {}",

@@ -121,6 +121,28 @@ long lru_var_hash_map_impl::elem_delete(const void *key, bool from_syscall)
 	return 0;
 }
 
+// BPF_MAP_LOOKUP_AND_DELETE_ELEM on BPF_MAP_TYPE_LRU_HASH. Reading the
+// value and dropping the entry both need fd write access, so the syscall
+// path rejects a map created with either fd-mode flag, as the kernel does.
+int lru_var_hash_map_impl::lookup_and_delete(const void *key, void *value_out,
+					     bool from_syscall)
+{
+	if (from_syscall && (map_flags & (BPF_F_RDONLY | BPF_F_WRONLY))) {
+		errno = EPERM;
+		return -1;
+	}
+	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
+	auto itr = map_impl.find(key_vec);
+	if (itr == map_impl.end()) {
+		errno = ENOENT;
+		return -1;
+	}
+	memcpy(value_out, itr->second.value.data(), value_size);
+	evict_entry(itr->second.linked_list_entry);
+	map_impl.erase(itr);
+	return 0;
+}
+
 int lru_var_hash_map_impl::map_get_next_key(const void *key, void *next_key,
 					    bool from_syscall)
 {
