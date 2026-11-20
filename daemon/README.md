@@ -127,9 +127,6 @@ sudo bpftime_daemon -p 12345
 
 # Only redirect whitelisted uprobe addresses to userspace
 sudo bpftime_daemon -w 0x401234 -w 0x401567
-
-# Trace specific user's processes
-sudo bpftime_daemon -u 1000
 ```
 
 ### Integration with bpftime
