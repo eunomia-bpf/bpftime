@@ -18,7 +18,7 @@ attach/
 ├── base_attach_impl/           # Base interface and common functionality
 ├── frida_uprobe_attach_impl/   # Function instrumentation using Frida
 ├── syscall_trace_attach_impl/  # System call tracing (Frida trampoline events)
-├── trap_uprobe_attach_impl/   # Breakpoint + SIGTRAP based uprobe backend
+├── trap_uprobe_attach_impl/    # Breakpoint + SIGTRAP based uprobe backend
 ├── nv_attach_impl/             # CUDA/GPU kernel instrumentation
 ├── simple_attach_impl/         # Simplified attach wrapper
 └── text_segment_transformer/   # Frida/libc binary rewriting only (no seccomp)
