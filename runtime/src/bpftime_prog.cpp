@@ -339,7 +339,9 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 			}
 		}
 	}
-	if (jit) {
+	// CUDA programs never reach the jitted fn (execute throws, signal exec
+	// returns ENOTSUP); keep the pre-cleanup guard to avoid compiling them.
+	if (jit && !is_cuda()) {
 #if defined(__x86_64__)
 		// The defect is in the uBPF x86_64 JIT only; the LLVM backend
 		// handles r0 atomics correctly, so do not change its path.
