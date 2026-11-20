@@ -9,9 +9,9 @@
 #include "trap_uprobe_attach_impl.hpp"
 #endif
 #include "handler/map_handler.hpp"
-#if __linux__
+#if __linux__ || __APPLE__
 #include "linux/bpf.h"
-#elif defined(__APPLE__) || defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
+#elif defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
 #include "bpftime_epoll.h"
 #endif
 #include <algorithm>
