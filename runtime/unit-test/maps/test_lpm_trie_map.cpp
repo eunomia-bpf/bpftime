@@ -1093,7 +1093,9 @@ struct ipv4_lpm_key {
 TEST_CASE("LPM Trie Map Constructor Validation", "[lpm_trie_map][constructor]")
 {
 	const char *SHARED_MEMORY_NAME = "LPMTrieConstructorTestShm_v2";
-	const size_t SHARED_MEMORY_SIZE = 1024;
+	// A valid map pre-allocates BPFTIME_MAX_CPU_COUNT aligned scratch slots,
+	// so the segment must hold that scratch plus managed-segment overhead.
+	const size_t SHARED_MEMORY_SIZE = 256 * 1024;
 
 	shm_remove remover((std::string(SHARED_MEMORY_NAME)));
 

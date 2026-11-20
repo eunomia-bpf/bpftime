@@ -103,6 +103,36 @@ class lpm_trie_map_impl {
 	// in SHM)
 	mutable pthread_spinlock_t mapSpin;
 
+	// Per-CPU lookup-result scratch used only on the BPF helper path,
+	// allocated inside the SHM segment so the pointer returned to a BPF
+	// program stays within the region that the uBPF runtime bounds check
+	// admits. It is pre-allocated once at construction: elem_lookup only
+	// performs a memcpy and never calls the allocator or libc, so it remains
+	// safe when BPF fires while libc holds an arena lock.
+	//
+	// Slot count tracks the CPUs allowed by the process cpuset (via
+	// cpu_to_slot), not the global BPFTIME_MAX_CPU_COUNT, so a map with a
+	// large value_size does not reserve max-CPU x value_size up front and
+	// still constructs in the default segment. bpf_cpu_execution_guard pins
+	// the current BPF CPU and serializes BPF per CPU; the cpuset-derived
+	// mapping is identical across processes in a container, so each slot has
+	// one writer at a time and never aliases. Slots are padded to
+	// max_align_t so every slot start is naturally aligned. The non-BPF
+	// (bpf() syscall) path does not use this scratch: it is not
+	// CPU-serialized, so it keeps a per-thread buffer instead.
+	size_t slot_stride;
+	// Deterministic map from a (pinned) BPF CPU id to a compact scratch slot
+	// index. Built once at construction from the process cpuset, so every
+	// process in the same container derives the identical mapping; entries
+	// for CPUs outside the cpuset stay -1. Fixed BPFTIME_MAX_CPU_COUNT size
+	// keeps this table independent of value_size (a few KiB).
+	boost::interprocess::vector<int, boost::interprocess::allocator<
+					      int, segment_manager_type>>
+		cpu_to_slot;
+	// Compact per-CPU copy-out slots, one per CPU allowed by the cpuset
+	// (not the global CPU maximum), allocated inside SHM at construction.
+	boost::interprocess::vector<uint8_t, byte_allocator> lookup_scratch;
+
 	// Helper functions
 	int extract_bit(const uint8_t *data, size_t index) const;
 	size_t longest_prefix_match(const lpm_trie_node *node,

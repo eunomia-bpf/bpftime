@@ -11,6 +11,9 @@
 #include <cstring>
 #include <stdexcept>
 #include <algorithm>
+#include <sched.h>
+#include "bpftime_shm_internal.hpp"
+#include "platform_utils.hpp"
 // #include <vector>
 
 namespace bpftime
@@ -48,7 +51,9 @@ lpm_trie_map_impl::lpm_trie_map_impl(
 	: _key_size(key_size), _value_size(value_size),
 	  _max_entries(max_entries),
 	  root(nullptr, node_deleter_type(memory.get_segment_manager())),
-	  n_entries(0), memory(memory)
+	  n_entries(0), memory(memory), slot_stride(0),
+	  cpu_to_slot(memory.get_segment_manager()),
+	  lookup_scratch(memory.get_segment_manager())
 {
 	// Validate parameters
 	if (key_size < LPM_KEY_SIZE_MIN || key_size > LPM_KEY_SIZE_MAX) {
@@ -67,6 +72,43 @@ lpm_trie_map_impl::lpm_trie_map_impl(
 
 	_data_size = key_size - sizeof(uint32_t); // Subtract prefixlen field
 	_max_prefixlen = _data_size * 8; // Maximum prefix length in bits
+
+	// Pad each slot to max_align_t so every slot start is naturally
+	// aligned for the typed BPF load that consumes the returned pointer.
+	constexpr size_t kAlign = alignof(max_align_t);
+	slot_stride =
+		(static_cast<size_t>(_value_size) + kAlign - 1) & ~(kAlign - 1);
+
+	// Build a deterministic BPF-CPU -> compact-slot map from this
+	// process's cpuset. Every process in a container shares the same
+	// cpuset, so the mapping is identical across processes that map the
+	// same SHM segment; the per-CPU execution lock then guarantees one
+	// writer per slot. Sizing slots by the allowed CPU count (not
+	// BPFTIME_MAX_CPU_COUNT) keeps a large value_size affordable in the
+	// default segment. This runs at map creation, never on the BPF hot
+	// path, so it may use libc freely.
+	cpu_to_slot.assign(BPFTIME_MAX_CPU_COUNT, -1);
+	cpu_set_t allowed;
+	CPU_ZERO(&allowed);
+	size_t online = 0;
+	if (sched_getaffinity(0, sizeof(allowed), &allowed) == 0) {
+		for (int cpu = 0; cpu < BPFTIME_MAX_CPU_COUNT; ++cpu) {
+			if (CPU_ISSET(cpu, &allowed))
+				cpu_to_slot[cpu] = static_cast<int>(online++);
+		}
+	}
+	// Fallback if the affinity query is unavailable: assume dense CPU ids
+	// up to the online processor count.
+	if (online == 0) {
+		long n = sysconf(_SC_NPROCESSORS_ONLN);
+		online = static_cast<size_t>(n > 0 ? n : 1);
+		for (size_t cpu = 0;
+		     cpu < online &&
+		     cpu < static_cast<size_t>(BPFTIME_MAX_CPU_COUNT);
+		     ++cpu)
+			cpu_to_slot[cpu] = static_cast<int>(cpu);
+	}
+	lookup_scratch.resize(online * slot_stride);
 
 	// Initialize process-shared spin lock
 	int rc = pthread_spin_init(&mapSpin, PTHREAD_PROCESS_SHARED);
@@ -252,27 +294,64 @@ void *lpm_trie_map_impl::elem_lookup(const void *key)
 		return nullptr;
 	}
 
-	// Allocation callbacks can reach this lookup while libc holds an arena
-	// lock. A vector's first use registers a TLS destructor through calloc,
-	// even before resize allocates its storage. Keep small values in a
-	// trivial initial-exec TLS buffer so initialization and copy avoid the
-	// allocator entirely.
-	alignas(std::max_align_t) static thread_local uint8_t inline_value[256]
-#if defined(__linux__)
-		__attribute__((tls_model("initial-exec")))
-#endif
-		= {};
+	// Copy the matched node value out before releasing mapSpin, then hand
+	// back a stable buffer. The destination depends on the caller:
+	//
+	//  - BPF helper context (a pinned BPF CPU exists): copy into the
+	//    SHM-resident per-CPU scratch. The returned pointer must lie inside
+	//    the global SHM segment or the uBPF runtime bounds check rejects the
+	//    BPF dereference. The guard guarantees the CPU index is in range and
+	//    BPF execution is serialized per CPU, so the slot has no concurrent
+	//    writer. This path stays allocation-free so it is safe when BPF fires
+	//    while libc holds an arena lock.
+	//  - bpf() syscall context (no pinned BPF CPU): this path is not
+	//    CPU-serialized, so a per-CPU slot could be aliased by another
+	//    thread. Keep the original per-thread buffer instead, which isolates
+	//    concurrent syscall callers and may allocate freely because a direct
+	//    bpf() syscall is not a libc allocation callback.
 	const uint8_t *src = get_node_value_data(found);
 	if (!src) {
 		errno = ENOENT;
 		return nullptr;
 	}
+	if (bpftime_get_current_bpf_cpu() >= 0) {
+		int cpu = my_sched_getcpu();
+		if (cpu < 0 ||
+		    cpu >= static_cast<int>(BPFTIME_MAX_CPU_COUNT)) {
+			// Defensive: the guard normally keeps the BPF CPU in
+			// range, so this is unreachable on the BPF path.
+			errno = EINVAL;
+			return nullptr;
+		}
+		int slot = cpu_to_slot[cpu];
+		if (slot < 0) {
+			// The pinned CPU is outside this process's cpuset; the
+			// guard/cpuset should prevent this on the BPF path.
+			errno = EINVAL;
+			return nullptr;
+		}
+		uint8_t *dst = lookup_scratch.data() +
+			       static_cast<size_t>(slot) * slot_stride;
+		// Make the slot (not just the segment) bound explicit: the
+		// whole value must stay inside the pre-allocated scratch.
+		if (dst + _value_size >
+		    lookup_scratch.data() + lookup_scratch.size()) {
+			errno = EINVAL;
+			return nullptr;
+		}
+		std::memcpy(dst, src, _value_size);
+		return dst;
+	}
+
+	alignas(std::max_align_t) static thread_local uint8_t inline_value[256]
+#if defined(__linux__)
+		__attribute__((tls_model("initial-exec")))
+#endif
+		= {};
 	if (_value_size <= sizeof(inline_value)) {
 		std::memcpy(inline_value, src, _value_size);
 		return inline_value;
 	}
-	// Keep the existing storage path for map values larger than the
-	// inline buffer.
 	static thread_local std::vector<uint8_t> tl_value;
 	tl_value.resize(_value_size);
 	std::memcpy(tl_value.data(), src, _value_size);
