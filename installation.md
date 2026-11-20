@@ -104,7 +104,7 @@ You may be interested in the following cmake options:
 - `CMAKE_BUILD_TYPE`: Specify the build type. It could be `Debug`, `Release`, `MinSizeRel` or `RelWithDebInfo`. If you are not going to debug bpftime, you just need to set it to `Release`. Default to `Debug`.
 - `BPFTIME_ENABLE_UNIT_TESTING`: Whether to build unit test targets. See `Testing targets` for details. Default to `NO`.
 - `BPFTIME_ENABLE_LTO`: Whether to enable Link Time Optimization. Enabling this may increase the compile time, but it may lead to a better performance. Default to `No`.
-- `BPFTIME_ENABLE_CCACHE`: Enable the usage of Ccache to speed up rebuild times. Default to `OFF`.
+- Ccache is used automatically when it is found on the system; there is no build option to toggle it.
 - `BPFTIME_ENABLE_ASAN`: Enable Address Sanitizer to detect memory errors. Default to `OFF`.
 - `ENABLE_EBPF_VERIFIER`: Whether to enable userspace eBPF verifier. Default to `OFF`.
 - `BPFTIME_LLVM_JIT`: Whether to use LLVM JIT as the ebpf runtime. Requires LLVM >= 15. It's recommended to enable this, since the ubpf intepreter is no longer maintained. Default to `ON`.
