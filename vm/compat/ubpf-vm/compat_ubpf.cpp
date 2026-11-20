@@ -66,6 +66,13 @@ int bpftime_ubpf_vm::register_external_function(size_t index,
 	return err;
 }
 
+int bpftime_ubpf_vm::register_data_bounds_check(
+	bool (*fn)(void *context, uint64_t addr, uint64_t size), void *context)
+{
+	return ubpf_register_data_bounds_check(ubpf_vm, context,
+					       reinterpret_cast<ubpf_bounds_check>(fn));
+}
+
 int bpftime_ubpf_vm::load_code(const void *code, size_t code_len)
 {
 	SPDLOG_DEBUG("Loading instructions of ubpf vm with length {}",
