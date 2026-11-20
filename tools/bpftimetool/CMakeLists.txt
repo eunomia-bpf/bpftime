@@ -60,4 +60,14 @@ else()
   endif()
 endif()
 
+# The tool loads VMs by name through create_vm_instance, and the "llvm"
+# factory registers itself only from compat_llvm.cpp's constructor. Nothing
+# references that object by symbol, so the linker can drop it from the
+# archive (example/attach_implementation links it whole for the same
+# reason). Keep the registration unconditionally.
+if(BPFTIME_LLVM_JIT)
+  target_link_options(bpftimetool PRIVATE
+    "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_llvm_vm>" "-Wl,--no-whole-archive")
+endif()
+
 install(TARGETS bpftimetool CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)
