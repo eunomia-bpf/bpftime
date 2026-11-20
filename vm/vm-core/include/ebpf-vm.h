@@ -118,6 +118,14 @@ int ebpf_register(struct ebpf_vm *vm, unsigned int index, const char *name,
 		  void *fn);
 
 /**
+ * @brief Register a host memory bounds-check predicate (uBPF runtime safety).
+ * @return 0 success; -1 backends without runtime bounds checking.
+ */
+int ebpf_register_data_bounds_check(
+	struct ebpf_vm *vm,
+	bool (*fn)(void *context, uint64_t addr, uint64_t size), void *context);
+
+/**
  * @brief Load code into a VM.
  * This must be done before calling ebpf_exec or ebpf_compile and after
  * registering all functions.

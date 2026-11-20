@@ -39,6 +39,13 @@ extern "C" int ebpf_register(struct ebpf_vm *vm, unsigned int index,
 	return vm->vm_instance->register_external_function(index, name, fn);
 }
 
+extern "C" int ebpf_register_data_bounds_check(
+	struct ebpf_vm *vm,
+	bool (*fn)(void *context, uint64_t addr, uint64_t size), void *context)
+{
+	return vm->vm_instance->register_data_bounds_check(fn, context);
+}
+
 extern "C" int ebpf_load(struct ebpf_vm *vm, const void *code,
 			 uint32_t code_len, char **errmsg)
 {
