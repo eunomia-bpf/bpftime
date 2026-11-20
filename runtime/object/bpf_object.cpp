@@ -1,6 +1,6 @@
 #if __linux__
 #include <linux/bpf.h>
-#elif __APPLE__
+#elif defined(__APPLE__) || defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
 #include "bpftime_epoll.h"
 #endif
 #include <string>
@@ -11,7 +11,7 @@
 #include <spdlog/spdlog.h>
 using namespace std;
 using namespace bpftime;
-#if __APPLE__
+#if defined(__APPLE__) || defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
 using namespace bpftime_epoll;
 #endif
 

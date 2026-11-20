@@ -5,7 +5,7 @@
  */
 #if __linux__
 #include "linux/perf_event.h"
-#elif __APPLE__
+#elif defined(__APPLE__) || defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
 #include "bpftime_epoll.h"
 #endif
 #include "spdlog/spdlog.h"
