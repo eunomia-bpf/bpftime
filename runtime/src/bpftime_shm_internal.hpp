@@ -124,9 +124,23 @@ class bpftime_shm {
 #endif
 
     public:
-	shm_open_type get_shm_open_type() const
+	// True when the fully-contained [addr, addr+size) range lies inside the
+	// mapped SHM segment. Backends with runtime memory safety checks
+	// (uBPF) use this to admit BPF map/context accesses that the kernel
+	// verifier would normally allow. Includes an overflow guard.
+	bool is_within_shm_segment(uint64_t addr, uint64_t size) const
 	{
-		return open_type;
+		if (size == 0) {
+			return true;
+		}
+		const auto base = reinterpret_cast<uint64_t>(
+			segment.get_address());
+		const uint64_t seg_size = segment.get_size();
+		if (addr < base || size > seg_size) {
+			return false;
+		}
+		const uint64_t offset = addr - base;
+		return offset <= seg_size - size;
 	}
 	void set_enable_mock(bool flag)
 	{

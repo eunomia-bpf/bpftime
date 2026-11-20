@@ -884,8 +884,6 @@ int main(int argc, const char **argv)
 					    DEFAULT_LOGGER_OUTPUT_PATH :
 					    logger_target);
 	spdlog::cfg::load_env_levels();
-	const auto runtime_config = bpftime::construct_runtime_config_from_env();
-	(void)runtime_config;
 	signal(SIGINT, signal_handler);
 	signal(SIGTSTP, signal_handler);
 	argparse::ArgumentParser program(argv[0]);
@@ -906,10 +904,6 @@ int main(int argc, const char **argv)
 			.required()
 			.nargs(1);
 	}
-
-	program.add_argument("-d", "--dry-run")
-		.help("Run without commiting any modifications")
-		.flag();
 
 	argparse::ArgumentParser load_command("load");
 

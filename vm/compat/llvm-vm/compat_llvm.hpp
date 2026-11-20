@@ -41,8 +41,6 @@ class bpftime_llvm_vm : public bpftime::llvmbpf_vm,
 			      uint64_t (*map_val)(uint64_t),
 			      uint64_t (*var_addr)(uint32_t),
 			      uint64_t (*code_addr)(uint32_t)) override;
-	std::optional<std::string>
-	generate_ptx(const char *target_cpu) override;
 };
 
 } // namespace bpftime::vm::llvm

@@ -90,7 +90,6 @@ bpftime detach
 
 **Global Options**:
 - `-i, --install-location <PATH>`: Specify bpftime installation directory (default: `~/.bpftime`)
-- `-d, --dry-run`: Run without committing any modifications
 
 ### 2. bpftime Tool (`bpftimetool`)
 
