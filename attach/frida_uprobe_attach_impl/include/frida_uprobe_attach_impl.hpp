@@ -45,9 +45,6 @@ using uretprobe_callback = std::function<void(const pt_regs &regs)>;
 using uprobe_override_callback = std::function<void(const pt_regs &regs)>;
 using callback_variant = std::variant<uprobe_callback, uretprobe_callback,
 				      uprobe_override_callback>;
-// Callback type used for iterating over all attaches
-using attach_iterate_callback =
-	std::function<void(int id, const void *addr, int ty)>;
 
 struct ebpf_callback_args {
 	ebpf_run_callback ebpf_cb;
