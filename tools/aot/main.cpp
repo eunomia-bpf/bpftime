@@ -109,7 +109,6 @@ static int compile_ebpf_program(const std::filesystem::path &output)
 	bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
 	const handler_manager *manager =
 		shm_holder.global_shared_memory.get_manager();
-	size_t handler_size = manager->size();
 	for (size_t i = 0; i < manager->size(); i++) {
 		if (std::holds_alternative<bpf_prog_handler>(
 			    manager->get_handler(i))) {
@@ -179,7 +178,6 @@ static int load_ebpf_program(const std::filesystem::path &elf, int id)
 		SPDLOG_ERROR("Invalid id {} not a bpf program", id);
 		return 1;
 	}
-	return 0;
 }
 
 static int run_ebpf_program(const std::filesystem::path &elf,

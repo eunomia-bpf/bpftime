@@ -69,10 +69,6 @@ void bpftime_llvm_vm::set_lddw_helpers(uint64_t (*map_by_fd)(uint32_t),
 	bpftime::llvmbpf_vm::set_lddw_helpers(map_by_fd, map_by_idx, map_val,
 					      var_addr, code_addr);
 }
-std::optional<std::string> bpftime_llvm_vm::generate_ptx(const char *target_cpu)
-{
-	return bpftime::llvmbpf_vm::generate_ptx(target_cpu);
-}
 } // namespace bpftime::vm::llvm
 
 namespace bpftime::vm::compat
