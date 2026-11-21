@@ -649,7 +649,7 @@ extern "C" int64_t bpftime_syscall_server__dispatch_raw_syscall(
 }
 #endif
 
-#if defined(__linux__) && defined(__x86_64__)
+#if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))
 int bpftime_syscall_server_prewarm() noexcept
 {
 	// Must run before the seccomp filter is installed. try_startup() holds
