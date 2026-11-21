@@ -68,6 +68,7 @@ set(sources
   src/bpftime_config.cpp
   src/ufunc.cpp
   src/bpf_helper.cpp
+  src/bpf_helper_read_and_write.cpp
   src/platform_utils.cpp
 
   src/bpf_map/userspace/array_map.cpp
