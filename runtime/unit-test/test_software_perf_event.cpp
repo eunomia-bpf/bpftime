@@ -111,11 +111,15 @@ TEST_CASE("Perf output never changes the calling thread's CPU affinity",
 
 	uint32_t payload = 42;
 	errno = 0;
+	// The helper runs as it would inside a program, with the
+	// shared-memory write window open.
+	const int saved_protect = bpftime_protect_open_write_window();
 	const auto ret =
 		bpf_perf_event_output(0, map_fd, 0,
 				      reinterpret_cast<uint64_t>(&payload),
 				      sizeof(payload));
 	const int output_errno = errno;
+	bpftime_protect_restore(saved_protect);
 	cpu_set_t after;
 	REQUIRE(sched_getaffinity(0, sizeof(after), &after) == 0);
 	CHECK(ret == expected_ret);

@@ -28,6 +28,30 @@ using namespace bpftime;
 using json = nlohmann::json;
 using namespace std;
 
+// With MPK the shared memory is writable only inside a write window; an
+// import writes the instance it is given, so it opens that instance's window
+// and gives the caller's rights back when it returns.
+struct shm_write_window {
+#if BPFTIME_ENABLE_MPK
+	bpftime_shm &shm;
+	int saved;
+	explicit shm_write_window(bpftime_shm &s)
+		: shm(s), saved(s.open_mpk_write_window())
+	{
+	}
+	~shm_write_window()
+	{
+		shm.restore_mpk_rights(saved);
+	}
+#else
+	explicit shm_write_window(bpftime_shm &)
+	{
+	}
+#endif
+	shm_write_window(const shm_write_window &) = delete;
+	shm_write_window &operator=(const shm_write_window &) = delete;
+};
+
 static json bpf_map_attr_to_json(const bpf_map_attr &attr)
 {
 	json j;
@@ -223,6 +247,7 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 int bpftime::bpftime_import_shm_handler_from_json(bpftime_shm &shm, int fd,
 						  const char *json_string)
 {
+	shm_write_window window(shm);
 	json j = json::parse(json_string);
 	return import_shm_handler_from_json(shm, j, fd);
 }
@@ -237,6 +262,7 @@ extern "C" int bpftime_import_shm_handler_from_json(int fd,
 int bpftime::bpftime_import_shm_from_json(bpftime_shm &shm,
 					  const char *filename)
 {
+	shm_write_window window(shm);
 	ifstream file(filename);
 	json j;
 	file >> j;

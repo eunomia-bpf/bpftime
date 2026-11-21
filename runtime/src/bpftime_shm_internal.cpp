@@ -56,6 +56,29 @@ extern "C" void bpftime_initialize_global_shm(bpftime::shm_open_type type)
 	SPDLOG_INFO("Global shm initialized");
 }
 
+extern "C" int bpftime_protect_open_write_window()
+{
+#if BPFTIME_ENABLE_MPK
+	if (global_shm_initialized) {
+		return bpftime::shm_holder.global_shared_memory
+			.open_mpk_write_window();
+	}
+#endif
+	return -1;
+}
+
+extern "C" void bpftime_protect_restore(int saved)
+{
+#if BPFTIME_ENABLE_MPK
+	if (global_shm_initialized) {
+		bpftime::shm_holder.global_shared_memory.restore_mpk_rights(
+			saved);
+	}
+#else
+	(void)saved;
+#endif
+}
+
 extern "C" void bpftime_destroy_global_shm()
 {
 	using namespace bpftime;
@@ -812,6 +835,28 @@ void bpftime_shm::disable_mpk()
 	}
 	if (pkey_set(pkey, 0) == -1) {
 		SPDLOG_ERROR("pkey_set disable failed");
+	}
+}
+
+int bpftime_shm::open_mpk_write_window()
+{
+	if (manager == nullptr || !is_mpk_init) {
+		return -1;
+	}
+	int saved = pkey_get(pkey);
+	if (saved > 0 && pkey_set(pkey, 0) == -1) {
+		SPDLOG_ERROR("pkey_set write window failed");
+	}
+	return saved;
+}
+
+void bpftime_shm::restore_mpk_rights(int saved)
+{
+	if (saved <= 0 || manager == nullptr || !is_mpk_init) {
+		return;
+	}
+	if (pkey_set(pkey, saved) == -1) {
+		SPDLOG_ERROR("pkey_set restore failed");
 	}
 }
 #endif
