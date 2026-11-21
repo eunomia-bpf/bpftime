@@ -97,6 +97,12 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_include_directories(bpftime_runtime_tests PRIVATE ../syscall-server)
     target_link_libraries(bpftime_runtime_tests PRIVATE bpftime_syscall_trace_attach_impl ${CMAKE_DL_LIBS})
     target_link_options(bpftime_runtime_tests PRIVATE -Wl,--wrap=dlsym)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+        target_sources(bpftime_runtime_tests PRIVATE
+            test_rootless_seccomp_constructor.cpp)
+    endif()
+    target_link_libraries(bpftime_runtime_tests PRIVATE bpftime_syscall_trace_attach_impl ${CMAKE_DL_LIBS})
+    target_link_options(bpftime_runtime_tests PRIVATE -Wl,--wrap=dlsym)
     target_sources(bpftime_runtime_tests PRIVATE
         test_get_current_uid_gid.cpp
         test_get_current_comm.cpp)
@@ -125,6 +131,32 @@ if(UNIX AND NOT APPLE)
     set_property(TARGET bpftime-shm-allocation-test-helper PROPERTY C_STANDARD 99)
     set_property(TARGET bpftime-runtime-options-test-helper PROPERTY C_STANDARD 99)
     set_property(TARGET bpftime-map-syscall-test-helper PROPERTY C_STANDARD 99)
+    # The rootless constructor tests need a process that bypasses glibc
+    # __libc_start_main (custom _start, raw syscalls only) and an ordinary
+    # glibc process built from the same helper source. x86_64-only: the
+    # rootless seccomp USER_NOTIF entry itself is x86_64-only.
+    set(_rootless_custom_helper_expr "")
+    set(_rootless_normal_helper_expr "")
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+        add_executable(bpftime-rootless-custom-start-helper
+            assets/rootless_start_helper.c)
+        target_compile_definitions(bpftime-rootless-custom-start-helper
+            PRIVATE BPFTIME_CUSTOM_START=1)
+        target_link_options(bpftime-rootless-custom-start-helper
+            PRIVATE -nostartfiles)
+        add_executable(bpftime-rootless-normal-start-helper
+            assets/rootless_start_helper.c)
+        set_property(TARGET bpftime-rootless-custom-start-helper
+                                  bpftime-rootless-normal-start-helper
+                     PROPERTY C_STANDARD 99)
+        set(_rootless_custom_helper_expr
+            "$<TARGET_FILE:bpftime-rootless-custom-start-helper>")
+        set(_rootless_normal_helper_expr
+            "$<TARGET_FILE:bpftime-rootless-normal-start-helper>")
+        add_dependencies(bpftime_runtime_tests
+            bpftime-rootless-custom-start-helper
+            bpftime-rootless-normal-start-helper)
+    endif()
     add_dependencies(bpftime_runtime_tests
         bpftime-agent
         bpftime-syscall-server
@@ -133,7 +165,7 @@ if(UNIX AND NOT APPLE)
         bpftime-shm-allocation-test-helper)
     file(GENERATE
         OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/shm_allocation_test_paths.hpp"
-        CONTENT "#define BPFTIME_SHM_ALLOCATION_TEST_HELPER \"$<TARGET_FILE:bpftime-shm-allocation-test-helper>\"\n#define BPFTIME_MAP_SYSCALL_TEST_HELPER \"$<TARGET_FILE:bpftime-map-syscall-test-helper>\"\n#define BPFTIME_SYSCALL_SERVER_LIBRARY \"$<TARGET_FILE:bpftime-syscall-server>\"\n#define BPFTIME_AGENT_LIBRARY \"$<TARGET_FILE:bpftime-agent>\"\n")
+        CONTENT "#define BPFTIME_SHM_ALLOCATION_TEST_HELPER \"$<TARGET_FILE:bpftime-shm-allocation-test-helper>\"\n#define BPFTIME_MAP_SYSCALL_TEST_HELPER \"$<TARGET_FILE:bpftime-map-syscall-test-helper>\"\n#define BPFTIME_SYSCALL_SERVER_LIBRARY \"$<TARGET_FILE:bpftime-syscall-server>\"\n#define BPFTIME_AGENT_LIBRARY \"$<TARGET_FILE:bpftime-agent>\"\n#define BPFTIME_ROOTLESS_CUSTOM_START_HELPER \"${_rootless_custom_helper_expr}\"\n#define BPFTIME_ROOTLESS_NORMAL_START_HELPER \"${_rootless_normal_helper_expr}\"\n")
     target_include_directories(bpftime_runtime_tests PRIVATE
         "${CMAKE_CURRENT_BINARY_DIR}")
 endif()
