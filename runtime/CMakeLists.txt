@@ -297,13 +297,16 @@ add_subdirectory(syscall-server)
 #
 # Unit testing setup
 #
-if(BPFTIME_ENABLE_UNIT_TESTING AND BPFTIME_BUILD_WITH_LIBBPF)
+if(BPFTIME_ENABLE_UNIT_TESTING)
   enable_testing()
-  message(STATUS "Build unit tests for the runtime. Tests should always be found in the test folder\n")
   # Lets unit tests observe internal caches that have no public surface.
   target_compile_definitions(${PROJECT_NAME} PUBLIC BPFTIME_UNIT_TESTING=1)
-  add_subdirectory(test)
-  add_subdirectory(unit-test)
+  include(unit-test/json_map_tests.cmake)
+  if(BPFTIME_BUILD_WITH_LIBBPF)
+    message(STATUS "Build unit tests for the runtime. Tests should always be found in the test folder\n")
+    add_subdirectory(test)
+    add_subdirectory(unit-test)
+  endif()
 endif()
 
 if(${TEST_LCOV})
