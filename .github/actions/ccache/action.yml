@@ -56,26 +56,24 @@ runs:
         # grant writes to $HOME) can use it and actions/cache can persist it.
         export CCACHE_DIR="${GITHUB_WORKSPACE}/.ccache"
         mkdir -p "$CCACHE_DIR"
-        # ccache masquerades as each compiler through same-named symlinks on
-        # PATH, so plain Make builds and explicit CC=gcc-N setups are covered
-        # without touching any CMake flags.
+        # Only a name that already resolves to a real compiler becomes a
+        # launcher: a launcher for a compiler the image does not have turns
+        # `clang` into a shim with nothing behind it, and ccache then fails
+        # with `Could not find compiler "clang" in PATH` instead of letting
+        # the build pick the versioned name the image does provide.
         LAUNCHER_DIR="${RUNNER_TEMP}/ccache-bin"
         mkdir -p "$LAUNCHER_DIR"
-        # Only shadow a compiler that actually exists: ccache resolves the
-        # real binary by the name it was invoked as, so a shim for an
-        # uninstalled name (clang when the image only ships clang-18) gives
-        # "Could not find compiler "clang" in PATH". Existence is checked
-        # outside LAUNCHER_DIR so a previous run's shims do not count.
+        # Drop the launcher dir itself from the lookup, so re-running the
+        # action does not see its own symlinks as the compilers.
+        SEARCH_PATH="${PATH#"$LAUNCHER_DIR":}"
         for name in \
           cc gcc g++ c++ \
           gcc-10 g++-10 gcc-11 g++-11 gcc-12 g++-12 gcc-13 g++-13 \
           clang clang++ clang-14 clang-15 clang-16 clang-17 clang-18 clang-19 \
           aarch64-linux-gnu-gcc aarch64-linux-gnu-g++ \
           riscv64-linux-gnu-gcc riscv64-linux-gnu-g++; do
-          if command -v "$name" >/dev/null 2>&1 &&
-             [ "$(command -v "$name")" != "$LAUNCHER_DIR/$name" ]; then
-            ln -sf "$(command -v ccache)" "$LAUNCHER_DIR/$name"
-          fi
+          PATH="$SEARCH_PATH" command -v "$name" >/dev/null 2>&1 || continue
+          ln -sf "$(command -v ccache)" "$LAUNCHER_DIR/$name"
         done
         echo "$LAUNCHER_DIR" >> "$GITHUB_PATH"
         echo "CCACHE_DIR=$CCACHE_DIR" >> "$GITHUB_ENV"

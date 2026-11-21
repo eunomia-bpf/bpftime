@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - ".github/workflows/test-vm.yml"
+      - ".github/actions/ccache/**"
       - "vm/**"
       - "cmake/**"
       - "third_party/**"
@@ -15,6 +16,7 @@ on:
     branches: [master]
     paths:
       - ".github/workflows/test-vm.yml"
+      - ".github/actions/ccache/**"
       - "vm/**"
       - "cmake/**"
       - "third_party/**"

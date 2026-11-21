@@ -6,6 +6,7 @@ on:
     branches: [master]
     paths:
       - ".github/workflows/test-riscv64.yml"
+      - ".github/actions/ccache/**"
       - "attach/base_attach_impl/**"
       - "attach/trap_uprobe_attach_impl/**"
       - "attach/CMakeLists.txt"
@@ -27,6 +28,7 @@ on:
     branches: [master]
     paths:
       - ".github/workflows/test-riscv64.yml"
+      - ".github/actions/ccache/**"
       - "attach/base_attach_impl/**"
       - "attach/trap_uprobe_attach_impl/**"
       - "attach/CMakeLists.txt"

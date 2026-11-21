@@ -5,6 +5,7 @@ on:
     branches: [master, "ci/**"]
     paths:
       - ".github/workflows/build-gcc13.yml"
+      - ".github/actions/ccache/**"
       - "attach/**"
       - "benchmark/**"
       - "daemon/**"
@@ -19,6 +20,7 @@ on:
     branches: [master]
     paths:
       - ".github/workflows/build-gcc13.yml"
+      - ".github/actions/ccache/**"
       - "attach/**"
       - "benchmark/**"
       - "daemon/**"

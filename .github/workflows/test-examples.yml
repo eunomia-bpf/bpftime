@@ -5,6 +5,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-examples.yml"
+      - ".github/actions/ccache/**"
       - ".github/script/run_example.py"
       - ".github/script/run_examples.py"
       - "attach/**"
@@ -20,6 +21,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-examples.yml"
+      - ".github/actions/ccache/**"
       - ".github/script/run_example.py"
       - ".github/script/run_examples.py"
       - "attach/**"
