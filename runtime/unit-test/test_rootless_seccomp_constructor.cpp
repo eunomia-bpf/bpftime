@@ -151,9 +151,14 @@ TEST_CASE("Loader constructor arms seccomp in a process bypassing "
 	REQUIRE(parse_seccomp_mode(armed.output) == 2);
 	REQUIRE(armed.output.find("Using rootless seccomp notification") !=
 		std::string::npos);
-	// The un-preloaded process keeps its original seccomp mode, so the
-	// filter is an observable change caused by the preload.
-	REQUIRE(baseline_mode != 2);
+	// On an already-confined host the baseline mode may already be 2; the
+	// mode-2 and log-marker assertions above still prove the preload
+	// installed its own listener. CI runs the job privileged/unconfined.
+	if (baseline_mode == 2)
+		WARN("outer seccomp filter already present; baseline delta "
+		     "not asserted");
+	else
+		REQUIRE(baseline_mode != 2);
 }
 
 TEST_CASE("Preload without BPFTIME_GO_SECCOMP stays side-effect free",

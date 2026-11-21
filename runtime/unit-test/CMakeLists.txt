@@ -101,8 +101,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_sources(bpftime_runtime_tests PRIVATE
             test_rootless_seccomp_constructor.cpp)
     endif()
-    target_link_libraries(bpftime_runtime_tests PRIVATE bpftime_syscall_trace_attach_impl ${CMAKE_DL_LIBS})
-    target_link_options(bpftime_runtime_tests PRIVATE -Wl,--wrap=dlsym)
     target_sources(bpftime_runtime_tests PRIVATE
         test_get_current_uid_gid.cpp
         test_get_current_comm.cpp)

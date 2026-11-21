@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: MIT
  *
- * Public entry point for the seccomp user-notification attach mechanism.
- * The transformer/agent calls this to install the tracer; it is a no-op unless
- * BPFTIME_GO_SECCOMP is set, preserving the existing env gate.
+ * Entry point for the seccomp USER_NOTIF tracer installed by the rootless
+ * syscall-server (loader constructor and __libc_start_main interposer); it is
+ * a no-op unless BPFTIME_GO_SECCOMP is set, preserving the existing env gate.
  */
 #ifndef BPFTIME_SECCOMP_TRACER_HPP
 #define BPFTIME_SECCOMP_TRACER_HPP

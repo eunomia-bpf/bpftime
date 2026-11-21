@@ -44,27 +44,35 @@ void rootless_arm_seccomp()
 	if (!g_rootless_seccomp_armed.compare_exchange_strong(expected, true))
 		return;
 
-	// Worker threads log through interposed syscalls; a rotating file sink
-	// makes a worker's spdlog flush contend with the main thread's stdio
-	// lock during fclose and deadlock. Default to console on the rootless
-	// path only: an ordinary BPFTIME_LOG_OUTPUT-less preload must keep
-	// writing its log file, as the startup tests assert no host stdio.
-	if (getenv("BPFTIME_LOG_OUTPUT") == nullptr)
-		setenv("BPFTIME_LOG_OUTPUT", "console", 1);
+	// This runs across an exported boundary (loader constructor and the
+	// __libc_start_main interposer), so no exception may escape: fail open
+	// and leave the host running with ordinary syscalls.
+	try {
+		// Worker threads log through interposed syscalls; a rotating
+		// file sink makes a worker's spdlog flush contend with the main
+		// thread's stdio lock during fclose and deadlock. Default to
+		// console on the rootless path only: an ordinary
+		// BPFTIME_LOG_OUTPUT-less preload must keep writing its log
+		// file, as the startup tests assert no host stdio.
+		if (getenv("BPFTIME_LOG_OUTPUT") == nullptr)
+			setenv("BPFTIME_LOG_OUTPUT", "console", 1);
 
-	// Finish the one-time fake-kernel/SHM startup BEFORE installing the
-	// filter. The startup path issues whitelisted syscalls; doing it lazily
-	// inside a seccomp worker self-deadlocks because the workers block on
-	// this same initialization. Non-fatal: on failure skip the filter and
-	// leave the host running with ordinary syscalls (fail open).
-	if (bpftime_syscall_server_prewarm() != 0) {
-		SPDLOG_ERROR(
-			"rootless: syscall server prewarm failed; skipping seccomp");
-		return;
+		// Finish the one-time fake-kernel/SHM startup BEFORE installing
+		// the filter. The startup path issues whitelisted syscalls;
+		// doing it lazily inside a seccomp worker self-deadlocks because
+		// the workers block on this same initialization.
+		if (bpftime_syscall_server_prewarm() != 0) {
+			SPDLOG_ERROR(
+				"rootless: syscall server prewarm failed; skipping seccomp");
+			return;
+		}
+
+		// Install the seccomp USER_NOTIF filter with workers started
+		// first.
+		bpftime::seccomp::install_seccomp_tracer();
+	} catch (...) {
+		// Fail open: the filter is optional, the host is not.
 	}
-
-	// Install the seccomp USER_NOTIF filter with workers started first.
-	bpftime::seccomp::install_seccomp_tracer();
 }
 } // namespace
 
