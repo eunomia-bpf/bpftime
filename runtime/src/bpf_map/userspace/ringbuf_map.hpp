@@ -23,6 +23,9 @@
 // cross-platform Spinlock-backed type with the same interface.
 #include "spinlock_wrapper.hpp"
 #include <vector>
+#if __APPLE__
+#include "spinlock_wrapper.hpp"
+#endif
 
 namespace bpftime
 {
