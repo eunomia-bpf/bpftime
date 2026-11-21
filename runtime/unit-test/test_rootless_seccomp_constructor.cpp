@@ -151,11 +151,9 @@ TEST_CASE("Loader constructor arms seccomp in a process bypassing "
 	REQUIRE(parse_seccomp_mode(armed.output) == 2);
 	REQUIRE(armed.output.find("Using rootless seccomp notification") !=
 		std::string::npos);
-	// The filter is an actual change relative to the un-preloaded process.
-	REQUIRE(baseline_mode != 2 || armed.output.find("Using rootless "
-							"seccomp "
-							"notification") !=
-					     std::string::npos);
+	// The un-preloaded process keeps its original seccomp mode, so the
+	// filter is an observable change caused by the preload.
+	REQUIRE(baseline_mode != 2);
 }
 
 TEST_CASE("Preload without BPFTIME_GO_SECCOMP stays side-effect free",
