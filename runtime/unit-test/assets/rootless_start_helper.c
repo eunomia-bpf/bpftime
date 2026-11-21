@@ -97,6 +97,8 @@ _start(void)
 	raw_exit(5);
 }
 
+#else
+
 #include <stdio.h>
 #include <string.h>
 
