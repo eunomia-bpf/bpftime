@@ -35,6 +35,7 @@ set(TEST_SOURCES
     maps/test_map_flags_enforcement.cpp
     maps/test_map_helper_errno.cpp
     maps/test_map_syscall_semantics.cpp
+    maps/test_array_get_next_key.cpp
 
     test_bpftime_shm_json.cpp
     test_probe.cpp
