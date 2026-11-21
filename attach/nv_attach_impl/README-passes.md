@@ -38,8 +38,6 @@ bash example/gpu/cuda-counter/run_nv_ptx_passes.sh
     - `build/attach/nv_attach_impl/pass/ptxpass_kprobe_entry/ptxpass_kprobe_entry`
     - `build/attach/nv_attach_impl/pass/ptxpass_kretprobe/ptxpass_kretprobe`
     - `build/attach/nv_attach_impl/pass/ptxpass_kprobe_memcapture/ptxpass_kprobe_memcapture`
-  - To drive the pass order and subset via JSON configuration, set the `BPFTIME_PTXPASS_DIR` environment variable to a directory containing `*.json` configuration files. The log should print "Discovered <N> pass definitions from <dir>".
-  - If the log shows "Discovered 0 pass definitions...", the system will use a fallback process (which can still complete the injection and repackaging). Check the run logs to confirm that `hack_fatbin` has been executed.
 
 ### Pass Standalone Executable & Configuration (JSON-only I/O)
 - **Path:** `attach/nv_attach_impl/pass/ptxpass_*`
@@ -54,4 +52,4 @@ bash example/gpu/cuda-counter/run_nv_ptx_passes.sh
       - `output_ptx`: string, the transformed PTX (an empty string or omitted field indicates no modifications).
   - The `PTX_ATTACH_POINT` environment variable is passed to specify the current attachment point being processed.
   - **Note:** Stdin only accepts JSON. Non-JSON input will cause the program to error out and exit immediately.
-- **Default JSON configurations** are located at: `attach/nv_attach_impl/configs/ptxpass/*.json` (these can be copied to a custom directory and specified via `BPFTIME_PTXPASS_DIR`).
+- **Default JSON configurations** are located at: `attach/nv_attach_impl/configs/ptxpass/*.json`. They document the configuration each pass binary returns from its `print_config()` entrypoint and can be used as templates for custom settings; editing them does not change runtime behaviour.
