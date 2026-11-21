@@ -7,6 +7,9 @@
 #include <cstdio>
 #include <sys/mman.h>
 #include <unistd.h>
+#if defined(__linux__)
+#include <dlfcn.h>
+#endif
 #endif
 using namespace bpftime::attach;
 
@@ -72,5 +75,75 @@ TEST_CASE("Mapped module paths survive VMA splitting")
 	REQUIRE(unlink(path) == 0);
 	REQUIRE(resolved.has_value());
 	REQUIRE(*resolved == path);
+}
+#endif
+
+TEST_CASE("Module offset resolution rejects offsets outside the module extent")
+{
+	frida_attach_impl man;
+	void *base = get_module_base_addr("");
+	REQUIRE(base != nullptr);
+	const auto extent = module_mapped_extent("");
+	REQUIRE(extent > 0);
+
+	const auto valid = (uintptr_t)&__func_reolve_test - (uintptr_t)base;
+	REQUIRE(valid < extent);
+	REQUIRE(resolve_function_addr_by_module_offset("", valid) ==
+		(void *)&__func_reolve_test);
+#if defined(__linux__)
+	// Both main-executable spellings must enumerate the same mappings.
+	REQUIRE(resolve_function_addr_by_module_offset("/proc/self/exe", valid) ==
+		(void *)&__func_reolve_test);
+#endif
+
+	// A wrapped offset used to be added unchecked, producing an address
+	// anywhere in the address space for gum to install a trampoline at.
+	REQUIRE(resolve_function_addr_by_module_offset("", UINTPTR_MAX) ==
+		nullptr);
+	REQUIRE(resolve_function_addr_by_module_offset("", extent) == nullptr);
+	REQUIRE(resolve_function_addr_by_module_offset("", extent - 1) !=
+		nullptr);
+}
+
+#if defined(__linux__)
+TEST_CASE("Resolution accepts a full module path from an attach spec")
+{
+	frida_attach_impl man;
+	// gum matches a full path for the base address but enumerates ranges only
+	// for the executable name, so a path must not be rejected as unmapped.
+	char exe_path[4096];
+	const ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+	REQUIRE(len > 0);
+	exe_path[len] = '\0';
+
+	void *base = get_module_base_addr(exe_path);
+	REQUIRE(base != nullptr);
+	const auto offset = (uintptr_t)&__func_reolve_test - (uintptr_t)base;
+	REQUIRE(resolve_function_addr_by_module_offset(exe_path, offset) ==
+		(void *)&__func_reolve_test);
+	REQUIRE(resolve_function_addr_by_module_offset(exe_path, UINTPTR_MAX) ==
+		nullptr);
+}
+
+// An address past the module's own mappings must not count as mapped, even
+// though it falls inside the outer [base, base+extent) span that a bounds-only
+// check would accept.
+TEST_CASE("Module membership rejects an address in a VMA gap")
+{
+	frida_attach_impl man;
+	// Keep the protected page wholly inside this module's own file-backed
+	// data, with readable module pages on each side (including 64K pages).
+	alignas(65536) static const unsigned char pages[3 * 65536] = { 1 };
+	const auto page_size = static_cast<size_t>(sysconf(_SC_PAGESIZE));
+	REQUIRE(page_size > 0);
+	REQUIRE(page_size <= 65536);
+	void *gap = const_cast<unsigned char *>(pages + 65536);
+	const auto address = reinterpret_cast<uintptr_t>(gap);
+	REQUIRE(module_contains_address("", address));
+	REQUIRE(mprotect(gap, page_size, PROT_NONE) == 0);
+	const bool accepted_gap = module_contains_address("", address);
+	const int restore_result = mprotect(gap, page_size, PROT_READ);
+	REQUIRE(restore_result == 0);
+	REQUIRE_FALSE(accepted_gap);
 }
 #endif
