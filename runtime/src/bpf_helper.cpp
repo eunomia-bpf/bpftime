@@ -8,7 +8,6 @@
 
 #include <csetjmp>
 #include <csignal>
-#include <mutex>
 #if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
 #include "trap_uprobe_attach_impl.hpp"
 #endif
@@ -231,29 +230,59 @@ static void probe_read_fault_handler(int sig, siginfo_t *info, void *uctx)
 		probe_read_chain(&probe_read_prev_bus, sig, info, uctx);
 }
 
-static void probe_read_install_guard_handlers_once()
+/*
+ * The guard owns the SIGSEGV/SIGBUS disposition only for the duration of one
+ * memcpy and puts back exactly what it found. Installing it once and leaving
+ * it in place is wrong for callers that restore dispositions themselves (a
+ * test runner that engages its own fatal-signal handler per section does
+ * this): the guard would be removed behind its back, and the next guarded
+ * fault would reach the caller instead of unwinding here. It would also
+ * change a process-wide setting as a side effect of a read helper.
+ *
+ * Install-copy-restore costs ~205 ns against the ~380 ns process_vm_readv it
+ * replaces, so the fast path is still roughly twice as fast as the syscall.
+ */
+static void probe_read_install_guards(struct sigaction *prev_segv,
+				      struct sigaction *prev_bus)
 {
-	static std::once_flag once;
-	std::call_once(once, [] {
-		struct sigaction sa = {};
-		sa.sa_sigaction = probe_read_fault_handler;
-		sa.sa_flags = SA_SIGINFO;
-		sigemptyset(&sa.sa_mask);
-		sigaction(SIGSEGV, &sa, &probe_read_prev_segv);
-		sigaction(SIGBUS, &sa, &probe_read_prev_bus);
-	});
+	struct sigaction sa = {};
+	sa.sa_sigaction = probe_read_fault_handler;
+	sa.sa_flags = SA_SIGINFO;
+	sigemptyset(&sa.sa_mask);
+	sigaction(SIGSEGV, &sa, prev_segv);
+	sigaction(SIGBUS, &sa, prev_bus);
 }
 
 static bool probe_read_local_guarded(void *dst, const void *src, size_t size)
 {
-	probe_read_install_guard_handlers_once();
 	if (sigsetjmp(probe_read_jmp, 1) == 0) {
+		struct sigaction prev_segv, prev_bus;
+		probe_read_install_guards(&prev_segv, &prev_bus);
 		probe_read_guard_active = 1;
 		memcpy(dst, src, size);
 		probe_read_guard_active = 0;
+		sigaction(SIGBUS, &prev_bus, nullptr);
+		sigaction(SIGSEGV, &prev_segv, nullptr);
 		return true;
 	}
+	/* The handler restored the dispositions before unwinding here. */
 	return false;
+}
+
+/*
+ * Fetch `want` bytes into `dst` without a syscall, and report how much was
+ * readable from the start: `want` when the whole range is, `atleast` when
+ * only the requested prefix is (the neighbour page is inaccessible), and 0
+ * when even the prefix faults.
+ */
+static size_t probe_read_local_fill(char *dst, const void *src, size_t want,
+				    size_t atleast)
+{
+	if (probe_read_local_guarded(dst, src, want))
+		return want;
+	if (atleast < want && probe_read_local_guarded(dst, src, atleast))
+		return atleast;
+	return 0;
 }
 #endif /* __linux__ */
 
@@ -271,13 +300,12 @@ static bool probe_read_memory(void *dst, const void *src, size_t size)
 #elif __linux__
 	pid_t pid = probe_access_atfork_status == 0 ? probe_access_pid :
 							  getpid();
-	/* Fast path: own address space, fault-guarded memcpy (no syscall).
-	 * Only sound for this process's own memory: a cross-process or
-	 * pre-fork address either faults (falling through to the readv
-	 * paths) or, worse, aliases an unrelated local mapping. */
-	if (probe_access_atfork_status == 0 && pid == getpid() &&
-	    probe_read_local_guarded(dst, src, size))
-		return true;
+	/* Fault-guarded memcpy (no syscall) is only sound for this process's
+	 * own memory: a cross-process or pre-fork address either faults
+	 * (falling through to the readv paths) or, worse, aliases an
+	 * unrelated local mapping. */
+	const bool own_address_space =
+		probe_access_atfork_status == 0 && pid == getpid();
 	if (probe_read_ahead_active()) {
 		auto &window = tls_probe_read_ahead;
 		uintptr_t addr = reinterpret_cast<uintptr_t>(src);
@@ -299,12 +327,26 @@ static bool probe_read_memory(void *dst, const void *src, size_t size)
 		size_t room = probe_page_remaining(src);
 		if (size <= PROBE_READ_AHEAD_CAP && size <= room) {
 			size_t fetch = std::min(room, PROBE_READ_AHEAD_CAP);
-			struct iovec wide_local = { window.storage, fetch };
-			struct iovec wide_remote = { const_cast<void *>(src),
-						    fetch };
-			ssize_t got = syscall(SYS_process_vm_readv, pid,
-					      &wide_local, 1, &wide_remote, 1,
-					      0);
+			size_t got;
+			if (own_address_space) {
+				/* The event's snapshot is captured here, once
+				 * per address: filling it from this process
+				 * keeps the guarded fast path in use inside
+				 * events, and `size` is the floor so a
+				 * neighbour page that faults truncates the
+				 * window instead of failing the read. */
+				got = probe_read_local_fill(window.storage,
+							    src, fetch, size);
+			} else {
+				struct iovec wide_local = { window.storage,
+							    fetch };
+				struct iovec wide_remote = {
+					const_cast<void *>(src), fetch
+				};
+				got = (size_t)syscall(SYS_process_vm_readv,
+						      pid, &wide_local, 1,
+						      &wide_remote, 1, 0);
+			}
 			if (got >= (ssize_t)size) {
 				// The requested prefix is intact even if an
 				// inaccessible neighbour truncated the tail.
@@ -324,6 +366,12 @@ static bool probe_read_memory(void *dst, const void *src, size_t size)
 			probe_read_ahead_invalidate();
 		}
 	}
+	/* Outside an event there is nothing to keep coherent, so the guarded
+	 * memcpy is the whole fast path; inside one, the window above owns
+	 * the snapshot and this keeps the exact-read semantics for requests
+	 * it cannot serve. */
+	if (own_address_space && probe_read_local_guarded(dst, src, size))
+		return true;
 	struct iovec local = { dst, size };
 	struct iovec remote = { const_cast<void *>(src), size };
 	return syscall(SYS_process_vm_readv, pid, &local, 1, &remote, 1,
