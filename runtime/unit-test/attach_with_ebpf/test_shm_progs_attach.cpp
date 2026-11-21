@@ -111,8 +111,8 @@ static int attach_uprobe(bpftime::handler_manager &manager_ref,
 	manager_ref.set_handler(4, hd, segment);
 	auto &prog_handler = std::get<bpf_prog_handler>(manager_ref[0]);
 	// the attach fd is 3
-	return manager_ref.set_handler_at_empty_slot(bpf_link_handler(0, 4),
-						     segment);
+	return manager_ref.set_handler_at_empty_slot(
+		bpf_link_handler(0, 4, segment), segment);
 }
 
 static int attach_replace(bpftime::handler_manager &manager_ref,
@@ -141,8 +141,8 @@ static int attach_replace(bpftime::handler_manager &manager_ref,
 		segment);
 
 	// the attach fd is 3
-	return manager_ref.set_handler_at_empty_slot(bpf_link_handler(0, 3),
-						     segment);
+	return manager_ref.set_handler_at_empty_slot(
+		bpf_link_handler(0, 3, segment), segment);
 }
 
 static void handle_sub_process()
@@ -203,10 +203,9 @@ __attribute__((optnone)) TEST_CASE("Test shm progs attach")
 
 	// The side that creates the mapping
 	managed_shared_memory segment(create_only, SHM_NAME, 1 << 20);
-	// Use default max_fd_count for tests
-	const size_t test_max_fd_count = DEFAULT_MAX_FD_COUNT;
-	auto manager =
-		segment.construct<handler_manager>(HANDLER_NAME)(segment, test_max_fd_count);
+	const size_t test_max_fd_count = MIN_MAX_FD_COUNT;
+	auto manager = segment.construct<handler_manager>(
+		HANDLER_NAME)(segment, test_max_fd_count);
 	auto &manager_ref = *manager;
 
 	// open the object file

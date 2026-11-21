@@ -232,7 +232,7 @@ TEST_CASE("Trap runtime links reject unsafe programs before patching code")
 		bpf_perf_event_handler event(false, 0, -1, "", 0, segment);
 		event.enable();
 		REQUIRE(manager->set_handler(1, event, segment) >= 0);
-		REQUIRE(manager->set_handler(2, bpf_link_handler(0, 1), segment) >= 0);
+		REQUIRE(manager->set_handler(2, bpf_link_handler(0, 1, segment), segment) >= 0);
 		auto *target = (void *)__bpftime_test_uprobe_with_ebpf_trap__my_function;
 		uint8_t original[4];
 		memcpy(original, target, sizeof(original));
