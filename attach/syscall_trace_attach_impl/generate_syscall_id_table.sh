@@ -5,7 +5,7 @@
 # usage ./generate_syscall_id_table syscalls.txt
 if [ "$(uname)" = "Linux" ]; then
     echo "static const char* table=R\"(`
-    echo -e '#include <sys/syscall.h>' | \
+    printf '#include <sys/syscall.h>\n' | \
     cpp -dM | grep '#define __NR_.*[0-9]$' | \
     cut -d' ' -f 2,3 | cut -d_ -f 4-
     `)\";" > $1
