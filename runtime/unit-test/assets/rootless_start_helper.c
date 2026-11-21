@@ -97,8 +97,6 @@ _start(void)
 	raw_exit(5);
 }
 
-#else
-
 #include <stdio.h>
 #include <string.h>
 
@@ -107,15 +105,25 @@ main(void)
 {
 	FILE *status = fopen("/proc/self/status", "r");
 	if (status == NULL)
-		return 3;
+		_exit(3);
 	char line[256];
 	while (fgets(line, sizeof(line), status) != NULL) {
 		if (strncmp(line, "Seccomp:", 8) == 0) {
 			fputs(line, stdout);
-			return 0;
+			/* Flush, then leave via _exit instead of returning from
+			 * main: the preload starts detached seccomp worker
+			 * threads that are never joined, and a normal glibc
+			 * exit runs global/atexit teardown while those workers
+			 * still touch the shared syscall context, a pre-existing
+			 * startup-independent shutdown race. The runtimes this
+			 * fix targets (e.g. Go) terminate with a raw exit_group
+			 * and never run that glibc teardown either. This test
+			 * covers constructor/interposer arming, not shutdown. */
+			fflush(stdout);
+			_exit(0);
 		}
 	}
-	return 5;
+	_exit(5);
 }
 
 #endif

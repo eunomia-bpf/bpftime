@@ -28,6 +28,8 @@ namespace
 {
 struct helper_run {
 	int status = -1;
+	// Non-zero only when the helper was killed by a signal.
+	int term_signal = 0;
 	std::string output;
 };
 
@@ -118,7 +120,8 @@ run_start_helper(const char *helper_path, bool preload, bool enable_go_seccomp)
 	while (waitpid(pid, &status, 0) == -1)
 		REQUIRE(errno == EINTR);
 	::unlink(shm_file.c_str());
-	return { status, std::move(output) };
+	return { status, WIFSIGNALED(status) ? WTERMSIG(status) : 0,
+		 std::move(output) };
 }
 } // namespace
 
@@ -183,6 +186,8 @@ TEST_CASE("Constructor and __libc_start_main arm the filter exactly once",
 {
 	auto armed = run_start_helper(BPFTIME_ROOTLESS_NORMAL_START_HELPER,
 				      true, true);
+	INFO("helper killed by signal " << armed.term_signal
+	     << ", output: " << armed.output);
 	REQUIRE(WIFEXITED(armed.status));
 	REQUIRE(WEXITSTATUS(armed.status) == 0);
 	REQUIRE(parse_seccomp_mode(armed.output) == 2);
