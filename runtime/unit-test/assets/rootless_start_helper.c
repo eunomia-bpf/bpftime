@@ -10,7 +10,11 @@
  * Two build modes:
  *  - BPFTIME_CUSTOM_START: provide our own _start and never call glibc
  *    __libc_start_main, mirroring runtimes such as Go whose rt0 entry takes
- *    over startup. Only raw syscalls are used on this path.
+ *    over startup. Every kernel operation uses a raw syscall instruction
+ *    rather than a libc wrapper, again like Go: libc symbols interposed by
+ *    an LD_PRELOAD library cannot intercept raw instructions, so this path
+ *    exercises the dynamic-loader constructor and the seccomp USER_NOTIF
+ *    filter without ever entering glibc startup.
  *  - default: an ordinary glibc main() program.
  */
 #define _GNU_SOURCE
@@ -23,7 +27,16 @@
 static long
 raw_syscall(long nr, long a0, long a1, long a2, long a3, long a4, long a5)
 {
-	return syscall(nr, a0, a1, a2, a3, a4, a5);
+	long ret;
+	register long r10 __asm__("r10") = a3;
+	register long r8 __asm__("r8") = a4;
+	register long r9 __asm__("r9") = a5;
+	__asm__ volatile("syscall"
+			 : "=a"(ret)
+			 : "a"(nr), "D"(a0), "S"(a1), "d"(a2), "r"(r10),
+			   "r"(r8), "r"(r9)
+			 : "rcx", "r11", "memory");
+	return ret;
 }
 
 static int
@@ -51,9 +64,8 @@ raw_exit(int code)
 	(void)raw_syscall(SYS_exit_group, code, 0, 0, 0, 0, 0);
 }
 
-/* Freestanding-ish entry: the dynamic loader still runs LD_PRELOAD
- * constructors before transferring here, but glibc __libc_start_main is
- * never invoked. */
+/* Freestanding entry: the dynamic loader still runs LD_PRELOAD constructors
+ * before transferring here, but glibc __libc_start_main is never invoked. */
 void
 _start(void)
 {
