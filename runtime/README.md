@@ -244,9 +244,10 @@ boundary, not an implementation detail.
 | No-fault syscall copy | `ENABLE_PROBE_READ_CHECK=ON` (default), write check likewise ON | `-EFAULT`, host survives | One `process_vm_readv`/`process_vm_writev` per call |
 
 A scoped signal-recovery backend (SIGSEGV caught only inside a protected-copy
-window, returning `-EFAULT` via `siglongjmp`) and a bounded stack snapshot
-backend (one fault-safe capture per BPF event with integer-bounds replay) are
-under review. Both must satisfy the semantics below before becoming selectable.
+window, returning `-EFAULT` via `siglongjmp`) remains under review in #702;
+it must satisfy the semantics below before becoming selectable. An earlier
+bounded stack snapshot experiment (#746) was closed after design review and
+is not part of the backend selection.
 
 ### Required semantics for every safe backend
 
@@ -308,6 +309,24 @@ Two deliberate, documented contracts apply while the window is active:
    than the `-EFAULT` the exact syscall path would return; this boundary is
    pinned by a regression test. Restoring full destination fault isolation on
    the cached path requires a protected-copy backend, tracked in #838.
+
+### Build-time sanitizer precondition
+
+A safe probe backend cannot save a host that crashes inside an injected
+sanitizer before any helper runs. Two build-time requirements are therefore
+independent of the backend selected above (enforced in #820):
+
+- Preload `libasan` only when the build carries a matching GCC-libasan
+  `NEEDED` entry. An unconditional `LD_PRELOAD` of an unmatched sanitizer
+  crashes even an empty program with an AddressSanitizer `SIGSEGV`.
+- Keep the LLVM package's advertised compile definitions. Without them the
+  `llvm::Function` layout assumed by the build does not match the installed
+  library, which corrupts the heap during JIT setup.
+
+These are build/CI preconditions, not probe-backend choices: selecting a
+no-fault copy backend does not substitute for a matching sanitizer and
+toolchain configuration.
+
 ### Test surface
 
 - `runtime/unit-test/test_probe.cpp`: valid, unmapped, and stale pointers;
