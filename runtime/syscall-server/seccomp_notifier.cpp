@@ -8,9 +8,9 @@
  * transformer on the rootless path; intercepted syscalls are emulated by
  * calling dispatch_syscall(), which lives in this same object. The only
  * outward seam is the kernel seccomp USER_NOTIF ABI. See runtime/README.md
- * and attach/README.md. x86_64/Linux only (seccomp user-notif gate).
+ * and attach/README.md. Linux x86_64 and aarch64 (seccomp user-notif gate).
  */
-#if defined(__linux__) && defined(__x86_64__)
+#if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))
 #include "seccomp_raw_syscall.hpp"
 #include "seccomp_tracer.hpp"
 #include "seccomp_bpf_compat.hpp"
@@ -36,6 +36,15 @@
 #include <thread>
 #include <unistd.h>
 #include <unordered_map>
+
+// AUDIT_ARCH_* value the kernel reports in seccomp_data.arch for this ABI.
+#if defined(__x86_64__)
+#define BPFTIME_SECCOMP_AUDIT_ARCH AUDIT_ARCH_X86_64
+#elif defined(__aarch64__)
+#define BPFTIME_SECCOMP_AUDIT_ARCH AUDIT_ARCH_AARCH64
+#else
+#error "rootless seccomp USER_NOTIF supports only x86_64 and aarch64"
+#endif
 
 
 namespace bpftime
@@ -215,7 +224,11 @@ static int64_t dispatch_seccomp_syscall(const int64_t *args)
 	// no attach/ component are involved.
 	errno = 0;
 	int64_t result;
+#ifdef __NR_epoll_wait
 	if (args[0] == __NR_epoll_wait || args[0] == __NR_epoll_pwait) {
+#else
+	if (args[0] == __NR_epoll_pwait) {
+#endif
 		result = dispatch_syscall(
 			args[0], args[1], args[2], args[3], args[4],
 			args[5], args[6]);
@@ -310,7 +323,7 @@ static bool setup_go_seccomp_tracer()
 	struct sock_filter filter[] = {
 		BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
 			 offsetof(struct seccomp_data, arch)),
-		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_X86_64, 1, 0),
+		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, BPFTIME_SECCOMP_AUDIT_ARCH, 1, 0),
 		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
 		BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
 			 offsetof(struct seccomp_data, nr)),
@@ -335,7 +348,9 @@ static bool setup_go_seccomp_tracer()
 		BPFTIME_NOTIFY_SYSCALL(__NR_dup3),
 		BPFTIME_NOTIFY_SYSCALL(__NR_epoll_create1),
 		BPFTIME_NOTIFY_SYSCALL(__NR_epoll_ctl),
+#ifdef __NR_epoll_wait
 		BPFTIME_NOTIFY_SYSCALL(__NR_epoll_wait),
+#endif
 		BPFTIME_NOTIFY_SYSCALL(__NR_epoll_pwait),
 #undef BPFTIME_NOTIFY_SYSCALL
 		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),

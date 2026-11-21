@@ -16,7 +16,7 @@
  * seccomp worker threads must be fully startable before the filter is
  * installed, which cannot be guaranteed at constructor time.
  */
-#if defined(__linux__) && defined(__x86_64__)
+#if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))
 #include "seccomp_tracer.hpp"
 #include "syscall_server_internal_dispatch.hpp"
 #include <dlfcn.h>

@@ -81,3 +81,10 @@ jobs:
             "~[#test_attach_uprobe_with_ebpf_trap]" \
             "~[#test_shm_progs_attach]" \
             "~[#test_user_to_kernel_tailcall]"
+      - name: Build and run seccomp failure tests
+        # The test links seccomp_notifier.cpp standalone with --wrap seams and
+        # mocks raw_syscall, so it needs no kernel seccomp support and is safe
+        # under the gVisor sandbox. Covers the aarch64 compile gate directly.
+        run: |
+          cmake --build build --target bpftime_seccomp_failure_tests -j2
+          ctest --test-dir build -R seccomp --output-on-failure
