@@ -149,13 +149,6 @@ int frida_attach_impl::detach_by_id(int id)
 		internal_attaches.erase(drop_func_addr);
 	return 0;
 }
-void frida_attach_impl::iterate_attaches(attach_iterate_callback cb)
-{
-	for (const auto &[k, v] : attaches) {
-		cb(k, v->function, v->get_type());
-	}
-}
-
 int frida_attach_impl::detach_by_func_addr(const void *func)
 {
 	if (auto itr = internal_attaches.find((void *)func);

@@ -60,8 +60,6 @@ enum class AttachedToFunction {
 	RegisterFunction,
 	RegisterVariable,
 	RegisterFatbinEnd,
-	CudaMalloc,
-	CudaMallocManaged,
 	CudaMemcpyToSymbol,
 	CudaMemcpyToSymbolAsync
 };
@@ -79,8 +77,6 @@ struct nv_attach_entry {
 	// pass-based execution fields
 	std::map<std::string, std::string> parameters; // arbitrary parameters
 						       // for pass
-	// Extra serialized parameters (JSON string) reserved for future use
-	std::optional<std::string> extras;
 	struct pass_cfg_with_exec_path *config;
 };
 
@@ -148,10 +144,6 @@ class nv_attach_impl final : public base_attach_impl {
 	int create_attach_with_ebpf_callback(
 		ebpf_run_callback &&cb, const attach_private_data &private_data,
 		int attach_type) override;
-	// Register CUDA-specific ext helpers required by LLVM-JIT to resolve
-	// symbols like _bpf_helper_ext_0502/_0503 when compiling programs
-	void register_custom_helpers(
-		ebpf_helper_register_callback register_callback) override;
 	nv_attach_impl(const nv_attach_impl &) = delete;
 	nv_attach_impl &operator=(const nv_attach_impl &) = delete;
 	nv_attach_impl();
@@ -164,10 +156,6 @@ class nv_attach_impl final : public base_attach_impl {
 					  size_t count, size_t offset,
 					  cudaMemcpyKind kind,
 					  cudaStream_t stream, bool async);
-	void mirror_cuda_memcpy_from_symbol(void *dst, const void *symbol,
-					    size_t count, size_t offset,
-					    cudaMemcpyKind kind,
-					    cudaStream_t stream, bool async);
 
 	int find_attach_entry_by_program_name(const char *name) const;
 	int run_attach_entry_on_gpu(int attach_id, int run_count = 1,
