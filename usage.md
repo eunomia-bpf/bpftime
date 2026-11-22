@@ -61,6 +61,8 @@ Inject: "/root/.bpftime/libbpftime-agent.so"
 Successfully injected. ID: 1
 ```
 
+**Live-attach safety:** `bpftime attach` injects through Frida into an already-running process. If its main thread is interrupted while holding glibc's malloc arena lock, the injection bootstrap can deadlock the target ([#860](https://github.com/eunomia-bpf/bpftime/issues/860)). Avoid live attach on allocation-heavy production processes; where possible, start instrumentation with `bpftime start` (or the documented `LD_PRELOAD` path) instead. This workaround does not fix the live-attach deadlock.
+
 You can see the output from original program:
 
 ```console
