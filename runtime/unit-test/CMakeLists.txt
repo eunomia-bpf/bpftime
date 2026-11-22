@@ -58,6 +58,7 @@ set(TEST_SOURCES
     test_mocked_file_fd.cpp
     test_system_analysis_ptregs.cpp
     test_handle_fd_reservation.cpp
+    test_attach_failures.cpp
 
     attach_with_ebpf/test_attach_uprobe_with_ebpf_trap.cpp
     attach_with_ebpf/test_helpers.cpp

@@ -159,11 +159,21 @@ public:
 	bpf_attach_ctx();
 	~bpf_attach_ctx();
 
-	// create bpf_attach_ctx from handler_manager in shared memory
+	// Create a bpf_attach_ctx from a handler manager, instantiating every
+	// handler in it. Returns 0 when every handler that was scanned
+	// instantiated, or -EAGAIN when the shm epoch kept moving. A handler
+	// that failed to instantiate does not make the call fail; the failures
+	// are reported as one SPDLOG_WARN and kept in
+	// `failed_instantiated_handlers()` for callers that require every
+	// probe to be live.
 	int init_attach_ctx_from_handlers(const handler_manager *manager,
 					  const runtime_config &config);
-	// create bpf_attach_ctx from handler_manager in global_shared_memory
+	// Same, using the handler manager of the global shared memory.
 	int init_attach_ctx_from_handlers(const runtime_config &config);
+	// handler id -> first error, for every handler the most recent
+	// init_attach_ctx_from_handlers scan could not instantiate. Empty when
+	// all of them succeeded; it is replaced (not merged) by each scan.
+	std::map<int, int> failed_instantiated_handlers() const;
 	// Register an attach implementation. Attach manager will take its
 	// ownership. The third argument is a function that initializes a
 	// corresponding attach private data with the given string.
@@ -240,6 +250,9 @@ private:
 		attach_impl_holders;
 	// Record which handlers were already instantiated
 	std::set<int> instantiated_handlers;
+	// handler id -> first error from the most recent scan, for handlers
+	// that could not be instantiated. Written under ctx_mutex.
+	std::map<int, int> instantiate_failures;
 
 	int instantiate_handler_at(const handler_manager *manager, int id,
 				   std::set<int> &stk,

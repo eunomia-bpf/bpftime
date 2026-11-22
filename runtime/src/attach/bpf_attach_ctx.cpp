@@ -102,6 +102,11 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			last_epoch_seq_seen = seq;
 		}
 		const std::uint64_t epoch_before = last_epoch_seq_seen;
+		// Failed handler ids of this scan. A scan may legitimately find
+		// a handler type it cannot instantiate (a build without that
+		// attach type), so the failure is reported and kept, not
+		// returned as an error of the whole call.
+		std::map<int, int> failures;
 		for (int i = 0; i < (int)manager->size(); i++) {
 			if (manager->is_allocated(i)) {
 				std::set<int> stk;
@@ -109,11 +114,12 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					    manager, i, stk, config, false);
 				    err < 0) {
 					SPDLOG_DEBUG(
-						"Failed to instantiate handler {}",
-						i);
+						"Failed to instantiate handler {}: {}",
+						i, err);
 					// Unable to instantiate handler may not be an
 					// error. We can continue trying to instantiate
 					// other handlers.
+					failures.emplace(i, err);
 				}
 			}
 		}
@@ -128,10 +134,26 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					    manager, i, stk, config, true);
 				    err < 0) {
 					SPDLOG_DEBUG(
-						"Failed to instantiate handler {}",
-						i);
+						"Failed to instantiate handler {}: {}",
+						i, err);
+					failures.emplace(i, err);
 				}
 			}
+		}
+		// The scan is the point where a caller has to learn about it:
+		// one warning, with the ids, instead of a DEBUG line each.
+		instantiate_failures = failures;
+		if (!failures.empty()) {
+			std::string detail;
+			for (const auto &[id, err] : failures) {
+				if (!detail.empty())
+					detail += ", ";
+				detail += std::to_string(id) + " (" +
+					  std::to_string(err) + ")";
+			}
+			SPDLOG_WARN(
+				"bpftime: {} handler(s) could not be instantiated: {}",
+				failures.size(), detail);
 		}
 		const std::uint64_t epoch_after =
 			shm_holder.global_shared_memory.read_stable_epoch_seq();
@@ -578,7 +600,14 @@ void bpf_attach_ctx::reset_instantiated_state_unlocked()
 	instantiated_attach_links.clear();
 	instantiated_perf_events.clear();
 	instantiated_handlers.clear();
+	instantiate_failures.clear();
 	current_id = CURRENT_ID_OFFSET;
+}
+
+std::map<int, int> bpf_attach_ctx::failed_instantiated_handlers() const
+{
+	std::lock_guard<std::mutex> lock(ctx_mutex);
+	return instantiate_failures;
 }
 
 } // namespace bpftime

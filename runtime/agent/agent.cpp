@@ -796,7 +796,16 @@ static int refresh_attach_session(const gchar *data)
 		std::atexit(stop_auto_refresh_at_exit);
 	}
 
-	SPDLOG_INFO("Attach successfully");
+	// The scan reports its own aggregate warning; say "successfully" only
+	// when every handler it saw is instantiated.
+	if (auto failed = ctx_holder.ctx.failed_instantiated_handlers();
+	    !failed.empty()) {
+		SPDLOG_WARN(
+			"Attach finished with {} handler(s) not instantiated",
+			failed.size());
+	} else {
+		SPDLOG_INFO("Attach successfully");
+	}
 	start_agent_ipc_server_once();
 	return 0;
 }
