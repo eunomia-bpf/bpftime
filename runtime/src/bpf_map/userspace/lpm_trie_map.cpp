@@ -252,31 +252,19 @@ void *lpm_trie_map_impl::elem_lookup(const void *key)
 		return nullptr;
 	}
 
-	// Allocation callbacks can reach this lookup while libc holds an arena
-	// lock. A vector's first use registers a TLS destructor through calloc,
-	// even before resize allocates its storage. Keep small values in a
-	// trivial initial-exec TLS buffer so initialization and copy avoid the
-	// allocator entirely.
-	alignas(std::max_align_t) static thread_local uint8_t inline_value[256]
-#if defined(__linux__)
-		__attribute__((tls_model("initial-exec")))
-#endif
-		= {};
-	const uint8_t *src = get_node_value_data(found);
-	if (!src) {
+	// Return the value where it lives in the node. A copy-out buffer aliases
+	// across lookups: one buffer per thread means a second lookup by the
+	// same program overwrites the first result, which the kernel never
+	// does. A per-thread buffer also had to stay clear of the allocator,
+	// because this lookup is reachable from a malloc callback while libc
+	// holds an arena lock. Pointing into the node satisfies both: distinct
+	// storage per key, and no allocation on this path.
+	uint8_t *value_data = get_node_value_data(found);
+	if (!value_data) {
 		errno = ENOENT;
 		return nullptr;
 	}
-	if (_value_size <= sizeof(inline_value)) {
-		std::memcpy(inline_value, src, _value_size);
-		return inline_value;
-	}
-	// Keep the existing storage path for map values larger than the
-	// inline buffer.
-	static thread_local std::vector<uint8_t> tl_value;
-	tl_value.resize(_value_size);
-	std::memcpy(tl_value.data(), src, _value_size);
-	return tl_value.data();
+	return value_data;
 }
 
 long lpm_trie_map_impl::elem_update(const void *key, const void *value,
