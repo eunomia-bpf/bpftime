@@ -11,6 +11,12 @@
 #endif
 using namespace bpftime::attach;
 
+// The dispatcher the text segment transformer installs in the host.
+extern "C" int64_t _bpftime__syscall_dispatcher(int64_t, int64_t, int64_t,
+						int64_t, int64_t, int64_t,
+						int64_t, int64_t, int64_t,
+						int64_t);
+
 extern "C" int64_t _bpftime_dummy_syscall(int64_t, int64_t, int64_t, int64_t,
 					  int64_t, int64_t, int64_t, int64_t,
 					  int64_t, int64_t)
@@ -401,4 +407,36 @@ TEST_CASE("Independent syscalls each run their callbacks after reentry")
 	attacher.dispatch_syscall(11, 0, 0, 0, 0, 0, 0);
 	REQUIRE(callback_count == 2);
 	REQUIRE(attacher.detach_by_id(id) == 0);
+}
+
+TEST_CASE("The trampoline survives a teardown that clears the global")
+{
+	// Reproduces issue #773: the published instance is cleared at detach and
+	// at process exit while the injected host keeps issuing syscalls through
+	// the trampoline. That must run the original syscall rather than throw
+	// std::bad_optional_access or call through a destroyed instance.
+	REQUIRE(global_syscall_trace_attach_impl.load() == nullptr);
+
+	syscall_trace_attach_impl attacher;
+	attacher.set_original_syscall_function(_bpftime_counting_syscall);
+	attacher.set_to_global();
+	REQUIRE(global_syscall_trace_attach_impl.load() == &attacher);
+
+	syscall_call_count = 0;
+	REQUIRE(_bpftime__syscall_dispatcher(11, 0, 0, 0, 0, 0, 0, 0, 0,
+					     0) == 1);
+	REQUIRE(syscall_call_count == 1);
+
+	// Teardown: the instance goes away, the original syscall stays
+	// reachable, and the next dispatched call runs it.
+	global_syscall_trace_attach_impl.store(nullptr);
+	REQUIRE(_bpftime__syscall_dispatcher(11, 0, 0, 0, 0, 0, 0, 0, 0,
+					     0) == 2);
+	REQUIRE(syscall_call_count == 2);
+
+	// With no published original either, the trampoline still returns
+	// instead of throwing.
+	global_orig_syscall.store(nullptr);
+	REQUIRE(_bpftime__syscall_dispatcher(11, 0, 0, 0, 0, 0, 0, 0, 0,
+					     0) == -ENOSYS);
 }

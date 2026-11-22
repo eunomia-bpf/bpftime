@@ -3,6 +3,7 @@
 #include <base_attach_impl.hpp>
 #include <syscall_trace_attach_private_data.hpp>
 #include <memory>
+#include <atomic>
 #include <set>
 #include <unordered_map>
 namespace bpftime
@@ -59,10 +60,17 @@ struct syscall_trace_attach_entry {
 	syscall_kprobe_abi kprobe_abi;
 	syscall_trace_event event;
 };
-// The global syscall trace instance. This one could be accessed by text segment
-// transformer
-extern std::optional<class syscall_trace_attach_impl *>
+// The global syscall trace instance. It is read from the injected process's
+// syscall trampoline, which keeps running after the instance is published and
+// after a teardown clears it. An atomic pointer, not a std::optional: the
+// trampoline loads it once, so a concurrent reset can neither tear the read nor
+// throw std::bad_optional_access inside the host process.
+extern std::atomic<class syscall_trace_attach_impl *>
 	global_syscall_trace_attach_impl;
+// The original syscall entry the trampoline falls back to while the instance
+// is published nowhere. The instance keeps its own copy; this one outlives it,
+// because teardown clears the instance before the host's last syscalls run.
+extern std::atomic<syscall_hooker_func_t> global_orig_syscall;
 
 // Attach implementation of syscall trace
 // It provides a callback to receive original syscall calls, and dispatch the
@@ -85,7 +93,17 @@ class syscall_trace_attach_impl final : public base_attach_impl {
 	// could be accessed by text segment transformer
 	void set_to_global()
 	{
-		global_syscall_trace_attach_impl = this;
+		global_orig_syscall.store(orig_syscall,
+					  std::memory_order_relaxed);
+		global_syscall_trace_attach_impl.store(
+			this, std::memory_order_release);
+	}
+	// Publish the original syscall entry along with the instance, so the
+	// trampoline can still run it after the instance is cleared
+	void publish_original_syscall(syscall_hooker_func_t func)
+	{
+		orig_syscall = func;
+		global_orig_syscall.store(func, std::memory_order_relaxed);
 	}
 	int detach_by_id(int id);
 	int create_attach_with_ebpf_callback(

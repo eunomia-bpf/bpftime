@@ -139,7 +139,12 @@ static void reset_syscall_trace_global() noexcept
 {
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 	try {
-		bpftime::attach::global_syscall_trace_attach_impl.reset();
+		// Clear the instance first and keep the original syscall entry
+		// published: the text-segment trampoline can still dispatch a
+		// syscall after this, and must run the original one then
+		// rather than throw or dereference the freed instance.
+		bpftime::attach::global_syscall_trace_attach_impl.store(
+			nullptr, std::memory_order_release);
 	} catch (...) {
 	}
 #endif
@@ -466,11 +471,11 @@ static void stop_syscall_dispatch_at_exit() noexcept
 {
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 	try {
-		if (bpftime::attach::global_syscall_trace_attach_impl.has_value() &&
-		    bpftime::attach::global_syscall_trace_attach_impl.value() !=
-			    nullptr)
-			bpftime::attach::global_syscall_trace_attach_impl.value()
-				->dispatch_process_exit();
+		auto *impl =
+			bpftime::attach::global_syscall_trace_attach_impl.load(
+				std::memory_order_acquire);
+		if (impl != nullptr)
+			impl->dispatch_process_exit();
 	} catch (...) {
 	}
 #endif
@@ -1233,9 +1238,11 @@ extern "C" int64_t syscall_callback(int64_t sys_nr, int64_t arg1, int64_t arg2,
 				    int64_t user_sp, int64_t user_bp)
 {
 	try {
-		auto impl = bpftime::attach::global_syscall_trace_attach_impl;
-		if (impl.has_value() && impl.value() != nullptr) {
-			return impl.value()->dispatch_syscall(
+		auto *impl =
+			bpftime::attach::global_syscall_trace_attach_impl.load(
+				std::memory_order_acquire);
+		if (impl != nullptr) {
+			return impl->dispatch_syscall(
 				sys_nr, arg1, arg2, arg3, arg4, arg5, arg6,
 				user_ip, user_sp, user_bp);
 		}
