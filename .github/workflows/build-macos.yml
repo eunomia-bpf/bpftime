@@ -37,6 +37,11 @@ concurrency:
   group: build-macos-${{ github.ref }}
   cancel-in-progress: true
 
+# The job only checks out and compiles the tree; nothing here needs to write
+# to the repository or to the API.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: macos-15
