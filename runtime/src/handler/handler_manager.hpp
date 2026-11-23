@@ -54,6 +54,9 @@ constexpr const char *DEFAULT_ALIVE_AGENT_PIDS_NAME =
 constexpr const char *DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME =
 	"bpftime_alive_syscall_server_pids";
 constexpr const char *DEFAULT_PID_SET_LOCK_NAME = "bpftime_pid_set_lock";
+constexpr const char *DEFAULT_MAP_PROG_REFS_NAME = "bpftime_map_prog_refs";
+constexpr const char *DEFAULT_MAP_PROG_REFS_LOCK_NAME =
+	"bpftime_map_prog_refs_lock";
 inline const char *get_global_shm_name()
 {
 	const char *name = getenv("BPFTIME_GLOBAL_SHM_NAME");
