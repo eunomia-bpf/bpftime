@@ -565,6 +565,19 @@ bool setup_syscall_tracer()
 				// Skip pages that we mapped
 				continue;
 			}
+			// Anonymous executable mappings hold JIT caches and
+			// constant blobs rather than file-backed program text.
+			// A linear disassembly cannot tell embedded data apart
+			// from instructions there: data bytes encoding a mov
+			// plus syscall sequence would be rewritten in place and
+			// corrupt consumers such as jump tables. Only rewrite
+			// named (file-backed or vdso) executable segments.
+			if (map.path.empty()) {
+				SPDLOG_DEBUG(
+					"Skipping anonymous executable segment {:x}-{:x}",
+					map.begin, map.end);
+				continue;
+			}
 			if (!agent_path.empty() && !map.path.empty()) {
 				std::string map_path = map.path;
 				if (char *resolved = realpath(map.path.c_str(), nullptr);
