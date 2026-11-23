@@ -13,6 +13,11 @@ set(UBPF_CMAKE_ARGS
   -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
   -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
   -DCMAKE_SYSROOT=${CMAKE_SYSROOT}
+  # bpftime only consumes libubpf.a; uBPF's own conformance runner and
+  # upstream test suites need extra nested submodules that a shallow,
+  # non-recursive checkout does not provide.
+  -DUBPF_SKIP_EXTERNAL=ON
+  -DUBPF_ENABLE_TESTS=OFF
 )
 if(CMAKE_CROSSCOMPILING)
     list(APPEND UBPF_CMAKE_ARGS
