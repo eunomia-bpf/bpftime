@@ -58,5 +58,14 @@ if(BPFTIME_ENABLE_UNIT_TESTING)
     target_link_options(bpftime_ubpf_lifetime_test PRIVATE
       -Wl,--wrap=ubpf_create -Wl,--wrap=ubpf_destroy)
     add_test(NAME bpftime_ubpf_lifetime COMMAND bpftime_ubpf_lifetime_test)
+
+    add_executable(bpftime_ubpf_jit_buffer_test
+      test/ubpf_jit_buffer.cpp
+      $<TARGET_OBJECTS:bpftime_ubpf_vm_obj>)
+    target_link_libraries(bpftime_ubpf_jit_buffer_test PRIVATE bpftime_vm)
+    target_include_directories(bpftime_ubpf_jit_buffer_test PRIVATE
+      compat/ubpf-vm)
+    target_compile_features(bpftime_ubpf_jit_buffer_test PRIVATE cxx_std_17)
+    add_test(NAME bpftime_ubpf_jit_buffer COMMAND bpftime_ubpf_jit_buffer_test)
   endif()
 endif()
