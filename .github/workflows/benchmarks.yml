@@ -95,29 +95,50 @@ jobs:
           python3 benchmark/uprobe/benchmark.py --iter 3
           # run remove to avoid conflict with the previous run
           sudo build/tools/bpftimetool/bpftimetool remove
-          python3 benchmark/syscall/benchmark.py
+          # syscall/benchmark.py exits early unless it runs as root
+          sudo python3 benchmark/syscall/benchmark.py
           sudo build/tools/bpftimetool/bpftimetool remove
           python3 benchmark/mpk/benchmark.py --iter 3
 
+      # The run id, commit and creation time are passed to the summary so an
+      # aged baseline artifact is visible in the table.
       - name: fetch master baseline
+        id: baseline
         if: github.event_name == 'pull_request'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" \
+          run=$(gh run list --repo "$GITHUB_REPOSITORY" \
             --workflow benchmarks.yml --branch master --event push \
-            --status success --limit 1 --json databaseId --jq '.[0].databaseId')
-          if [ -n "$run_id" ]; then
+            --status success --limit 1 \
+            --json databaseId,headSha,createdAt \
+            --jq '.[0] | select(.) | "\(.databaseId) \(.headSha) \(.createdAt)"')
+          if [ -n "$run" ]; then
+            read -r run_id run_sha run_created <<< "$run"
             gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
               -n benchmark-summary -D "$RUNNER_TEMP/baseline"
+            {
+              echo "run_id=$run_id"
+              echo "sha=$run_sha"
+              echo "created=$run_created"
+            } >> "$GITHUB_OUTPUT"
           fi
 
       - name: summarize benchmark results
+        env:
+          BASELINE_RUN: ${{ steps.baseline.outputs.run_id }}
+          BASELINE_SHA: ${{ steps.baseline.outputs.sha }}
+          BASELINE_CREATED: ${{ steps.baseline.outputs.created }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           mkdir -p "$RUNNER_TEMP/summary"
           python3 benchmark/ci_summary.py \
             --baseline "$RUNNER_TEMP/baseline/benchmark-summary.json" \
+            --baseline-run "$BASELINE_RUN" \
+            --baseline-sha "$BASELINE_SHA" \
+            --baseline-created "$BASELINE_CREATED" \
+            --commit "$COMMIT_SHA" \
             --output-json "$RUNNER_TEMP/summary/benchmark-summary.json" \
             --output-md "$RUNNER_TEMP/summary/benchmark-summary.md"
           cat "$RUNNER_TEMP/summary/benchmark-summary.md" >> "$GITHUB_STEP_SUMMARY"
