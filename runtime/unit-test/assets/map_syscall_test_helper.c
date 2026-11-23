@@ -169,6 +169,51 @@ static int check_queue_pop(void)
 	return 0;
 }
 
+/* A loaded program keeps the maps its instructions reference alive, so a
+ * loader may close its own map fd right after BPF_PROG_LOAD. The map slot must
+ * not be handed out again until the program is closed. */
+static int check_map_held_by_prog(void)
+{
+	int map_fd = map_create(BPF_MAP_TYPE_ARRAY, sizeof(unsigned int),
+				sizeof(unsigned long long), 1, 0);
+	if (map_fd < 0) {
+		printf("create_ok=0 create_errno=%d\n", errno);
+		return 0;
+	}
+	struct bpf_insn insns[4];
+	memset(insns, 0, sizeof(insns));
+	insns[0].code = BPF_LD | BPF_DW | BPF_IMM;
+	insns[0].dst_reg = BPF_REG_1;
+	insns[0].src_reg = BPF_PSEUDO_MAP_FD;
+	insns[0].imm = map_fd;
+	insns[2].code = BPF_ALU64 | BPF_MOV | BPF_K;
+	insns[3].code = BPF_JMP | BPF_EXIT;
+	union bpf_attr attr;
+	memset(&attr, 0, sizeof(attr));
+	attr.prog_type = BPF_PROG_TYPE_KPROBE;
+	attr.insns = (unsigned long long)(unsigned long)insns;
+	attr.insn_cnt = 4;
+	attr.license = (unsigned long long)(unsigned long)"GPL";
+	int prog_fd = bpf_call(BPF_PROG_LOAD, &attr);
+	if (prog_fd < 0) {
+		printf("load_ok=0 load_errno=%d\n", errno);
+		return 0;
+	}
+	printf("close_map_ret=%d\n", close(map_fd));
+	errno = 0;
+	int again = close(map_fd);
+	printf("close_again_ret=%d\n", again);
+	printf("close_again_errno=%d\n", errno);
+	int held_fd = map_create(BPF_MAP_TYPE_ARRAY, sizeof(unsigned int),
+				 sizeof(unsigned long long), 1, 0);
+	printf("reused_while_held=%d\n", held_fd == map_fd);
+	printf("close_prog_ret=%d\n", close(prog_fd));
+	int freed_fd = map_create(BPF_MAP_TYPE_ARRAY, sizeof(unsigned int),
+				  sizeof(unsigned long long), 1, 0);
+	printf("reused_after_prog_close=%d\n", freed_fd == map_fd);
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	if (argc != 2) {
@@ -182,6 +227,9 @@ int main(int argc, char **argv)
 	}
 	if (strcmp(argv[1], "queue-pop") == 0) {
 		return check_queue_pop();
+	}
+	if (strcmp(argv[1], "map-held-by-prog") == 0) {
+		return check_map_held_by_prog();
 	}
 	return 64;
 }

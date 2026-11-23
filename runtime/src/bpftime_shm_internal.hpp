@@ -237,6 +237,9 @@ public:
 
 	std::optional<array_map_impl *> try_get_array_map_impl(int fd) const;
 	bool is_prog_fd(int fd) const;
+	// Whether a loaded program references map `fd` through an LDDW map
+	// pseudo instruction (BPF_PSEUDO_MAP_FD or BPF_PSEUDO_MAP_VALUE).
+	bool is_map_referenced_by_prog(int fd) const;
 
 	bool is_perf_fd(int fd) const;
 

@@ -696,6 +696,30 @@ bool bpftime_shm::is_prog_fd(int fd) const
 	return std::holds_alternative<bpftime::bpf_prog_handler>(handler);
 }
 
+bool bpftime_shm::is_map_referenced_by_prog(int fd) const
+{
+	// Same encoding as the kernel: LDDW (opcode 0x18) whose src_reg is
+	// BPF_PSEUDO_MAP_FD (1) or BPF_PSEUDO_MAP_VALUE (2) carries a map fd in imm.
+	constexpr uint8_t lddw = 0x18;
+	if (!is_map_fd(fd))
+		return false;
+	for (std::size_t i = 0; i < manager->size(); i++) {
+		const auto &handler = manager->get_handler(i);
+		if (!std::holds_alternative<bpf_prog_handler>(handler))
+			continue;
+		const auto &insns = std::get<bpf_prog_handler>(handler).insns;
+		for (std::size_t j = 0; j < insns.size(); j++) {
+			if (insns[j].code != lddw)
+				continue;
+			if ((insns[j].src_reg == 1 || insns[j].src_reg == 2) &&
+			    insns[j].imm == fd)
+				return true;
+			j++;
+		}
+	}
+	return false;
+}
+
 bool bpftime_shm::is_perf_fd(int fd) const
 {
 	if (manager == nullptr || fd < 0 ||
