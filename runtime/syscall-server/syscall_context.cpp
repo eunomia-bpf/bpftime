@@ -259,6 +259,26 @@ struct system_analysis_compat_value {
 	uint8_t code[128];
 };
 
+// Default struct pt_regs stack offset used when emulating a sys_enter
+// raw tracepoint without an explicit override.
+constexpr unsigned long DEFAULT_SYSTEM_ANALYSIS_PTREGS_OFFSET = 4096;
+
+// Resolve the effective pt_regs offset for userspace sys_enter emulation.
+// An unset variable selects the default, an explicit "0" disables the
+// emulation, and malformed input falls back to the default instead of
+// silently breaking the lookup.
+unsigned long resolve_system_analysis_ptregs_offset(const char *offset_text)
+{
+	if (offset_text == nullptr)
+		return DEFAULT_SYSTEM_ANALYSIS_PTREGS_OFFSET;
+	char *end = nullptr;
+	errno = 0;
+	unsigned long offset = strtoul(offset_text, &end, 0);
+	if (errno != 0 || end == offset_text || *end != '\0')
+		return DEFAULT_SYSTEM_ANALYSIS_PTREGS_OFFSET;
+	return offset;
+}
+
 void maybe_complete_system_analysis(int map_fd, void *value)
 {
 	// Kernel mode runs the real BPF program and reads kernel memory itself.
@@ -334,18 +354,15 @@ void maybe_complete_system_analysis(int map_fd, void *value)
 		return;
 	}
 #endif
-	const char *offset_text =
-		getenv("BPFTIME_SYSTEM_ANALYSIS_PTREGS_OFFSET");
-	if (offset_text == nullptr)
-		return;
-	char *end = nullptr;
-	errno = 0;
-	unsigned long offset = strtoul(offset_text, &end, 0);
-	if (errno != 0 || end == offset_text || *end != '\0' ||
-	    offset > UINT32_MAX || analysis->address >= 4096) {
+	const unsigned long ptregs_offset =
+		resolve_system_analysis_ptregs_offset(
+			getenv("BPFTIME_SYSTEM_ANALYSIS_PTREGS_OFFSET"));
+	if (ptregs_offset == 0 || ptregs_offset > UINT32_MAX ||
+	    analysis->address >= 4096) {
 		errno = saved_errno;
 		return;
 	}
+	const unsigned long offset = ptregs_offset;
 	constexpr uint64_t stack_base = 1ULL << 20;
 	memcpy(analysis->code, &stack_base, sizeof(stack_base));
 	analysis->address = stack_base + offset;
@@ -1076,7 +1093,18 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		return id;
 	}
 	case BPF_RAW_TRACEPOINT_OPEN: {
-		if (getenv("BPFTIME_SYSTEM_ANALYSIS_PTREGS_OFFSET") == nullptr)
+		// Kernel mode keeps using the kernel's raw tracepoint
+		// implementation; the emulation only serves userspace mode.
+		if (run_with_kernel)
+			return orig_syscall_fn(__NR_bpf, (long)cmd,
+					       (long)(uintptr_t)attr,
+					       (long)size);
+		const unsigned long ptregs_offset =
+			resolve_system_analysis_ptregs_offset(getenv(
+				"BPFTIME_SYSTEM_ANALYSIS_PTREGS_OFFSET"));
+		// An explicit "0" disables the emulation; an unset variable
+		// selects the default pt_regs offset.
+		if (ptregs_offset == 0)
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
 					       (long)size);
@@ -1087,8 +1115,9 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 					       (long)(uintptr_t)attr,
 					       (long)size);
 		int fd = create_unlinked_mock_fd(true);
-		SPDLOG_DEBUG("Created system-analysis raw tracepoint handle {}",
-			     fd);
+		SPDLOG_DEBUG(
+			"Created system-analysis raw tracepoint handle {} with pt_regs offset {}",
+			fd, ptregs_offset);
 		return fd;
 	}
 	case BPF_MAP_FREEZE: {
@@ -1440,7 +1469,7 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, unsigned long data)
 		*reinterpret_cast<uint64_t *>(data) = static_cast<uint64_t>(fd);
 		return 0;
 	}
-	SPDLOG_WARN("Calling original ioctl: {} {} {}", fd, req, data);
+	SPDLOG_DEBUG("Calling original ioctl: {} {} {}", fd, req, data);
 	return orig_ioctl_fn(fd, req, data);
 }
 
@@ -1484,7 +1513,7 @@ int syscall_context::handle_epoll_ctl(int epfd, int op, int fd,
 				return err;
 
 		} else {
-			SPDLOG_WARN(
+			SPDLOG_DEBUG(
 				"Unsupported map fd for mocked epoll_ctl: {}, call the original one..",
 				fd);
 		}

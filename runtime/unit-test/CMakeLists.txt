@@ -56,6 +56,7 @@ set(TEST_SOURCES
     test_xdp_adjust_head.cpp
     test_synthetic_kallsyms.cpp
     test_mocked_file_fd.cpp
+    test_system_analysis_ptregs.cpp
 
     attach_with_ebpf/test_attach_uprobe_with_ebpf_trap.cpp
     attach_with_ebpf/test_helpers.cpp
