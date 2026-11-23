@@ -338,6 +338,38 @@ TEST_CASE("Task storage covers host BTF and the no-BTF fallback")
 	REQUIRE(WEXITSTATUS(status) == 0);
 }
 
+TEST_CASE("Task thread-pointer slot comes from host BTF without configuration")
+{
+	bool no_btf = false;
+	SECTION("host BTF") {}
+	SECTION("no BTF") { no_btf = true; }
+	pid_t child = fork();
+	REQUIRE(child >= 0);
+	if (child == 0) {
+		task_test_no_btf = no_btf;
+		unsetenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET");
+		auto *task = reinterpret_cast<uint8_t *>(bpftime_get_current_task(0, 0, 0, 0, 0));
+		if (task == nullptr)
+			_exit(1);
+		const size_t size = malloc_usable_size(task);
+		void *const tp = __builtin_thread_pointer();
+		int slots = 0;
+		for (size_t i = 0; i + sizeof(tp) <= size; i += sizeof(tp)) {
+			void *value = nullptr;
+			memcpy(&value, task + i, sizeof(value));
+			slots += value == tp;
+		}
+		// With BTF exactly one slot (thread.fsbase / thread.uw.tp_value)
+		// holds the thread pointer; without BTF nothing is guessed.
+		bool host_btf = access("/sys/kernel/btf/vmlinux", R_OK) == 0;
+		_exit(slots == (!no_btf && host_btf ? 1 : 0) ? 0 : 2);
+	}
+	int status = 0;
+	REQUIRE(waitpid(child, &status, 0) == child);
+	REQUIRE(WIFEXITED(status));
+	REQUIRE(WEXITSTATUS(status) == 0);
+}
+
 #if defined(__linux__) && defined(ENABLE_PROBE_READ_CHECK)
 namespace
 {

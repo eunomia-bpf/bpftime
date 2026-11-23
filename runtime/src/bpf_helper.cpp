@@ -54,6 +54,7 @@
 #include "extension/userspace_xdp.h"
 #include <spdlog/spdlog.h>
 #include <vector>
+#include <utility>
 #include <bpftime_shm_internal.hpp>
 #include <chrono>
 #include <thread>
@@ -436,6 +437,35 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 #endif
 }
 
+#if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__)) && \
+	defined(BPFTIME_BUILD_WITH_LIBBPF)
+// Byte offset of member `name` in struct/union `type_id`, looking through
+// anonymous members. On success *member_type is the member's resolved type.
+static long btf_member_offset(const struct btf *btf, int type_id,
+			      const char *name, int *member_type)
+{
+	const struct btf_type *type = btf__type_by_id(btf, type_id);
+	if (type == nullptr || !(btf_is_struct(type) || btf_is_union(type)))
+		return -1;
+	const struct btf_member *member = btf_members(type);
+	for (int i = 0; i < btf_vlen(type); i++, member++) {
+		long offset = btf_member_bit_offset(type, i) / 8;
+		int resolved = btf__resolve_type(btf, member->type);
+		const char *member_name = btf__name_by_offset(btf, member->name_off);
+		if (member_name != nullptr && member_name[0] != '\0') {
+			if (strcmp(member_name, name) != 0)
+				continue;
+			*member_type = resolved;
+			return offset;
+		}
+		long inner = btf_member_offset(btf, resolved, name, member_type);
+		if (inner >= 0)
+			return offset + inner;
+	}
+	return -1;
+}
+#endif
+
 uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t, uint64_t,
 				  uint64_t)
 {
@@ -445,22 +475,39 @@ uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t, uint64_t,
 	// dlopen'ed module that carries initial-exec TLS; a multi-KB thread_local
 	// would land in its static TLS block and exhaust the limited static TLS
 	// surplus ("cannot allocate memory in static TLS block").
-	static const size_t task_storage_size = []() -> size_t {
+	// Size and thread-pointer slot of the synthetic task_struct, from kernel
+	// BTF when available so programs that read the TLS base through
+	// task_struct (thread.fsbase / thread.uw.tp_value) see the real value.
+	static const auto task_layout = []() {
 		// Covers current kernels when BTF is unavailable. A host with a
 		// larger task_struct uses its actual BTF size instead.
-		constexpr size_t fallback = 64 * 1024;
+		std::pair<size_t, long> layout{ 64 * 1024, -1 };
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 		struct btf *btf = btf__parse_raw("/sys/kernel/btf/vmlinux");
 		if (btf != nullptr && libbpf_get_error(btf) == 0) {
 			int id = btf__find_by_name_kind(btf, "task_struct", BTF_KIND_STRUCT);
 			int64_t size = id > 0 ? btf__resolve_size(btf, id) : -1;
-			btf__free(btf);
 			if (size >= static_cast<int64_t>(sizeof(void *)))
-				return static_cast<size_t>(size);
+				layout.first = static_cast<size_t>(size);
+#if defined(__x86_64__)
+			const char *path[] = { "thread", "fsbase" };
+#else
+			const char *path[] = { "thread", "uw", "tp_value" };
+#endif
+			long offset = 0;
+			for (const char *name : path) {
+				long member = id > 0 ? btf_member_offset(btf, id, name, &id) : -1;
+				offset = member < 0 ? -1 : offset + member;
+				if (offset < 0)
+					break;
+			}
+			layout.second = offset;
+			btf__free(btf);
 		}
 #endif
-		return fallback;
+		return layout;
 	}();
+	static const size_t task_storage_size = task_layout.first;
 	static pthread_key_t task_key;
 	static const int task_key_status = pthread_key_create(&task_key, free);
 	if (task_key_status != 0)
@@ -481,7 +528,12 @@ uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t, uint64_t,
 		const char *text =
 			getenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET");
 		if (text == nullptr)
-			return SIZE_MAX;
+			return task_layout.second >= 0 &&
+					       (size_t)task_layout.second <=
+						       task_storage_size -
+							       sizeof(void *) ?
+				       (size_t)task_layout.second :
+				       SIZE_MAX;
 		char *end = nullptr;
 		errno = 0;
 		unsigned long value = strtoul(text, &end, 0);
