@@ -66,6 +66,16 @@ if(BPFTIME_ENABLE_ASAN)
     add_link_options(-fsanitize=address,undefined)
 endif()
 
+# libFuzzer targets under runtime/fuzz. Coverage instrumentation needs clang.
+option(BPFTIME_ENABLE_FUZZING "Build the libFuzzer targets (requires clang)." OFF)
+if(BPFTIME_ENABLE_FUZZING)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "BPFTIME_ENABLE_FUZZING requires clang (-fsanitize=fuzzer)")
+    endif()
+    add_compile_options(-fsanitize=fuzzer-no-link,address,undefined)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^riscv")
     set(BPFTIME_ENABLE_TRAP_UPROBE ON CACHE BOOL "Build the trap (breakpoint + SIGTRAP) uprobe backend" FORCE)
     set(BPFTIME_ENABLE_FRIDA OFF CACHE BOOL "Build the frida-gum based uprobe backend" FORCE)
