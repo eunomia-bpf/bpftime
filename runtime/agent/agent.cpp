@@ -123,6 +123,7 @@ bpf_attach_ctx &get_global_attach_ctx()
 
 static void apply_injected_kv_overrides(const gchar *data);
 static int refresh_attach_session(const gchar *data);
+static int rescan_attach_session();
 static int perform_detach();
 
 static void install_agent_bootstrap_logger() noexcept
@@ -338,8 +339,26 @@ static void start_agent_ipc_server_once()
 						s.pop_back();
 				};
 				trim(req);
-				if (req.rfind("refresh ", 0) == 0) {
-					std::string arg = req.substr(strlen("refresh "));
+				if (req == "rescan") {
+					int rc = rescan_attach_session();
+					if (rc == 0) {
+						(void)::send(cfd, "ok\n", 3,
+							     MSG_NOSIGNAL);
+					} else {
+						std::string out =
+							"err rescan " +
+							std::to_string(rc) +
+							"\n";
+						(void)::send(cfd, out.data(),
+							     out.size(),
+							     MSG_NOSIGNAL);
+					}
+				} else if (req == "refresh" ||
+					   req.rfind("refresh ", 0) == 0) {
+					std::string arg =
+						req.size() > strlen("refresh ") ?
+							req.substr(strlen("refresh ")) :
+							std::string();
 					int rc = refresh_attach_session(arg.c_str());
 					if (rc == 0) {
 						(void)::send(cfd, "ok\n", 3,
@@ -793,6 +812,43 @@ static int refresh_attach_session(const gchar *data)
 
 	SPDLOG_INFO("Attach successfully");
 	start_agent_ipc_server_once();
+	return 0;
+}
+
+// Event-driven, incremental re-scan for handlers published after this agent
+// ran its startup scan (e.g. a profiler attaches a uprobe to an already
+// running, preloaded process). It deliberately does NOT call
+// destroy_all_attach_links()/reset_instantiated_state(): the context keeps a
+// set of already-instantiated handler ids, so init only instantiates handlers
+// added since the last scan and leaves existing FridaGum hooks untouched.
+// This is the same incremental call the auto-refresh thread performs, but
+// triggered synchronously by a "rescan" IPC instead of a polling timer.
+static int rescan_attach_session()
+{
+	if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) != AGENT_READY) {
+		SPDLOG_WARN("agent rescan: agent not initialized");
+		return -EINVAL;
+	}
+	if (!global_ctx_constructed.load(std::memory_order_acquire)) {
+		SPDLOG_WARN("agent rescan: global ctx not constructed");
+		return -EINVAL;
+	}
+
+	std::lock_guard<std::mutex> guard(detach_mutex);
+	attach_callback_suppression_scope suppress_callbacks;
+	int res = ctx_holder.ctx.init_attach_ctx_from_handlers(
+		bpftime_get_runtime_config());
+	if (res != 0) {
+		SPDLOG_ERROR(
+			"agent rescan: init_attach_ctx_from_handlers failed: {}",
+			res);
+		return res < 0 ? res : -EINVAL;
+	}
+	if (!shm_holder.global_shared_memory.add_pid_into_alive_agent_set(
+		    getpid())) {
+		SPDLOG_ERROR("agent rescan: unable to record alive agent pid");
+		return -EAGAIN;
+	}
 	return 0;
 }
 

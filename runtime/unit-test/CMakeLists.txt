@@ -102,7 +102,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_options(bpftime_runtime_tests PRIVATE -Wl,--wrap=dlsym)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
         target_sources(bpftime_runtime_tests PRIVATE
-            test_rootless_seccomp_constructor.cpp)
+            test_rootless_seccomp_constructor.cpp
+            test_agent_rescan_notification.cpp)
     endif()
     target_sources(bpftime_runtime_tests PRIVATE
         test_get_current_uid_gid.cpp

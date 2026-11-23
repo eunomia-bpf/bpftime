@@ -99,6 +99,21 @@ class syscall_context {
 	// program is closed, matching the kernel's program-held map reference.
 	std::mutex deferred_map_close_mutex;
 	std::set<int> deferred_map_closes;
+#if defined(__linux__)
+	// Userspace perf event fd -> target pid captured at perf_event_open
+	// time. A late BPF_LINK_CREATE / PERF_EVENT_IOC_ENABLE uses it to ask the
+	// agent already injected into the target process(es) to incrementally
+	// re-scan the handlers published after its startup scan.
+	std::mutex perf_event_target_pids_mutex;
+	std::unordered_map<int, pid_t> perf_event_target_pids;
+	void record_perf_event_target_pid(int perf_fd, pid_t pid);
+	// Open the agent's abstract control socket and send a one-way "rescan".
+	// Best effort: a missing or not-yet-ready agent is ignored silently.
+	void send_agent_rescan_ipc(pid_t pid);
+	// notify_agent_rescan_for_perf_fd() is declared with the public
+	// handlers below so the late-attach notification entrypoint is testable
+	// through the same call surface the syscall handlers use.
+#endif
 	void init_original_functions()
 	{
 		auto require_symbol = [](const char *name) {
@@ -195,6 +210,12 @@ class syscall_context {
 			  int fd, off_t offset);
 
 	int handle_ioctl(int fd, unsigned long req, unsigned long data);
+#if defined(__linux__)
+	// Ask the agent injected into the perf event's target process to
+	// incrementally re-scan handlers. Invoked by BPF_LINK_CREATE and
+	// PERF_EVENT_IOC_ENABLE; safe to call directly in tests/benchmarks.
+	void notify_agent_rescan_for_perf_fd(int perf_fd);
+#endif
 	int handle_epoll_create1(int);
 	int handle_epoll_ctl(int epfd, int op, int fd, epoll_event *evt);
 	int handle_epoll_wait(int epfd, epoll_event *evt, int maxevents,

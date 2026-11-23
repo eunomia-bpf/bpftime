@@ -5,6 +5,7 @@
  */
 #include "bpftime_logger.hpp"
 #include "bpftime_shm.hpp"
+#include "bpftime_shm_internal.hpp"
 #include <algorithm>
 #include <boost/interprocess/exceptions.hpp>
 #ifdef ENABLE_BPFTIME_VERIFIER
@@ -32,6 +33,10 @@
 #endif
 #include <linux/perf_event.h>
 #include <linux/filter.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
 #elif __APPLE__
 #include "bpftime_epoll.h"
 #endif
@@ -571,12 +576,116 @@ void syscall_context::try_startup()
 	}
 }
 
+#if __linux__
+void syscall_context::record_perf_event_target_pid(int perf_fd, pid_t pid)
+{
+	if (perf_fd < 0)
+		return;
+	std::lock_guard<std::mutex> lock(perf_event_target_pids_mutex);
+	perf_event_target_pids[perf_fd] = pid;
+}
+
+void syscall_context::send_agent_rescan_ipc(pid_t pid)
+{
+	// The syscall server runs inside the profiler process; it must never
+	// send a control message to its own abstract socket.
+	if (pid <= 0 || pid == getpid())
+		return;
+	int sock_fd = ::socket(AF_UNIX,
+			       SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+	if (sock_fd < 0)
+		return;
+	// Route the socket close through the resolved libc symbol so it cannot
+	// re-enter this interposed handle_close().
+	auto close_socket = [this](int d) {
+		if (orig_close_fn != nullptr)
+			orig_close_fn(d);
+		else
+			::close(d);
+	};
+	sockaddr_un addr {};
+	const std::string name =
+		"bpftime-agent-" + std::to_string(static_cast<int>(pid));
+	if (name.size() + 1 > sizeof(addr.sun_path)) {
+		close_socket(sock_fd);
+		return;
+	}
+	addr.sun_family = AF_UNIX;
+	addr.sun_path[0] = '\0'; // abstract namespace
+	memcpy(addr.sun_path + 1, name.data(), name.size());
+	const socklen_t len = static_cast<socklen_t>(
+		offsetof(sockaddr_un, sun_path) + 1 + name.size());
+	if (::connect(sock_fd, reinterpret_cast<sockaddr *>(&addr), len) !=
+	    0) {
+		if (errno != EINPROGRESS) {
+			// No agent is listening yet (ECONNREFUSED/ENOENT): the
+			// normal case before the target finishes its startup.
+			close_socket(sock_fd);
+			return;
+		}
+		pollfd pfd {};
+		pfd.fd = sock_fd;
+		pfd.events = POLLOUT;
+		if (::poll(&pfd, 1, 20) <= 0) {
+			close_socket(sock_fd);
+			return;
+		}
+		int so_error = 0;
+		socklen_t opt_len = sizeof(so_error);
+		if (::getsockopt(sock_fd, SOL_SOCKET, SO_ERROR, &so_error,
+				 &opt_len) != 0 ||
+		    so_error != 0) {
+			close_socket(sock_fd);
+			return;
+		}
+	}
+	(void)::send(sock_fd, "rescan\n", 7, MSG_NOSIGNAL);
+	(void)::shutdown(sock_fd, SHUT_WR);
+	close_socket(sock_fd);
+}
+
+void syscall_context::notify_agent_rescan_for_perf_fd(int perf_fd)
+{
+	pid_t target_pid = 0;
+	{
+		std::lock_guard<std::mutex> lock(perf_event_target_pids_mutex);
+		auto it = perf_event_target_pids.find(perf_fd);
+		if (it == perf_event_target_pids.end())
+			return;
+		target_pid = it->second;
+	}
+	if (target_pid > 0) {
+		send_agent_rescan_ipc(target_pid);
+		return;
+	}
+	if (target_pid == -1) {
+		// A system-wide event can hit every live agent process.
+		try {
+			shm_holder.global_shared_memory
+				.iterate_all_pids_in_alive_agent_set(
+					[&](int alive_pid) {
+						send_agent_rescan_ipc(
+							static_cast<pid_t>(
+								alive_pid));
+					});
+		} catch (...) {
+		}
+	}
+}
+#endif
+
 int syscall_context::handle_close(int fd)
 {
 	if (!mock_active_for_current_thread())
 		return orig_close_fn(fd);
 	SPDLOG_DEBUG("Calling mocked close");
 	try_startup();
+#if __linux__
+	{
+		std::lock_guard<std::mutex> lock(perf_event_target_pids_mutex);
+		perf_event_target_pids.erase(fd);
+	}
+#endif
 	{
 		std::lock_guard lock(deferred_map_close_mutex);
 		if (deferred_map_closes.count(fd)) {
@@ -1126,6 +1235,9 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		} else if (id < 0) {
 			orig_close_fn(reserved_fd);
 		}
+		if (id >= 0 && bpftime_is_perf_event_fd(target_fd))
+			notify_agent_rescan_for_perf_fd(
+				static_cast<int>(target_fd));
 		return id;
 	}
 	case BPF_RAW_TRACEPOINT_OPEN: {
@@ -1264,6 +1376,8 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 			retprobe, ref_ctr_off);
 		// std::cout << "Created uprobe " << id << std::endl;
 		SPDLOG_DEBUG("Created uprobe {}", id);
+		if (id >= 0)
+			record_perf_event_target_pid(id, pid);
 		return id;
 	} else if ((int)attr->type == determine_kprobe_perf_type()) {
 		bool is_ret_probe =
@@ -1326,6 +1440,8 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 			-1 /* let the shm alloc fd for us */, pid,
 			(int32_t)attr->config);
 		SPDLOG_DEBUG("Created tracepoint perf event with fd {}", fd);
+		if (fd >= 0)
+			record_perf_event_target_pid(fd, pid);
 		return fd;
 	} else if ((int)attr->type == (int)bpf_event_type::PERF_TYPE_SOFTWARE) {
 		SPDLOG_DEBUG("Detected software perf event creation");
@@ -1347,6 +1463,8 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 			-1 /* let the shm alloc fd for us */, pid, name, offset,
 			true);
 		SPDLOG_DEBUG("Created ureplace with fd {}", fd);
+		if (fd >= 0)
+			record_perf_event_target_pid(fd, pid);
 		return fd;
 	} else if ((int)attr->type ==
 		   (int)bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE) {
@@ -1357,6 +1475,8 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 			-1 /* let the shm alloc fd for us */, pid, name, offset,
 			false);
 		SPDLOG_DEBUG("Created ufilter with fd {}", fd);
+		if (fd >= 0)
+			record_perf_event_target_pid(fd, pid);
 		return fd;
 	}
 	SPDLOG_INFO("Calling original perf event open");
@@ -1464,8 +1584,10 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, unsigned long data)
 			return orig_ioctl_fn(fd, req, data);
 		}
 		res = bpftime_perf_event_enable(fd);
-		if (res >= 0)
+		if (res >= 0) {
+			notify_agent_rescan_for_perf_fd(fd);
 			return res;
+		}
 		SPDLOG_WARN(
 			"Failed to call mocked ioctl PERF_EVENT_IOC_ENABLE: {}",
 			res);
