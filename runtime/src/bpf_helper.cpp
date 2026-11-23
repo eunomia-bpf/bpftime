@@ -441,24 +441,39 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 	defined(BPFTIME_BUILD_WITH_LIBBPF)
 // Byte offset of member `name` in struct/union `type_id`, looking through
 // anonymous members. On success *member_type is the member's resolved type.
+// Read the BTF UAPI fields directly instead of libbpf's static inline
+// accessors in bpf/btf.h: those calls make GCC record the ExternalProject
+// build-tree header (build/libbpf/bpf/btf.h) in this TU's gcno, while the
+// integrated-test jobs only receive the gcno/gcda artifacts; lcov 2.x then
+// aborts coverage capture because the header is absent there.
 static long btf_member_offset(const struct btf *btf, int type_id,
 			      const char *name, int *member_type)
 {
 	const struct btf_type *type = btf__type_by_id(btf, type_id);
-	if (type == nullptr || !(btf_is_struct(type) || btf_is_union(type)))
+	if (type == nullptr ||
+	    (BTF_INFO_KIND(type->info) != BTF_KIND_STRUCT &&
+	     BTF_INFO_KIND(type->info) != BTF_KIND_UNION))
 		return -1;
-	const struct btf_member *member = btf_members(type);
-	for (int i = 0; i < btf_vlen(type); i++, member++) {
-		long offset = btf_member_bit_offset(type, i) / 8;
-		int resolved = btf__resolve_type(btf, member->type);
-		const char *member_name = btf__name_by_offset(btf, member->name_off);
+	const struct btf_member *member =
+		(const struct btf_member *)(type + 1);
+	const uint32_t member_count = BTF_INFO_VLEN(type->info);
+	for (uint32_t i = 0; i < member_count; i++, member++) {
+		const uint32_t bit_offset =
+			BTF_INFO_KFLAG(type->info) ?
+				BTF_MEMBER_BIT_OFFSET(member->offset) :
+				member->offset;
+		const long offset = (long)(bit_offset / 8);
+		const int resolved = btf__resolve_type(btf, member->type);
+		const char *member_name =
+			btf__name_by_offset(btf, member->name_off);
 		if (member_name != nullptr && member_name[0] != '\0') {
 			if (strcmp(member_name, name) != 0)
 				continue;
 			*member_type = resolved;
 			return offset;
 		}
-		long inner = btf_member_offset(btf, resolved, name, member_type);
+		const long inner =
+			btf_member_offset(btf, resolved, name, member_type);
 		if (inner >= 0)
 			return offset + inner;
 	}
