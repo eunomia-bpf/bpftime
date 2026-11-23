@@ -326,10 +326,11 @@ include, link, or reach through a function slot into anything under `attach/`
 (frida, capstone, text-segment transformer, attach implementations). The only
 outward seams are kernel-ABI-style C signatures and the seccomp USER_NOTIF
 kernel interface. Shared contracts live as neutral headers in
-`runtime/include/` (e.g. `rootless_tracepoint_id.hpp`).
+`runtime/include/` (e.g. `platform_utils.hpp`).
 
-See `docs/rootless-architecture-boundary.md` for the full rule, the two
-mutually-exclusive interception paths, and the machine-checkable gates.
+The full rule, the two mutually-exclusive interception paths, and the
+boundary gates are recorded in the rootless dependency boundary sections of
+this file and `attach/README.md`.
 
 ## Platform compatibility notes
 

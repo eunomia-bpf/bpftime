@@ -225,4 +225,5 @@ may include neutral contract headers from `runtime/include/` (downward
 dependency only); they must not be referenced by `runtime/syscall-server`.
 Do not add a new shared object under `attach/` without explicit user approval.
 
-See `docs/rootless-architecture-boundary.md` for the full rule and gates.
+See the rootless dependency boundary section of
+`runtime/syscall-server/README.md` for the full rule and gates.
