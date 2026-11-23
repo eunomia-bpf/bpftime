@@ -733,8 +733,9 @@ static int refresh_attach_session(const gchar *data)
 	(void)ctx_holder.ctx.destroy_all_attach_links();
 	ctx_holder.ctx.reset_instantiated_state();
 
-	int res =
-		ctx_holder.ctx.init_attach_ctx_from_handlers(bpftime_get_runtime_config());
+	int failed_handlers = 0;
+	int res = ctx_holder.ctx.init_attach_ctx_from_handlers(
+		bpftime_get_runtime_config(), &failed_handlers);
 	if (res != 0) {
 		SPDLOG_ERROR(
 			"agent_control: init_attach_ctx_from_handlers failed: {}",
@@ -796,13 +797,12 @@ static int refresh_attach_session(const gchar *data)
 		std::atexit(stop_auto_refresh_at_exit);
 	}
 
-	// The scan reports its own aggregate warning; say "successfully" only
-	// when every handler it saw is instantiated.
-	if (auto failed = ctx_holder.ctx.failed_instantiated_handlers();
-	    !failed.empty()) {
+	// Consume the count returned by this scan: no second lock or shared
+	// state read, so the auto-refresh thread cannot race this check.
+	if (failed_handlers > 0) {
 		SPDLOG_WARN(
 			"Attach finished with {} handler(s) not instantiated",
-			failed.size());
+			failed_handlers);
 	} else {
 		SPDLOG_INFO("Attach successfully");
 	}
@@ -1110,11 +1110,13 @@ static void bpftime_agent_main_impl(const gchar *data,
 #endif
 			SPDLOG_INFO("Initializing agent..");
 
+			int failed_handlers = 0;
 			try {
 				attach_callback_suppression_scope suppress_callbacks;
 				int res = ctx_holder.ctx
 						  .init_attach_ctx_from_handlers(
-							  runtime_config);
+							  runtime_config,
+							  &failed_handlers);
 				if (res != 0) {
 					SPDLOG_INFO(
 						"Failed to initialize attach context, exiting..");
@@ -1223,7 +1225,13 @@ static void bpftime_agent_main_impl(const gchar *data,
 			} catch (...) {
 			}
 			try {
-				SPDLOG_INFO("Attach successfully");
+				if (failed_handlers > 0) {
+					SPDLOG_WARN(
+						"Attach finished with {} handler(s) not instantiated",
+						failed_handlers);
+				} else {
+					SPDLOG_INFO("Attach successfully");
+				}
 			} catch (...) {
 			}
 		} catch (const std::exception &) {

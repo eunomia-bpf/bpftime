@@ -12,22 +12,41 @@
 #include "common_def.hpp"
 #include "handler/perf_event_handler.hpp"
 #include "handler/prog_handler.hpp"
-#include "spdlog/spdlog.h"
+#include <spdlog/sinks/ostream_sink.h>
+#include <spdlog/spdlog.h>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <catch2/catch_test_macros.hpp>
-#include <cerrno>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <unistd.h>
 
 using namespace bpftime;
 using namespace boost::interprocess;
 
+namespace {
+// Restores the process-wide default logger even when a REQUIRE aborts the
+// test with an exception, so later tests never log through a dead sink.
+struct logger_restore_guard {
+	std::shared_ptr<spdlog::logger> previous;
+	explicit logger_restore_guard(
+		std::shared_ptr<spdlog::logger> logger)
+		: previous(std::move(logger))
+	{
+	}
+	~logger_restore_guard()
+	{
+		spdlog::set_default_logger(previous);
+	}
+};
+} // namespace
+
 // A handler that cannot be instantiated (here: a uprobe whose attach type
 // has no registered implementation) used to be reported by one DEBUG line
 // per handler while init_attach_ctx_from_handlers still returned 0, so a
 // probe that never got attached looked like a successful session. The scan
-// now keeps the failing ids and errors, warns once, and exposes them.
+// now returns the distinct failed handler count through an optional output
+// argument and warns once, with the ids, only when the scan is stable.
 TEST_CASE("Failed handler instantiation is reported, not swallowed")
 {
 	const std::string name =
@@ -60,24 +79,57 @@ TEST_CASE("Failed handler instantiation is reported, not swallowed")
 	global_config.set_vm_name(DEFAULT_VM_NAME);
 	bpftime::shm_holder.global_shared_memory.set_runtime_config(
 		std::move(global_config));
+
+	std::ostringstream logs;
+	auto previous_logger = spdlog::default_logger();
+	auto logger = std::make_shared<spdlog::logger>(
+		"attach_failures",
+		std::make_shared<spdlog::sinks::ostream_sink_mt>(logs));
+	logger->set_level(spdlog::level::warn);
+	logger->set_pattern("%v");
+	spdlog::set_default_logger(logger);
+	logger_restore_guard restore_logger(previous_logger);
+
+	const std::string aggregate_warning =
+		"bpftime: 2 handler(s) could not be instantiated: 1 (-2), 2 (-2)";
+	auto count_aggregate_warnings = [&]() {
+		const std::string text = logs.str();
+		size_t count = 0;
+		size_t pos = 0;
+		while ((pos = text.find(aggregate_warning, pos)) !=
+		       std::string::npos) {
+			++count;
+			pos += aggregate_warning.size();
+		}
+		return count;
+	};
+
 	bpf_attach_ctx ctx;
-	REQUIRE(ctx.init_attach_ctx_from_handlers(manager, config) == 0);
+	// 1) The optional output argument receives the distinct failed
+	// handler count, the good handler stays instantiated, and one
+	// aggregate warning carries both ids and their error codes.
+	int failed = -1;
+	REQUIRE(ctx.init_attach_ctx_from_handlers(manager, config,
+						  &failed) == 0);
+	REQUIRE(failed == 2);
 	REQUIRE(ctx.find_instantiated_prog(0) != nullptr);
+	REQUIRE(count_aggregate_warnings() == 1);
 
-	auto failed = ctx.failed_instantiated_handlers();
-	REQUIRE(failed.count(1) == 1);
-	REQUIRE(failed.at(1) == -ENOENT);
-	// The link fails because its attach target could not be instantiated.
-	REQUIRE(failed.count(2) == 1);
-	REQUIRE(failed.at(2) < 0);
-
-	// A scan with every handler instantiated clears the record.
+	// 2) After the failing handlers are removed and the context is
+	// reset, a fresh scan reports zero failures and emits no new
+	// aggregate warning.
 	manager->clear_id_at(1, segment);
 	manager->clear_id_at(2, segment);
 	ctx.reset_instantiated_state();
-	REQUIRE(ctx.failed_instantiated_handlers().empty());
+	failed = -1;
+	REQUIRE(ctx.init_attach_ctx_from_handlers(manager, config,
+						  &failed) == 0);
+	REQUIRE(failed == 0);
+	REQUIRE(count_aggregate_warnings() == 1);
+
+	// 3) The default nullptr output argument keeps the call working.
 	REQUIRE(ctx.init_attach_ctx_from_handlers(manager, config) == 0);
-	REQUIRE(ctx.failed_instantiated_handlers().empty());
+	REQUIRE(count_aggregate_warnings() == 1);
 
 	ctx.destroy_all_attach_links();
 	ctx.reset_instantiated_state();
