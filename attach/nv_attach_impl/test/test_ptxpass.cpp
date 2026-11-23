@@ -31,6 +31,12 @@ namespace bpftime::attach
 std::optional<std::string> run_ptxpass_runner(const std::string &,
 					      const std::filesystem::path &,
 					      const std::string *, size_t);
+// Defined in nv_attach_impl.cpp next to the internal picker; declared here so
+// the runner-path tests below can exercise it without a private header.
+std::filesystem::path
+pick_ptxpass_runner_path_for_test(const char *override_path,
+				   const std::filesystem::path &self,
+				   const std::filesystem::path &installed);
 }
 #endif
 
@@ -571,3 +577,4 @@ TEST_CASE("PTX pass runner path survives relocation", "[ptxpass_runner]")
 			"", {}, root / "absent") == fallback);
 	std::filesystem::remove_all(root);
 }
+#endif
