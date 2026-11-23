@@ -234,6 +234,10 @@ void bpftime_remove_global_shm();
 // segment itself has been unmapped. Used to make atexit cleanup teardown-safe.
 bool bpftime_global_shm_is_initialized();
 
+// Cached byte offset of the thread-pointer slot in the synthetic
+// task_struct; fixed fallback when kernel BTF is unusable, -1 elsewhere.
+long bpftime_get_current_task_tpbase_offset() noexcept;
+
 // enable memory protect, e.g. mpk
 void bpftime_protect_enable();
 // disable memory protect

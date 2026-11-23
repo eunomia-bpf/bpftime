@@ -44,6 +44,7 @@
 #include <iterator>
 #include <vector>
 #include "syscall_server_utils.hpp"
+#include "synthetic_kallsyms.hpp"
 #include <optional>
 #include <sys/mman.h>
 #include <string>
@@ -163,6 +164,13 @@ bool write_all_to_fd(int fd, const std::string &buf)
 	return true;
 }
 
+// Fill an unlinked mock fd with the mocked content and rewind it.
+bool populate_mock_file_fd(int fake_fd, const std::string &content)
+{
+	return write_all_to_fd(fake_fd, content) &&
+	       lseek(fake_fd, 0, SEEK_SET) >= 0;
+}
+
 bool reject_unsupported_program_helpers(const union bpf_attr *attr)
 {
 	const auto *insns = reinterpret_cast<const ebpf_inst *>(
@@ -253,19 +261,8 @@ struct system_analysis_compat_value {
 
 void maybe_complete_system_analysis(int map_fd, void *value)
 {
-	const char *offset_text =
-		getenv("BPFTIME_SYSTEM_ANALYSIS_PTREGS_OFFSET");
-#if defined(__x86_64__)
-	const char *tpbase_address_text =
-		getenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_ADDRESS");
-	const char *tpbase_offset_text =
-		getenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET");
-#else
-	const char *tpbase_address_text = nullptr;
-	const char *tpbase_offset_text = nullptr;
-#endif
-	if (offset_text == nullptr &&
-	    (tpbase_address_text == nullptr || tpbase_offset_text == nullptr))
+	// Kernel mode runs the real BPF program and reads kernel memory itself.
+	if (getenv("BPFTIME_RUN_WITH_KERNEL") != nullptr)
 		return;
 	bpftime::bpf_map_attr map_attr;
 	const char *map_name = nullptr;
@@ -278,7 +275,35 @@ void maybe_complete_system_analysis(int map_fd, void *value)
 		return;
 	}
 	auto *analysis = static_cast<system_analysis_compat_value *>(value);
+	if (analysis->pid == 0) {
+		errno = saved_errno;
+		return;
+	}
+	const auto complete_tpbase = [&](uint32_t tpbase_offset) {
+		memset(analysis->code, 0, sizeof(analysis->code));
 #if defined(__x86_64__)
+		// mov %rsi, offset(%rdi), decoded from x86_fsbase_write_task.
+		analysis->code[0] = 0x48;
+		analysis->code[1] = 0x89;
+		analysis->code[2] = 0xb7;
+		memcpy(&analysis->code[3], &tpbase_offset,
+		       sizeof(tpbase_offset));
+#elif defined(__aarch64__)
+		// ldr x0, [x0, #offset], decoded from tls_set.
+		uint32_t insn =
+			0xf9400000U | (((tpbase_offset / 8U) & 0xfffU) << 10);
+		memcpy(analysis->code, &insn, sizeof(insn));
+#endif
+		analysis->address = 0;
+		analysis->error = 0;
+		analysis->pid = 0;
+		errno = saved_errno;
+	};
+#if defined(__x86_64__)
+	const char *tpbase_address_text =
+		getenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_ADDRESS");
+	const char *tpbase_offset_text =
+		getenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET");
 	if (tpbase_address_text != nullptr && tpbase_offset_text != nullptr) {
 		char *address_end = nullptr;
 		char *offset_end = nullptr;
@@ -288,33 +313,36 @@ void maybe_complete_system_analysis(int map_fd, void *value)
 		unsigned long offset =
 			strtoul(tpbase_offset_text, &offset_end, 0);
 		if (errno == 0 && address_end != tpbase_address_text &&
-		    *address_end == '\0' && offset_end != tpbase_offset_text &&
+		    *address_end == '\0' &&
+		    offset_end != tpbase_offset_text &&
 		    *offset_end == '\0' && offset <= UINT32_MAX &&
-		    analysis->pid != 0 && analysis->address == address) {
-			memset(analysis->code, 0, sizeof(analysis->code));
-			analysis->code[0] = 0x48;
-			analysis->code[1] = 0x89;
-			analysis->code[2] = 0xb7;
-			uint32_t encoded_offset = (uint32_t)offset;
-			memcpy(&analysis->code[3], &encoded_offset,
-			       sizeof(encoded_offset));
-			analysis->address = 0;
-			analysis->error = 0;
-			analysis->pid = 0;
-			errno = saved_errno;
+		    analysis->address == address) {
+			complete_tpbase((uint32_t)offset);
 			return;
 		}
 	}
+	if (analysis->address ==
+	    bpftime::SYNTHETIC_X86_FSBASE_WRITE_TASK_ADDR) {
+		complete_tpbase(
+			(uint32_t)bpftime_get_current_task_tpbase_offset());
+		return;
+	}
+#elif defined(__aarch64__)
+	if (analysis->address == bpftime::SYNTHETIC_ARM64_TLS_SET_ADDR) {
+		complete_tpbase(
+			(uint32_t)bpftime_get_current_task_tpbase_offset());
+		return;
+	}
 #endif
+	const char *offset_text =
+		getenv("BPFTIME_SYSTEM_ANALYSIS_PTREGS_OFFSET");
 	if (offset_text == nullptr)
 		return;
 	char *end = nullptr;
 	errno = 0;
 	unsigned long offset = strtoul(offset_text, &end, 0);
 	if (errno != 0 || end == offset_text || *end != '\0' ||
-	    offset > UINT32_MAX)
-		return;
-	if (analysis->pid == 0 || analysis->address >= 4096) {
+	    offset > UINT32_MAX || analysis->address >= 4096) {
 		errno = saved_errno;
 		return;
 	}
@@ -350,7 +378,6 @@ syscall_context::syscall_context()
 	// FIXME: merge this into the runtime config
 	load_config_from_env();
 	auto runtime_config = bpftime::construct_runtime_config_from_env();
-	pthread_spin_init(&this->mocked_file_lock, 0);
 	SPDLOG_INFO("Init bpftime syscall mocking..");
 	SPDLOG_INFO("The log will be written to: {}",
 		    runtime_config.get_logger_output_path());
@@ -368,7 +395,6 @@ syscall_context::~syscall_context()
 	}
 	for (int fd : outer_fds)
 		release_map_in_map_refs(fd);
-	pthread_spin_destroy(&this->mocked_file_lock);
 }
 
 void syscall_context::release_owned_map_fd(int fd)
@@ -510,15 +536,6 @@ int syscall_context::handle_close(int fd)
 	SPDLOG_DEBUG("Calling mocked close");
 	try_startup();
 	{
-		bpftime_lock_guard _guard(this->mocked_file_lock);
-		if (auto itr = this->mocked_files.find(fd);
-		    itr != this->mocked_files.end()) {
-			SPDLOG_DEBUG("Removing mocked file fd {}", fd);
-			this->mocked_files.erase(itr);
-			return orig_close_fn(fd);
-		}
-	}
-	{
 		std::lock_guard lock(deferred_map_close_mutex);
 		if (deferred_map_closes.count(fd)) {
 			errno = EBADF;
@@ -574,14 +591,16 @@ int syscall_context::handle_openat(int fd, const char *file, int oflag,
 	}
 	if (auto mocker = create_mocked_file_based_on_full_path(*path);
 	    mocker) {
-		bpftime_lock_guard _guard(this->mocked_file_lock);
 		int fake_fd = create_unlinked_mock_fd(
 			(oflag & O_CLOEXEC) != 0);
 		if (fake_fd < 0) {
 			SPDLOG_WARN("Unable to create mock fd: {}", errno);
 			return orig_openat_fn(fd, file, oflag, mode);
 		}
-		this->mocked_files.emplace(fake_fd, std::move(*mocker));
+		if (!populate_mock_file_fd(fake_fd, (*mocker)->buf)) {
+			orig_close_fn(fake_fd);
+			return orig_openat_fn(fd, file, oflag, mode);
+		}
 		SPDLOG_DEBUG("Created mocked file with fd {}", fake_fd);
 		return fake_fd;
 	}
@@ -596,14 +615,16 @@ int syscall_context::handle_open(const char *file, int oflag,
 	SPDLOG_DEBUG("Calling mocked open");
 	try_startup();
 	if (auto mocker = create_mocked_file_based_on_full_path(file); mocker) {
-		bpftime_lock_guard _guard(this->mocked_file_lock);
 		int fake_fd = create_unlinked_mock_fd(
 			(oflag & O_CLOEXEC) != 0);
 		if (fake_fd < 0) {
 			SPDLOG_WARN("Unable to create mock fd: {}", errno);
 			return orig_open_fn(file, oflag, mode);
 		}
-		this->mocked_files.emplace(fake_fd, std::move(*mocker));
+		if (!populate_mock_file_fd(fake_fd, (*mocker)->buf)) {
+			orig_close_fn(fake_fd);
+			return orig_open_fn(file, oflag, mode);
+		}
 		SPDLOG_DEBUG("Created mocked file with fd {}", fake_fd);
 		return fake_fd;
 	}
@@ -616,29 +637,7 @@ ssize_t syscall_context::handle_read(int fd, void *buf, size_t count)
 		return orig_read_fn(fd, buf, count);
 	SPDLOG_DEBUG("Calling mocked read");
 	try_startup();
-	{
-		bpftime_lock_guard _guard(this->mocked_file_lock);
-		if (auto itr = this->mocked_files.find(fd);
-		    itr != this->mocked_files.end()) {
-			SPDLOG_DEBUG("Mock read fd={}, buf={:x}, count={}", fd,
-				     (uintptr_t)buf, count);
-			auto &mock_file = itr->second;
-			bpftime_lock_guard _access_guard(
-				mock_file->access_lock);
-			auto can_read_bytes =
-				std::min(count, mock_file->buf.size() -
-							mock_file->cursor);
-			SPDLOG_DEBUG("Reading {} bytes", can_read_bytes);
-			if (can_read_bytes == 0)
-				return can_read_bytes;
-			memcpy(buf, &mock_file->buf[mock_file->cursor],
-			       can_read_bytes);
-			mock_file->cursor += can_read_bytes;
-			SPDLOG_DEBUG("Copied {} bytes", can_read_bytes);
-
-			return can_read_bytes;
-		}
-	}
+	// Mocked files are populated kernel fds served by the kernel read path.
 	return orig_read_fn(fd, buf, count);
 }
 int syscall_context::create_kernel_bpf_map(int map_fd, int bpftime_map_type)
@@ -1572,33 +1571,19 @@ FILE *syscall_context::handle_fopen(const char *pathname, const char *flags)
 	try_startup();
 	if (auto mocker = create_mocked_file_based_on_full_path(pathname);
 	    mocker) {
-		bpftime_lock_guard _guard(this->mocked_file_lock);
 		int fake_fd = create_unlinked_mock_fd(
 			fopen_flags_request_cloexec(flags));
 		if (fake_fd < 0) {
 			SPDLOG_WARN("Unable to create mock fd: {}", errno);
 			return orig_fopen_fn(pathname, flags);
 		}
-		int err = 0;
-		if (!write_all_to_fd(fake_fd, (*mocker)->buf)) {
-			err = errno;
+		if (!populate_mock_file_fd(fake_fd, (*mocker)->buf)) {
 			orig_close_fn(fake_fd);
-			errno = err;
-			return orig_fopen_fn(pathname, flags);
-		}
-		if (lseek(fake_fd, 0, SEEK_SET) < 0) {
-			err = errno;
-			SPDLOG_WARN("Unable to rewind mock fd {}: {}", fake_fd,
-				    err);
-			orig_close_fn(fake_fd);
-			errno = err;
 			return orig_fopen_fn(pathname, flags);
 		}
 		FILE *replacement_fp = fdopen(fake_fd, "r");
 		if (replacement_fp == nullptr) {
-			err = errno;
 			orig_close_fn(fake_fd);
-			errno = err;
 			return orig_fopen_fn(pathname, flags);
 		}
 

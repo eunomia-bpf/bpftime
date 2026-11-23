@@ -28,6 +28,12 @@
 namespace bpftime
 {
 
+// Synthetic addresses of the binary-analysis thread-pointer functions;
+// never dereferenced, only answered by system_analysis completion.
+constexpr uint64_t SYNTHETIC_X86_FSBASE_WRITE_TASK_ADDR =
+	0xffffffff81200700ULL;
+constexpr uint64_t SYNTHETIC_ARM64_TLS_SET_ADDR = 0xffffffff81200800ULL;
+
 // Returns the synthetic /proc/kallsyms body. Entries follow the kernel
 // format: "<hex address> <type> <name>\n". All addresses are nonzero text
 // symbols so parsers that require at least one real address accept it.
@@ -50,6 +56,8 @@ inline const std::string &synthetic_kallsyms_content()
 		"ffffffff81200400 T sched_switch\n"
 		"ffffffff81200500 T __x64_sys_getpid\n"
 		"ffffffff81200600 T prctl_set_seccomp\n"
+		"ffffffff81200700 T x86_fsbase_write_task\n"
+		"ffffffff81200800 T tls_set\n"
 		"ffffffff82000000 T _etext\n";
 	return content;
 }

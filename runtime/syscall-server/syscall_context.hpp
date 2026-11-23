@@ -39,27 +39,10 @@ constexpr const int MOCKED_KPROBE_TYPE_VALUE = 8;
 constexpr const int MOCKED_KRETPROBE_BIT = 0;
 
 struct mocked_file_provider {
-	/**
-	 * @brief Next available byte
-	 *
-	 */
-	int cursor = 0;
 	std::string buf;
-	pthread_spinlock_t access_lock;
-	FILE *replacement_file = nullptr;
-	mocked_file_provider(std::string buf) : buf(buf)
+	explicit mocked_file_provider(std::string buf) : buf(std::move(buf))
 	{
-		pthread_spin_init(&access_lock, 0);
 	}
-	virtual ~mocked_file_provider()
-	{
-		pthread_spin_destroy(&access_lock);
-	}
-	mocked_file_provider(const mocked_file_provider &) = delete;
-	mocked_file_provider &operator=(const mocked_file_provider &) = delete;
-
-	mocked_file_provider(mocked_file_provider &&) = default;
-	mocked_file_provider &operator=(mocked_file_provider &&) = default;
 };
 
 class syscall_context {
@@ -91,9 +74,6 @@ class syscall_context {
 	fopen_fn orig_fopen_fn = nullptr;
 
 	std::unordered_set<uintptr_t> mocked_mmap_values;
-	pthread_spinlock_t mocked_file_lock;
-	std::unordered_map<int, std::unique_ptr<mocked_file_provider>>
-		mocked_files;
 	std::mutex map_in_map_refs_mutex;
 	std::unordered_map<int, std::unordered_map<std::string, int>>
 		map_in_map_refs;
