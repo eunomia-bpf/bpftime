@@ -124,6 +124,14 @@ class syscall_context {
 	int create_kernel_bpf_map(int fd, int bpftime_map_type);
 	int create_kernel_bpf_prog_in_userspace(int cmd, union bpf_attr *attr,
 						size_t size);
+	// Reserve a plain kernel fd for a mocked BPF handle. On Linux the
+	// fd is a dup of an open /dev/null descriptor: no filesystem path
+	// is created or unlinked, the result is always >= 3 (standard
+	// descriptors are never handed out), and the close-on-exec flag
+	// follows close_on_exec. Non-Linux builds fall back to
+	// create_unlinked_mock_fd(), whose guarantees match the previous
+	// behavior.
+	int reserve_handle_fd(bool close_on_exec);
 	// try loading the bpf syscall helpers.
 	// if the syscall original function is not prepared, it will cause a
 	// segfault.
