@@ -18,8 +18,6 @@
 
 namespace
 {
-// Must match the inline TLS buffer size in lpm_trie_map_impl::elem_lookup.
-constexpr size_t inline_value_capacity = 256;
 using bpftime::bpf_lpm_trie_key;
 
 struct lpm_fixture {
@@ -65,72 +63,70 @@ std::vector<uint8_t> pattern(size_t size, uint8_t seed)
 }
 } // namespace
 
-TEST_CASE("LPM trie returns small values through the inline TLS path",
-	  "[lpm_trie][inline_value]")
+TEST_CASE("LPM trie lookups of different keys stay distinct",
+	  "[lpm_trie][value_lifetime]")
 {
-	for (size_t value_size :
-	     { size_t(1), size_t(200), inline_value_capacity }) {
+	for (size_t value_size : { size_t(1), size_t(256), size_t(2048) }) {
+		lpm_fixture fixture(value_size);
+		auto key1 = fixture.make_key(10, 0, 0, 1);
+		auto key2 = fixture.make_key(10, 0, 0, 2);
+		auto value1 = pattern(value_size, 7);
+		auto value2 = pattern(value_size, 99);
+		REQUIRE(fixture.trie->elem_update(
+				reinterpret_cast<bpf_lpm_trie_key *>(key1.data()),
+				value1.data(), 0) == 0);
+		REQUIRE(fixture.trie->elem_update(
+				reinterpret_cast<bpf_lpm_trie_key *>(key2.data()),
+				value2.data(), 0) == 0);
+
+		void *first = fixture.trie->elem_lookup(
+			reinterpret_cast<bpf_lpm_trie_key *>(key1.data()));
+		void *second = fixture.trie->elem_lookup(
+			reinterpret_cast<bpf_lpm_trie_key *>(key2.data()));
+		REQUIRE(first != nullptr);
+		REQUIRE(second != nullptr);
+
+		// The kernel keeps both results valid: a second lookup must not
+		// clobber the first one.
+		REQUIRE(first != second);
+		REQUIRE(std::memcmp(first, value1.data(), value_size) == 0);
+		REQUIRE(std::memcmp(second, value2.data(), value_size) == 0);
+	}
+}
+
+TEST_CASE("LPM trie repeats a lookup at the same address",
+	  "[lpm_trie][value_lifetime]")
+{
+	for (size_t value_size : { size_t(1), size_t(256), size_t(2048) }) {
 		lpm_fixture fixture(value_size);
 		auto key = fixture.make_key(10, 0, 0, 1);
-		auto value = pattern(value_size, 7);
+		auto value = pattern(value_size, 31);
 		REQUIRE(fixture.trie->elem_update(
 				reinterpret_cast<bpf_lpm_trie_key *>(key.data()),
 				value.data(), 0) == 0);
 
 		void *first = fixture.trie->elem_lookup(
 			reinterpret_cast<bpf_lpm_trie_key *>(key.data()));
+		void *second = fixture.trie->elem_lookup(
+			reinterpret_cast<bpf_lpm_trie_key *>(key.data()));
 		REQUIRE(first != nullptr);
-		REQUIRE(std::memcmp(first, value.data(), value_size) == 0);
+		REQUIRE(second != nullptr);
+		REQUIRE(first == second);
+		REQUIRE(std::memcmp(second, value.data(), value_size) == 0);
 
-		// A second lookup keeps returning the same bytes even when the
-		// stored value changes underneath, matching the copy-out
-		// contract of the previous vector implementation.
-		auto updated = pattern(value_size, 99);
+		// A hold on the result survives an update of the same key, as it
+		// does in the kernel.
+		void *held = first;
+		auto updated = pattern(value_size, 55);
 		REQUIRE(fixture.trie->elem_update(
 				reinterpret_cast<bpf_lpm_trie_key *>(key.data()),
 				updated.data(), 0) == 0);
-		void *second = fixture.trie->elem_lookup(
-			reinterpret_cast<bpf_lpm_trie_key *>(key.data()));
-		REQUIRE(second != nullptr);
-		REQUIRE(std::memcmp(second, updated.data(), value_size) == 0);
+		REQUIRE(std::memcmp(held, updated.data(), value_size) == 0);
 	}
 }
 
-TEST_CASE("LPM trie keeps the vector path for values above the inline limit",
-	  "[lpm_trie][inline_value]")
-{
-	const size_t value_size = inline_value_capacity + 1;
-	lpm_fixture fixture(value_size);
-	auto key = fixture.make_key(10, 0, 0, 2);
-	auto value = pattern(value_size, 31);
-	REQUIRE(fixture.trie->elem_update(
-			reinterpret_cast<bpf_lpm_trie_key *>(key.data()),
-			value.data(), 0) == 0);
-
-	void *result = fixture.trie->elem_lookup(
-		reinterpret_cast<bpf_lpm_trie_key *>(key.data()));
-	REQUIRE(result != nullptr);
-	REQUIRE(std::memcmp(result, value.data(), value_size) == 0);
-
-	// A map has one fixed value_size, so the 2048-byte case needs its own
-	// fixture. It also grows the thread-local fallback vector beyond the
-	// 257 bytes it already holds on this thread.
-	const size_t large_size = 2048;
-	lpm_fixture large_fixture(large_size);
-	auto large_key = large_fixture.make_key(10, 0, 0, 3);
-	auto large_value = pattern(large_size, 3);
-	REQUIRE(large_fixture.trie->elem_update(
-			reinterpret_cast<bpf_lpm_trie_key *>(large_key.data()),
-			large_value.data(), 0) == 0);
-	void *large_result = large_fixture.trie->elem_lookup(
-		reinterpret_cast<bpf_lpm_trie_key *>(large_key.data()));
-	REQUIRE(large_result != nullptr);
-	REQUIRE(std::memcmp(large_result, large_value.data(),
-			    large_value.size()) == 0);
-}
-
-TEST_CASE("LPM trie inline buffers stay independent across threads",
-	  "[lpm_trie][inline_value]")
+TEST_CASE("LPM trie value pointers agree across threads",
+	  "[lpm_trie][value_lifetime]")
 {
 	const size_t value_size = 64;
 	lpm_fixture fixture(value_size);
@@ -141,23 +137,18 @@ TEST_CASE("LPM trie inline buffers stay independent across threads",
 			value.data(), 0) == 0);
 
 	void *worker_pointer = nullptr;
-	bool worker_value_matches = false;
 	std::thread worker([&]() {
 		worker_pointer = fixture.trie->elem_lookup(
 			reinterpret_cast<bpf_lpm_trie_key *>(key.data()));
-		// Compare inside the thread: the returned buffer is this thread's
-		// TLS and is destroyed when the thread exits.
-		worker_value_matches =
-			worker_pointer != nullptr &&
-			std::memcmp(worker_pointer, value.data(), value_size) == 0;
 	});
 	void *main_pointer = fixture.trie->elem_lookup(
 		reinterpret_cast<bpf_lpm_trie_key *>(key.data()));
 	worker.join();
 
+	// One value has one address, whichever thread looks it up, and it
+	// outlives the thread that did.
 	REQUIRE(worker_pointer != nullptr);
 	REQUIRE(main_pointer != nullptr);
-	REQUIRE(worker_pointer != main_pointer);
+	REQUIRE(worker_pointer == main_pointer);
 	REQUIRE(std::memcmp(main_pointer, value.data(), value_size) == 0);
-	REQUIRE(worker_value_matches);
 }
