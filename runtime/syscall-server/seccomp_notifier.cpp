@@ -16,6 +16,7 @@
 #include "seccomp_bpf_compat.hpp"
 #include "syscall_server_internal_dispatch.hpp"
 #include "syscall_server_utils.hpp"
+#include "rootless_map_files.hpp"
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
@@ -59,95 +60,6 @@ static std::mutex dispatch_mutex;
 static std::atomic<int> go_seccomp_listener{ -1 };
 
 
-struct mapped_file_resolution {
-	std::string logical_path;
-	std::string proc_root_path;
-};
-
-static bool parse_mapped_file_path(const char *path, pid_t &pid,
-				   unsigned long long &start,
-				   unsigned long long &end)
-{
-	if (path == nullptr)
-		return false;
-	int consumed = 0;
-	unsigned parsed_pid = 0;
-	if (sscanf(path, "/proc/%u/map_files/%llx-%llx%n", &parsed_pid,
-		   &start, &end, &consumed) != 3 || path[consumed] != '\0' ||
-	    parsed_pid == 0 || start >= end)
-		return false;
-	pid = (pid_t)parsed_pid;
-	return true;
-}
-
-static std::string unescape_proc_path(std::string path)
-{
-	std::string result;
-	result.reserve(path.size());
-	for (size_t i = 0; i < path.size(); i++) {
-		if (path[i] == '\\' && i + 3 < path.size() &&
-		    path[i + 1] >= '0' && path[i + 1] <= '7' &&
-		    path[i + 2] >= '0' && path[i + 2] <= '7' &&
-		    path[i + 3] >= '0' && path[i + 3] <= '7') {
-			result.push_back((char)((path[i + 1] - '0') * 64 +
-					        (path[i + 2] - '0') * 8 +
-					        path[i + 3] - '0'));
-			i += 3;
-		} else {
-			result.push_back(path[i]);
-		}
-	}
-	return result;
-}
-
-static std::optional<mapped_file_resolution>
-resolve_mapped_file_path(const char *path)
-{
-	pid_t pid;
-	unsigned long long wanted_start, wanted_end;
-	if (!parse_mapped_file_path(path, pid, wanted_start, wanted_end))
-		return {};
-
-	std::string maps_path = "/proc/" + std::to_string(pid) + "/maps";
-	FILE *maps = fopen(maps_path.c_str(), "re");
-	if (maps == nullptr)
-		return {};
-	char *line = nullptr;
-	size_t capacity = 0;
-	std::optional<mapped_file_resolution> result;
-	while (getline(&line, &capacity, maps) >= 0) {
-		unsigned long long start, end, offset, inode;
-		unsigned dev_major, dev_minor;
-		char permissions[5] = {};
-		int path_offset = 0;
-		if (sscanf(line, "%llx-%llx %4s %llx %x:%x %llu %n", &start,
-			   &end, permissions, &offset, &dev_major, &dev_minor,
-			   &inode, &path_offset) != 7 ||
-		    start != wanted_start || end != wanted_end)
-			continue;
-		std::string logical(line + path_offset);
-		while (!logical.empty() &&
-		       (logical.back() == '\n' || logical.back() == '\r'))
-			logical.pop_back();
-		logical = unescape_proc_path(logical);
-		if (logical.empty() || logical.front() != '/' ||
-		    logical.ends_with(" (deleted)"))
-			break;
-		std::string redirected = "/proc/" + std::to_string(pid) +
-					 "/root" + logical;
-		struct stat st = {};
-		if (stat(redirected.c_str(), &st) != 0 ||
-		    (inode != 0 && st.st_ino != inode))
-			break;
-		result = mapped_file_resolution{ std::move(logical),
-						 std::move(redirected) };
-		break;
-	}
-	free(line);
-	fclose(maps);
-	return result;
-}
-
 static bool is_mapped_file_syscall(const int64_t *args)
 {
 	if (args[0] != __NR_openat && args[0] != __NR_newfstatat &&
@@ -155,7 +67,7 @@ static bool is_mapped_file_syscall(const int64_t *args)
 		return false;
 	pid_t pid;
 	unsigned long long start, end;
-	return parse_mapped_file_path(
+	return rootless::parse_map_files_path(
 		reinterpret_cast<const char *>(args[2]), pid, start, end);
 }
 
@@ -163,7 +75,7 @@ static std::optional<int64_t> dispatch_mapped_file_syscall(const int64_t *args)
 {
 	if (!is_mapped_file_syscall(args))
 		return {};
-	auto resolution = resolve_mapped_file_path(
+	auto resolution = rootless::resolve_map_files_path(
 		reinterpret_cast<const char *>(args[2]));
 	if (!resolution)
 		return -EPERM;
@@ -177,7 +89,7 @@ static std::optional<int64_t> dispatch_mapped_file_syscall(const int64_t *args)
 	int64_t redirected[7];
 	std::copy(args, args + 7, redirected);
 	redirected[2] =
-		(int64_t)(uintptr_t)resolution->proc_root_path.c_str();
+		(int64_t)(uintptr_t)resolution->accessible_path.c_str();
 	return seccomp::raw_syscall(redirected[0], redirected[1], redirected[2],
 				 redirected[3], redirected[4], redirected[5],
 				 redirected[6]);
