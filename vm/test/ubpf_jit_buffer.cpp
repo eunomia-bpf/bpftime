@@ -16,7 +16,8 @@ static void check(bool condition, const char *message)
 
 // A straight-line program whose native image overflows uBPF's default
 // 64 KiB JIT scratch buffer. Each MOV64_IMM expands to several native
-// instructions, so several thousand of them produce a > 64 KiB image.
+// instructions; 16000 of them empirically need a 128 KiB image (the x86-64
+// overflow threshold lies between 9000 and 10000 MOV64_IMM instructions).
 static std::vector<ebpf_inst> make_large_program(size_t mov_count)
 {
 	std::vector<ebpf_inst> insns;
@@ -53,7 +54,7 @@ int main()
 	// "Target buffer too small"; the compat layer must grow and succeed.
 	{
 		bpftime_ubpf_vm vm;
-		auto insns = make_large_program(8000);
+		auto insns = make_large_program(16000);
 		check(vm.load_code(insns.data(),
 				   insns.size() * sizeof(ebpf_inst)) == 0,
 		      "large program failed to load");
