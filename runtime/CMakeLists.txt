@@ -294,6 +294,10 @@ endif()
 add_subdirectory(agent)
 add_subdirectory(syscall-server)
 
+if(BPFTIME_ENABLE_FUZZING)
+  add_subdirectory(fuzz)
+endif()
+
 #
 # Unit testing setup
 #
