@@ -1,5 +1,6 @@
 #include "ebpf_inst.h"
 #include "spdlog/spdlog.h"
+#include <algorithm>
 #include <cerrno>
 #include <memory>
 #include <stdexcept>
@@ -227,15 +228,36 @@ int bpftime_ubpf_vm::exec(void *mem, size_t mem_len, uint64_t &bpf_return_value)
 std::optional<bpftime::vm::compat::precompiled_ebpf_function>
 bpftime_ubpf_vm::compile()
 {
-	char *errmsg = nullptr;
-	auto result = ubpf_compile(ubpf_vm, &errmsg);
-	if (!result) {
-		error_string = errmsg;
+	// uBPF emits native code into a fixed-size scratch buffer (64 KiB by
+	// default). Large programs can overflow it; double the buffer and
+	// retry instead of failing the whole program load. A failed compile
+	// only frees its scratch buffer, the loaded bytecode stays valid for
+	// the next attempt.
+	size_t jit_code_size = 64 * 1024;
+	constexpr size_t max_jit_code_size = 4 * 1024 * 1024;
+	for (;;) {
+		ubpf_set_jit_code_size(ubpf_vm, jit_code_size);
+		char *errmsg = nullptr;
+		auto result = ubpf_compile(ubpf_vm, &errmsg);
+		if (result) {
+			return result;
+		}
+		std::string reason(errmsg);
 		free(errmsg);
-		SPDLOG_ERROR("Failed to compile using ubpf: {}", error_string);
+		if (reason == "Target buffer too small" &&
+		    jit_code_size < max_jit_code_size) {
+			jit_code_size = std::min(jit_code_size * 2,
+						 max_jit_code_size);
+			SPDLOG_DEBUG(
+				"uBPF JIT buffer overflowed; retrying with {} bytes",
+				jit_code_size);
+			continue;
+		}
+		error_string = reason;
+		SPDLOG_ERROR("Failed to compile using ubpf: {}",
+			     error_string);
 		return {};
 	}
-	return result;
 }
 
 void bpftime_ubpf_vm::set_lddw_helpers(uint64_t (*map_by_fd)(uint32_t),
