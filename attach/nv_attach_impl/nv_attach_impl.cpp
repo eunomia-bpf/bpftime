@@ -98,15 +98,55 @@ static std::string read_file(FILE *file)
 		output.append(buffer, count);
 	return output;
 }
+
+// The runner is spawned by absolute path, and the build-tree path baked in at
+// compile time stops existing as soon as the build directory moves or the tree
+// is installed. A path named by the caller wins, then a runner next to the
+// executable, then the installed location, and the baked path last so an
+// in-tree build keeps working unchanged.
+std::filesystem::path pick_ptxpass_runner_path(const char *override_path,
+					       const std::filesystem::path &self,
+					       const std::filesystem::path &installed)
+{
+	if (override_path != nullptr && override_path[0] != '\0') {
+		return std::filesystem::path(override_path);
+	}
+	std::error_code ec;
+	if (!self.empty()) {
+		const std::filesystem::path sibling =
+			self.parent_path() / "bpftime_ptxpass_runner";
+		if (std::filesystem::exists(sibling, ec))
+			return sibling;
+	}
+	if (std::filesystem::exists(installed, ec))
+		return installed;
+	return std::filesystem::path(DEFAULT_PTX_PASS_RUNNER_EXECUTABLE);
+}
+
+static std::filesystem::path ptxpass_runner_path()
+{
+	std::error_code ec;
+	return pick_ptxpass_runner_path(
+		getenv("BPFTIME_PTXPASS_RUNNER"),
+		std::filesystem::read_symlink("/proc/self/exe", ec),
+		PTXPASS_RUNNER_INSTALLED_PATH);
+}
 } // namespace
+
+// Exercised by the tests below; the picker itself stays internal.
+std::filesystem::path pick_ptxpass_runner_path_for_test(
+	const char *override_path, const std::filesystem::path &self,
+	const std::filesystem::path &installed)
+{
+	return pick_ptxpass_runner_path(override_path, self, installed);
+}
 
 std::optional<std::string>
 run_ptxpass_runner(const std::string &mode,
 		   const std::filesystem::path &pass_library,
 		   const std::string *stdin_payload, size_t output_bytes)
 {
-	const std::filesystem::path runner_path =
-		DEFAULT_PTX_PASS_RUNNER_EXECUTABLE;
+	const std::filesystem::path runner_path = ptxpass_runner_path();
 	file_ptr input(tmpfile(), fclose);
 	file_ptr result(tmpfile(), fclose);
 	file_ptr diagnostics(tmpfile(), fclose);

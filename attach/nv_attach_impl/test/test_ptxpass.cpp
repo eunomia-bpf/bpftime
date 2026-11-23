@@ -529,4 +529,45 @@ TEST_CASE("PTX pass runner client handles closed standard descriptors",
 	REQUIRE(config == R"({"mode":"config"})");
 	REQUIRE(process == R"({"input":"input"})");
 }
-#endif
+
+// The runner is spawned by absolute path, so a tree that installs the library
+// without the runner, or that moves after the build, fails every CUDA attach.
+// The lookup has to find a relocated runner instead of the baked path.
+TEST_CASE("PTX pass runner path survives relocation", "[ptxpass_runner]")
+{
+	const std::filesystem::path root =
+		std::filesystem::temp_directory_path() /
+		("bpftime-runner-path-" + std::to_string(getpid()));
+	const std::filesystem::path self = root / "bin" / "app";
+	const std::filesystem::path sibling = root / "bin" / "bpftime_ptxpass_runner";
+	const std::filesystem::path installed =
+		root / "installed" / "bpftime_ptxpass_runner";
+	std::filesystem::create_directories(self.parent_path());
+	std::filesystem::create_directories(installed.parent_path());
+	std::ofstream(self).close();
+	std::ofstream(installed).close();
+
+	// An explicit override always wins, and may name a path that does not
+	// exist yet: the caller naming it is the caller's decision.
+	REQUIRE(bpftime::attach::pick_ptxpass_runner_path_for_test(
+			"/tmp/explicit-runner", self, installed) ==
+		std::filesystem::path("/tmp/explicit-runner"));
+	// A runner next to the executable wins over both the installed copy and
+	// the baked path, which is what a moved build tree relies on.
+	std::ofstream(sibling).close();
+	REQUIRE(bpftime::attach::pick_ptxpass_runner_path_for_test(
+			nullptr, self, installed) == sibling);
+	std::filesystem::remove(sibling);
+	REQUIRE(bpftime::attach::pick_ptxpass_runner_path_for_test(
+			nullptr, self, installed) == installed);
+	// Nothing reachable: the baked build-tree path is the last resort, and an
+	// empty override is treated as absent rather than as an empty path.
+	const std::filesystem::path fallback =
+		bpftime::attach::pick_ptxpass_runner_path_for_test(
+			nullptr, self, root / "absent");
+	REQUIRE(!fallback.empty());
+	REQUIRE(fallback != installed);
+	REQUIRE(bpftime::attach::pick_ptxpass_runner_path_for_test(
+			"", {}, root / "absent") == fallback);
+	std::filesystem::remove_all(root);
+}

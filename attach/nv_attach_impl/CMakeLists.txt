@@ -9,6 +9,12 @@ add_subdirectory(pass/ptxpass_kprobe_memcapture)
 add_executable(bpftime_ptxpass_runner pass/ptxpass_runner.cpp)
 target_link_libraries(bpftime_ptxpass_runner PRIVATE ${CMAKE_DL_LIBS})
 
+# The library spawns the runner by path, so an installed tree needs the runner
+# installed too, and needs to know where it went.
+set(PTXPASS_RUNNER_INSTALL_DIR "$ENV{HOME}/.bpftime")
+install(TARGETS bpftime_ptxpass_runner CONFIGURATIONS Release Debug RelWithDebInfo
+        DESTINATION ${PTXPASS_RUNNER_INSTALL_DIR})
+
 if(BPFTIME_ENABLE_UNIT_TESTING)
   enable_testing()
   add_library(ptxpass_runner_test_pass SHARED pass/ptxpass_runner_test_pass.cpp)
@@ -85,7 +91,7 @@ endif()
 # Create a build-time header file with the PTX pass paths
 # This avoids shell escaping issues with colons and quotes
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ptx_pass_config.h"
-     CONTENT "#pragma once\nstatic constexpr const char *DEFAULT_PTX_PASS_EXECUTABLE = \"$<JOIN:${PTX_PASS_EXECUTABLE},:>\";static constexpr const char *DEFAULT_PTX_PASS_RUNNER_EXECUTABLE = \"$<TARGET_FILE:bpftime_ptxpass_runner>\";static constexpr const char* DEFAULT_PTX_COMPILER_SHARED_LIB=\"$<JOIN:${PTX_COMPILER_SHARED_LIB},:>\";\n")
+     CONTENT "#pragma once\nstatic constexpr const char *DEFAULT_PTX_PASS_EXECUTABLE = \"$<JOIN:${PTX_PASS_EXECUTABLE},:>\";static constexpr const char *DEFAULT_PTX_PASS_RUNNER_EXECUTABLE = \"$<TARGET_FILE:bpftime_ptxpass_runner>\";static constexpr const char *PTXPASS_RUNNER_INSTALLED_PATH = \"${PTXPASS_RUNNER_INSTALL_DIR}/bpftime_ptxpass_runner\";static constexpr const char* DEFAULT_PTX_COMPILER_SHARED_LIB=\"$<JOIN:${PTX_COMPILER_SHARED_LIB},:>\";\n")
 
 
 target_link_options(bpftime_nv_attach_impl PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_nv_attach_impl>" "-Wl,--no-whole-archive")
