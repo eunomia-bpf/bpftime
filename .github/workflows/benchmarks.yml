@@ -33,11 +33,14 @@ on:
       - "Makefile"
       - ".gitmodules"
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages,
+# reading the master baseline artifact and commenting results on PRs
 permissions:
   contents: read
   pages: write
   id-token: write
+  actions: read
+  pull-requests: write
 
 # Allow only one concurrent deployment for the pages part
 concurrency:
@@ -95,6 +98,59 @@ jobs:
           python3 benchmark/syscall/benchmark.py
           sudo build/tools/bpftimetool/bpftimetool remove
           python3 benchmark/mpk/benchmark.py --iter 3
+
+      - name: fetch master baseline
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" \
+            --workflow benchmarks.yml --branch master --event push \
+            --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+          if [ -n "$run_id" ]; then
+            gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+              -n benchmark-summary -D "$RUNNER_TEMP/baseline"
+          fi
+
+      - name: summarize benchmark results
+        run: |
+          mkdir -p "$RUNNER_TEMP/summary"
+          python3 benchmark/ci_summary.py \
+            --baseline "$RUNNER_TEMP/baseline/benchmark-summary.json" \
+            --output-json "$RUNNER_TEMP/summary/benchmark-summary.json" \
+            --output-md "$RUNNER_TEMP/summary/benchmark-summary.md"
+          cat "$RUNNER_TEMP/summary/benchmark-summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: upload benchmark summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-summary
+          path: ${{ runner.temp }}/summary/benchmark-summary.json
+
+      # Fork pull requests get a read-only token, so only comment on
+      # same-repository pull requests. The comment is keyed on a hidden
+      # marker and edited in place on every push instead of duplicated.
+      - name: comment benchmark summary on pull request
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          body="$RUNNER_TEMP/summary/benchmark-summary.md"
+          marker='<!-- bpftime-benchmark-summary -->'
+          comment_id=$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | contains(\"$marker\"))) | .id" \
+            | head -n1)
+          if [ -n "$comment_id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" \
+              -F body=@"$body"
+          else
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+              -F body=@"$body"
+          fi
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

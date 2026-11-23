@@ -10,6 +10,8 @@ The benchmark is also tested for each commit in the CI: [https://github.com/euno
 
 The result will be published in [https://eunomia-bpf.github.io/bpftime/benchmark/uprobe/results.html](https://eunomia-bpf.github.io/bpftime/benchmark/uprobe/results.html)
 
+On pull requests, [ci_summary.py](ci_summary.py) collects the uprobe, syscall and MPK micro-benchmark averages into a table, compares them with the latest successful run on `master`, and the workflow posts the table as a single pull-request comment that is updated on every push (and in the job summary).
+
 You can check our OSDI paper [Extending Applications Safely and Efficiently](https://www.usenix.org/conference/osdi25/presentation/zheng-yusheng) for more benchmark detail.
 
 ## Getting Started
