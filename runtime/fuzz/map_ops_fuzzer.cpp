@@ -198,12 +198,24 @@ void run_keyless_op(const bpf_map_handler &map, uint8_t op, input_reader &in,
 	}
 }
 
+// Bytes consumed per update/push value by the last input. The replay unit
+// test compares it with the layout it encoded, so both sides cannot drift
+// apart on per-CPU maps.
+size_t last_value_buffer_size = 0;
+
 } // namespace
+
+size_t bpftime_map_ops_fuzzer_last_value_buffer_size();
+size_t bpftime_map_ops_fuzzer_last_value_buffer_size()
+{
+	return last_value_buffer_size;
+}
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
 	auto &env = get_env();
 	input_reader in(data, size);
+	last_value_buffer_size = 0;
 
 	const auto &shape =
 		map_shapes[in.byte() % (sizeof(map_shapes) / sizeof(map_shapes[0]))];
@@ -234,6 +246,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 	std::vector<uint8_t> next_key(key.size());
 	std::vector<uint8_t> value(std::max(map.get_userspace_value_size(),
 					    value_size));
+	last_value_buffer_size = value.size();
 
 	for (size_t i = 0; i < max_ops_per_input && !in.empty(); i++) {
 		const uint8_t op = in.byte();

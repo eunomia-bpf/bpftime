@@ -14,6 +14,7 @@
 #include <vector>
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size);
+size_t bpftime_map_ops_fuzzer_last_value_buffer_size();
 
 namespace
 {
@@ -92,7 +93,13 @@ struct input_builder {
 
 int run(const input_builder &input)
 {
-	return LLVMFuzzerTestOneInput(input.bytes.data(), input.bytes.size());
+	const int ret =
+		LLVMFuzzerTestOneInput(input.bytes.data(), input.bytes.size());
+	// The encoded value layout only replays as intended if the fuzzer
+	// consumed the same number of value bytes per write.
+	REQUIRE(bpftime_map_ops_fuzzer_last_value_buffer_size() ==
+		input.value_buf_size);
+	return ret;
 }
 
 } // namespace

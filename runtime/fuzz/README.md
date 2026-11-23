@@ -25,8 +25,10 @@ flags (bits 4-5: `BPF_ANY`, `BPF_NOEXIST`, `BPF_EXIST`, or the invalid value
 3) and the opcode (low bits). It is followed by a key, plus a value when the
 operation writes one. Keyed maps support update, lookup, delete,
 get-next-key (from a key or from the start) and lookup-and-delete. Queue and
-stack maps support push, pop, peek and lookup-and-delete. Bytes past the end
-of the input read as zero.
+stack maps support push, pop, peek and lookup-and-delete. The flag bits only
+reach update and push; the other operations take no flags and ignore them, so
+invalid-flag coverage exists on those two paths only. Bytes past the end of
+the input read as zero.
 
 The map attributes stay inside the ranges the kernel accepts at
 `BPF_MAP_CREATE`, so a crash points at a map backend and not at a missing
@@ -48,7 +50,10 @@ mkdir -p corpus
 `BPFTIME_ENABLE_FUZZING` builds the whole tree with
 `-fsanitize=fuzzer-no-link,address,undefined`, so the runtime and map code
 get coverage feedback and sanitizer checks. Only the fuzzer executable links
-the libFuzzer driver.
+the libFuzzer driver. Use a separate build tree for it, as above; do not
+switch the option on inside an existing build directory, because every
+target in that tree (including `bpftime_runtime_tests`) is then
+instrumented.
 
 The unit-test target `bpftime_runtime_tests` compiles the same entry point
 and replays fixed inputs through it (`[fuzz]` tag in
