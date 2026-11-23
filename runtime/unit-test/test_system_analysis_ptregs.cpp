@@ -78,6 +78,19 @@ open_raw_tracepoint(syscall_context &ctx, const char *name)
 	return ctx.handle_sysbpf(BPF_RAW_TRACEPOINT_OPEN, &attr, sizeof(attr));
 }
 
+// The first userspace syscall triggers syscall-server startup, whose
+// begin_new_session() clears all pre-existing shm map handlers. Run one
+// benign emulated syscall before creating analysis maps so the map handler
+// survives, matching production ordering where collector startup precedes
+// any workload map creation.
+void
+prime_syscall_startup(syscall_context &ctx)
+{
+	int fd = open_raw_tracepoint(ctx, "sys_enter");
+	REQUIRE(fd >= 0);
+	close(fd);
+}
+
 // The emulated handle backs an unlinked regular file, while a kernel
 // bpf fd is an anonymous inode and a rejected syscall returns -1.
 void
@@ -89,7 +102,10 @@ require_passthrough_not_emulated(int fd)
 		REQUIRE_FALSE(S_ISREG(st.st_mode));
 		close(fd);
 	} else {
-		REQUIRE(errno == EPERM);
+		// Unprivileged runners reject with EPERM; privileged CI
+		// containers reach prog_fd/name validation (EBADF/EINVAL/ENOENT).
+		REQUIRE((errno == EPERM || errno == EBADF ||
+			 errno == EINVAL || errno == ENOENT));
 	}
 }
 
@@ -182,6 +198,7 @@ TEST_CASE("system_analysis lookup uses the default pt_regs offset without env",
 	shm_test_fixture fixture;
 	clear_analysis_env();
 	syscall_context ctx;
+	prime_syscall_startup(ctx);
 
 	int map_fd = create_analysis_map();
 	system_analysis_compat_value seed{};
@@ -207,6 +224,7 @@ TEST_CASE("system_analysis lookup honors an explicit pt_regs offset",
 	REQUIRE(setenv("BPFTIME_SYSTEM_ANALYSIS_PTREGS_OFFSET", "8192", 1) ==
 		0);
 	syscall_context ctx;
+	prime_syscall_startup(ctx);
 
 	int map_fd = create_analysis_map();
 	system_analysis_compat_value seed{};
