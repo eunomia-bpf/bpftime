@@ -8,8 +8,6 @@
 
 #define TASK_COMM_LEN 16
 #define NAME_MAX 255
-#define INVALID_UID ((uid_t)-1)
-#define MAX_INSN_SIZE 128
 #define BPF_OBJ_NAME_LEN 16U
 #define MAX_FILENAME_LEN 127
 
@@ -29,7 +27,6 @@ enum bpf_fd_type {
 	BPF_FD_TYPE_PERF,
 	BPF_FD_TYPE_PROG,
 	BPF_FD_TYPE_MAP,
-	BPF_FD_TYPE_MAX,
 };
 
 struct bpf_fd_data {
@@ -110,8 +107,6 @@ struct bpf_insn_data {
 	unsigned int code_len;
 };
 
-#define PID_MASK_FOR_PFD 0xffffffff00000000
-#define FD_MASK_FOR_PFD 0x00000000ffffffff
 #define MAKE_PFD(pid, fd) (((unsigned long long)pid << 32) | (unsigned long long)fd)
 
 #endif /* __SYSCALL_TRACER_H */

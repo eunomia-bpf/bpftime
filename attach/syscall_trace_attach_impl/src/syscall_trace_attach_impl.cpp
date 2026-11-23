@@ -414,44 +414,5 @@ int syscall_trace_attach_impl::create_attach_with_ebpf_callback(
 	}
 }
 
-extern "C" int64_t _bpftime__syscall_dispatcher(int64_t sys_nr, int64_t arg1,
-						int64_t arg2, int64_t arg3,
-						int64_t arg4, int64_t arg5,
-						int64_t arg6, int64_t user_ip,
-						int64_t user_sp,
-						int64_t user_bp)
-{
-	SPDLOG_DEBUG("Call syscall dispatcher: {} {}, {}, {}, {}, {}, {}",
-		     sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
-	return global_syscall_trace_attach_impl.value()->dispatch_syscall(
-		sys_nr, arg1, arg2, arg3, arg4, arg5, arg6, user_ip, user_sp,
-		user_bp);
-}
-
-extern "C" void
-_bpftime__setup_syscall_hooker_callback(syscall_hooker_func_t *hooker)
-{
-	// This exported entry may run inside the injected host process, before
-	// the bpftime logger/sink is initialized. Fail open instead of aborting
-	// (assert in debug builds) or throwing std::bad_optional_access
-	// (release builds), and return quietly: logging here would fall back to
-	// spdlog's default stdout sink and pollute the host's stdio. Leave the
-	// caller's hooker untouched so the host keeps running without syscall
-	// tracing.
-	if (hooker == nullptr) {
-		return;
-	}
-	if (!global_syscall_trace_attach_impl.has_value()) {
-		return;
-	}
-	auto impl = global_syscall_trace_attach_impl.value();
-	impl->set_original_syscall_function(*hooker);
-	SPDLOG_DEBUG(
-		"Saved original syscall hooker (original syscall function): {:x}",
-		(uintptr_t)*hooker);
-	*hooker = _bpftime__syscall_dispatcher;
-	SPDLOG_DEBUG("Set syscall hooker to {:x}", (uintptr_t)*hooker);
-}
-
 } // namespace attach
 } // namespace bpftime

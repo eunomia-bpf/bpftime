@@ -225,12 +225,6 @@ uintptr_t module_mapped_extent(const std::string_view &module_name)
 		return 0;
 	return acc.end - acc.begin;
 }
-void *find_module_export_by_name(const char *module_name,
-				 const char *symbol_name)
-{
-	return (void *)(uintptr_t)gum_module_find_export_by_name(module_name,
-								 symbol_name);
-}
 int from_cb_idx_to_attach_type(int idx)
 {
 	switch (idx) {

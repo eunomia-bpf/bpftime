@@ -152,11 +152,6 @@ int nv_attach_impl::detach_by_id(int id)
 	return 0;
 }
 
-void nv_attach_impl::register_custom_helpers(
-	ebpf_helper_register_callback register_callback)
-{
-}
-
 int nv_attach_impl::create_attach_with_ebpf_callback(
 	ebpf_run_callback &&cb, const attach_private_data &private_data,
 	int attach_type)
@@ -399,18 +394,6 @@ nv_attach_impl::nv_attach_impl()
 			      register_fatbin_end_addr);
 	}
 
-	{
-		void *cuda_malloc_addr = GSIZE_TO_POINTER(
-			gum_module_find_export_by_name(nullptr, "cudaMalloc"));
-		register_hook(AttachedToFunction::CudaMalloc, cuda_malloc_addr);
-	}
-	{
-		void *cuda_malloc_managed_addr =
-			GSIZE_TO_POINTER(gum_module_find_export_by_name(
-				nullptr, "cudaMallocManaged"));
-		register_hook(AttachedToFunction::CudaMallocManaged,
-			      cuda_malloc_managed_addr);
-	}
 	{
 		void *cuda_memcpy_to_symbol_addr =
 			GSIZE_TO_POINTER(gum_module_find_export_by_name(
