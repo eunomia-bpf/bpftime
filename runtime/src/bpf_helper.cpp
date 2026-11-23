@@ -481,6 +481,74 @@ static long btf_member_offset(const struct btf *btf, int type_id,
 }
 #endif
 
+#if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))
+// Kernel BTF may hold several task_struct structs (empty forwards on 5.4
+// kernels), so scan every non-empty candidate instead of a name lookup.
+static const std::pair<size_t, long> &resolve_task_layout()
+{
+	static const std::pair<size_t, long> layout = []() {
+		std::pair<size_t, long> result{ 64 * 1024, -1 };
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
+		struct btf *btf = btf__parse_raw("/sys/kernel/btf/vmlinux");
+		if (btf != nullptr && libbpf_get_error(btf) == 0) {
+#if defined(__x86_64__)
+			const char *path[] = { "thread", "fsbase" };
+#else
+			const char *path[] = { "thread", "uw", "tp_value" };
+#endif
+			for (__u32 id = 1; id < btf__type_cnt(btf); id++) {
+				const struct btf_type *type =
+					btf__type_by_id(btf, id);
+				if (type == nullptr ||
+				    BTF_INFO_KIND(type->info) !=
+					    BTF_KIND_STRUCT ||
+				    BTF_INFO_VLEN(type->info) == 0)
+					continue;
+				const char *name =
+					btf__name_by_offset(btf, type->name_off);
+				if (name == nullptr ||
+				    strcmp(name, "task_struct") != 0)
+					continue;
+				int64_t size = btf__resolve_size(btf, (int)id);
+				if (size >= (int64_t)sizeof(void *))
+					result.first = (size_t)size;
+				long offset = 0;
+				int type_id = (int)id;
+				for (const char *member : path) {
+					long m = btf_member_offset(
+						btf, type_id, member,
+						&type_id);
+					if (m < 0) {
+						offset = -1;
+						break;
+					}
+					offset += m;
+				}
+				result.second = offset;
+				if (offset >= 0)
+					break;
+			}
+			btf__free(btf);
+		}
+#endif
+		return result;
+	}();
+	return layout;
+}
+
+long bpftime_get_current_task_tpbase_offset() noexcept
+{
+	long offset = resolve_task_layout().second;
+	if (offset >= 0)
+		return offset;
+#if defined(__x86_64__)
+	return 0x14d0;
+#else
+	return 0x8c0;
+#endif
+}
+#endif
+
 uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t, uint64_t,
 				  uint64_t)
 {
@@ -493,35 +561,7 @@ uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t, uint64_t,
 	// Size and thread-pointer slot of the synthetic task_struct, from kernel
 	// BTF when available so programs that read the TLS base through
 	// task_struct (thread.fsbase / thread.uw.tp_value) see the real value.
-	static const auto task_layout = []() {
-		// Covers current kernels when BTF is unavailable. A host with a
-		// larger task_struct uses its actual BTF size instead.
-		std::pair<size_t, long> layout{ 64 * 1024, -1 };
-#ifdef BPFTIME_BUILD_WITH_LIBBPF
-		struct btf *btf = btf__parse_raw("/sys/kernel/btf/vmlinux");
-		if (btf != nullptr && libbpf_get_error(btf) == 0) {
-			int id = btf__find_by_name_kind(btf, "task_struct", BTF_KIND_STRUCT);
-			int64_t size = id > 0 ? btf__resolve_size(btf, id) : -1;
-			if (size >= static_cast<int64_t>(sizeof(void *)))
-				layout.first = static_cast<size_t>(size);
-#if defined(__x86_64__)
-			const char *path[] = { "thread", "fsbase" };
-#else
-			const char *path[] = { "thread", "uw", "tp_value" };
-#endif
-			long offset = 0;
-			for (const char *name : path) {
-				long member = id > 0 ? btf_member_offset(btf, id, name, &id) : -1;
-				offset = member < 0 ? -1 : offset + member;
-				if (offset < 0)
-					break;
-			}
-			layout.second = offset;
-			btf__free(btf);
-		}
-#endif
-		return layout;
-	}();
+	static const auto &task_layout = resolve_task_layout();
 	static const size_t task_storage_size = task_layout.first;
 	static pthread_key_t task_key;
 	static const int task_key_status = pthread_key_create(&task_key, free);
@@ -542,20 +582,18 @@ uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t, uint64_t,
 	static const size_t tpbase_offset = [] {
 		const char *text =
 			getenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET");
-		if (text == nullptr)
-			return task_layout.second >= 0 &&
-					       (size_t)task_layout.second <=
-						       task_storage_size -
-							       sizeof(void *) ?
-				       (size_t)task_layout.second :
-				       SIZE_MAX;
-		char *end = nullptr;
-		errno = 0;
-		unsigned long value = strtoul(text, &end, 0);
-		return errno == 0 && end != text && *end == '\0' &&
-				       value <= task_storage_size -
-						       sizeof(void *) ?
-			       (size_t)value :
+		if (text != nullptr) {
+			char *end = nullptr;
+			errno = 0;
+			unsigned long value = strtoul(text, &end, 0);
+			if (errno == 0 && end != text && *end == '\0' &&
+			    value <= task_storage_size - sizeof(void *))
+				return (size_t)value;
+		}
+		long resolved = bpftime_get_current_task_tpbase_offset();
+		return (size_t)resolved <=
+				       task_storage_size - sizeof(void *) ?
+			       (size_t)resolved :
 			       SIZE_MAX;
 	}();
 	if (tpbase_offset != SIZE_MAX) {

@@ -265,6 +265,7 @@ TEST_CASE("Test default SIGSEGV handler is preserved")
 
 extern "C" uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t,
 	uint64_t, uint64_t);
+extern "C" long bpftime_get_current_task_tpbase_offset() noexcept;
 extern "C" uint64_t bpftime_seq_write(uint64_t, uint64_t, uint64_t);
 
 TEST_CASE("Task and seq_write helpers are registered")
@@ -354,15 +355,24 @@ TEST_CASE("Task thread-pointer slot comes from host BTF without configuration")
 		const size_t size = malloc_usable_size(task);
 		void *const tp = __builtin_thread_pointer();
 		int slots = 0;
-		for (size_t i = 0; i + sizeof(tp) <= size; i += sizeof(tp)) {
+		size_t slot_offset = SIZE_MAX;
+		for (size_t i = 0; i + sizeof(tp) <= size;
+		     i += sizeof(tp)) {
 			void *value = nullptr;
 			memcpy(&value, task + i, sizeof(value));
-			slots += value == tp;
+			if (value == tp) {
+				slots++;
+				slot_offset = i;
+			}
 		}
-		// With BTF exactly one slot (thread.fsbase / thread.uw.tp_value)
-		// holds the thread pointer; without BTF nothing is guessed.
-		bool host_btf = access("/sys/kernel/btf/vmlinux", R_OK) == 0;
-		_exit(slots == (!no_btf && host_btf ? 1 : 0) ? 0 : 2);
+		// BTF resolves the real task_struct slot; without BTF the
+		// fixed fallback slot holds the thread pointer, always at the
+		// exported offset.
+		_exit(slots == 1 &&
+			      slot_offset == (size_t)
+					      bpftime_get_current_task_tpbase_offset()
+		      ? 0
+		      : 2);
 	}
 	int status = 0;
 	REQUIRE(waitpid(child, &status, 0) == child);
