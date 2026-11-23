@@ -91,9 +91,6 @@ class syscall_context {
 	fopen_fn orig_fopen_fn = nullptr;
 
 	std::unordered_set<uintptr_t> mocked_mmap_values;
-	pthread_spinlock_t mocked_file_lock;
-	std::unordered_map<int, std::unique_ptr<mocked_file_provider>>
-		mocked_files;
 	std::mutex map_in_map_refs_mutex;
 	std::unordered_map<int, std::unordered_map<std::string, int>>
 		map_in_map_refs;
