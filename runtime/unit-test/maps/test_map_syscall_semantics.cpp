@@ -174,4 +174,24 @@ TEST_CASE("intercepted lookup-and-delete keeps the queue pop path",
 	REQUIRE(field(result.fields, "queue_empty_ret") == -1);
 	REQUIRE(field(result.fields, "queue_empty_errno") == ENOENT);
 }
+
+TEST_CASE("a map stays reserved while a loaded program references it",
+	  "[map_syscall]")
+{
+	const std::string shm_name = shm_name_for("map-held-by-prog");
+	remove(("/dev/shm/" + shm_name).c_str());
+	auto result = run_map_helper("map-held-by-prog", shm_name.c_str());
+	remove(("/dev/shm/" + shm_name).c_str());
+
+	REQUIRE(result.status == 0);
+	REQUIRE(field(result.fields, "close_map_ret") == 0);
+	// The caller's fd is gone, so closing it twice reports EBADF.
+	REQUIRE(field(result.fields, "close_again_ret") == -1);
+	REQUIRE(field(result.fields, "close_again_errno") == EBADF);
+	// The program still holds the map: its slot is not given to a new map.
+	REQUIRE(field(result.fields, "reused_while_held") == 0);
+	REQUIRE(field(result.fields, "close_prog_ret") == 0);
+	// Closing the last referencing program releases the map.
+	REQUIRE(field(result.fields, "reused_after_prog_close") == 1);
+}
 #endif

@@ -97,6 +97,11 @@ class syscall_context {
 	std::mutex map_in_map_refs_mutex;
 	std::unordered_map<int, std::unordered_map<std::string, int>>
 		map_in_map_refs;
+	// Map fds the caller closed while a loaded program still references
+	// them. Their slot and fd number stay reserved until the last such
+	// program is closed, matching the kernel's program-held map reference.
+	std::mutex deferred_map_close_mutex;
+	std::set<int> deferred_map_closes;
 	void init_original_functions()
 	{
 		auto require_symbol = [](const char *name) {
@@ -163,6 +168,7 @@ class syscall_context {
 	long handle_map_delete(int fd, const void *key);
 	void release_map_in_map_refs(int outer_fd);
 	void release_owned_map_fd(int fd);
+	void release_unreferenced_deferred_maps();
 
     public:
 	// enable mock the syscall behavior in userspace

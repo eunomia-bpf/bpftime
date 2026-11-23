@@ -518,9 +518,47 @@ int syscall_context::handle_close(int fd)
 			return orig_close_fn(fd);
 		}
 	}
+	{
+		std::lock_guard lock(deferred_map_close_mutex);
+		if (deferred_map_closes.count(fd)) {
+			errno = EBADF;
+			return -1;
+		}
+		if (bpftime_is_map_referenced_by_prog(fd)) {
+			SPDLOG_DEBUG("Deferring close of map fd {} referenced by a program",
+				     fd);
+			deferred_map_closes.insert(fd);
+			return 0;
+		}
+	}
+	const bool closing_prog = bpftime_is_prog_fd(fd);
 	release_map_in_map_refs(fd);
 	bpftime_close(fd);
-	return orig_close_fn(fd);
+	int result = orig_close_fn(fd);
+	if (closing_prog)
+		release_unreferenced_deferred_maps();
+	return result;
+}
+
+void syscall_context::release_unreferenced_deferred_maps()
+{
+	std::vector<int> released;
+	{
+		std::lock_guard lock(deferred_map_close_mutex);
+		for (auto it = deferred_map_closes.begin();
+		     it != deferred_map_closes.end();) {
+			if (bpftime_is_map_referenced_by_prog(*it)) {
+				++it;
+				continue;
+			}
+			released.push_back(*it);
+			it = deferred_map_closes.erase(it);
+		}
+	}
+	for (int fd : released) {
+		release_map_in_map_refs(fd);
+		release_owned_map_fd(fd);
+	}
 }
 
 int syscall_context::handle_openat(int fd, const char *file, int oflag,
