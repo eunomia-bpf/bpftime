@@ -53,18 +53,18 @@ TEST_CASE("Tracepoint id provider preserves real IDs and resolves rootless alias
 	BOOST_SCOPE_EXIT_ALL(&) { test_tracepoint_probe = false; test_tracepoint_fd = -1; };
 	constexpr int32_t expected = 0x40000000 + 2 * (SYS_read + 1);
 	for (const char *root : { "/sys/kernel/tracing/events/", "/sys/kernel/debug/tracing/events/" }) {
-		auto provider = bpftime::create_mocked_file_based_on_full_path(
+		auto content = bpftime::get_synthetic_file_content(
 			std::string(root) + "syscalls/sys_enter_read/id");
-		REQUIRE(provider.has_value());
-		REQUIRE((*provider)->buf == std::to_string(expected) + "\n");
+		REQUIRE(content.has_value());
+		REQUIRE(*content == std::to_string(expected) + "\n");
 		// An unknown syscall never gets a syscall-base id. It still
 		// receives a path-derived fallback provider so a rootless
 		// openat() succeeds; the value is exactly the id the table
 		// builder derives for the same path.
-		auto unknown = bpftime::create_mocked_file_based_on_full_path(
+		auto unknown = bpftime::get_synthetic_file_content(
 			std::string(root) + "syscalls/sys_enter_nonexistent_bpftime/id");
 		REQUIRE(unknown.has_value());
-		const int32_t unknown_id = std::stoi((*unknown)->buf);
+		const int32_t unknown_id = std::stoi(*unknown);
 		REQUIRE(unknown_id <
 			bpftime::attach::syscall_trace_attach_private_data::synthetic_id_base);
 		REQUIRE(unknown_id == bpftime::rootless::synthetic_tracepoint_id(
@@ -76,7 +76,7 @@ TEST_CASE("Tracepoint id provider preserves real IDs and resolves rootless alias
 	REQUIRE(fputs("123\n", real_id) >= 0);
 	REQUIRE(fflush(real_id) == 0);
 	test_tracepoint_fd = fileno(real_id);
-	REQUIRE_FALSE(bpftime::create_mocked_file_based_on_full_path(
+	REQUIRE_FALSE(bpftime::get_synthetic_file_content(
 		"/sys/kernel/tracing/events/syscalls/sys_enter_read/id").has_value());
 }
 
@@ -159,9 +159,9 @@ TEST_CASE("Rootless mocks sched and raw_syscalls tracepoint ids")
 	for (const char *event_path : sched_events) {
 		const std::string id_path =
 			std::string("/sys/kernel/tracing/events/") + event_path + "/id";
-		auto provider = bpftime::create_mocked_file_based_on_full_path(id_path);
-		REQUIRE(provider.has_value());
-		const int32_t id = std::stoi((*provider)->buf);
+		auto content = bpftime::get_synthetic_file_content(id_path);
+		REQUIRE(content.has_value());
+		const int32_t id = std::stoi(*content);
 		REQUIRE(id == synthetic_tracepoint_id(id_path));
 		REQUIRE(id < base);
 		// Both tracefs mount aliases must resolve to the same ID, since the
@@ -169,10 +169,10 @@ TEST_CASE("Rootless mocks sched and raw_syscalls tracepoint ids")
 		const std::string debug_id_path =
 			std::string("/sys/kernel/debug/tracing/events/") +
 			event_path + "/id";
-		auto debug_provider =
-			bpftime::create_mocked_file_based_on_full_path(debug_id_path);
-		REQUIRE(debug_provider.has_value());
-		REQUIRE(std::stoi((*debug_provider)->buf) == id);
+		auto debug_content =
+			bpftime::get_synthetic_file_content(debug_id_path);
+		REQUIRE(debug_content.has_value());
+		REQUIRE(std::stoi(*debug_content) == id);
 	}
 	// raw_syscalls keeps its dedicated global enter/exit syscall-base id.
 	const struct { const char *event; int32_t id; } raw_cases[] = {
@@ -182,9 +182,9 @@ TEST_CASE("Rootless mocks sched and raw_syscalls tracepoint ids")
 	for (const auto &rc : raw_cases) {
 		const std::string id_path =
 			std::string("/sys/kernel/tracing/events/") + rc.event + "/id";
-		auto provider = bpftime::create_mocked_file_based_on_full_path(id_path);
-		REQUIRE(provider.has_value());
-		REQUIRE(std::stoi((*provider)->buf) == rc.id);
+		auto content = bpftime::get_synthetic_file_content(id_path);
+		REQUIRE(content.has_value());
+		REQUIRE(std::stoi(*content) == rc.id);
 	}
 }
 #endif

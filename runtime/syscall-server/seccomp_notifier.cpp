@@ -15,12 +15,14 @@
 #include "seccomp_tracer.hpp"
 #include "seccomp_bpf_compat.hpp"
 #include "syscall_server_internal_dispatch.hpp"
+#include "syscall_server_utils.hpp"
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <linux/audit.h>
+#include <filesystem>
 #include <linux/filter.h>
 
 #include <linux/seccomp.h>
@@ -54,7 +56,6 @@ namespace seccomp
 // Dispatch is serialized for emulated syscalls that touch shared fake-kernel
 // state; epoll waits run uncontended because they never mutate that state.
 static std::mutex dispatch_mutex;
-static const char *kallsyms_path;
 static std::atomic<int> go_seccomp_listener{ -1 };
 
 
@@ -189,6 +190,41 @@ static bool is_tracefs_mount_path(const char *path)
 		strcmp(path, "/sys/kernel/debug/tracing") == 0);
 }
 
+// Rewrite path-based syscalls whose virtual path is backed by a real host
+// file (explicit BPFTIME_KALLSYMS_PATH/BPFTIME_BTF_PATH overrides and the
+// cached synthetic file system) and run them natively. Every redirected
+// path is absolute, so the caller's dirfd is replaced with AT_FDCWD.
+static std::optional<int64_t>
+dispatch_redirected_path_syscall(const int64_t *args)
+{
+	switch (args[0]) {
+	case __NR_openat:
+	case __NR_newfstatat:
+	case __NR_statx:
+	case __NR_faccessat:
+#ifdef __NR_faccessat2
+	case __NR_faccessat2:
+#endif
+		break;
+	default:
+		return {};
+	}
+	auto *pathname = reinterpret_cast<const char *>(args[2]);
+	if (pathname == nullptr)
+		return {};
+	auto real_path =
+		resolve_redirected_path(std::filesystem::path(pathname));
+	if (!real_path)
+		return {};
+	int64_t redirected[7];
+	std::copy(args, args + 7, redirected);
+	redirected[1] = AT_FDCWD;
+	redirected[2] = reinterpret_cast<int64_t>(real_path->c_str());
+	return seccomp::raw_syscall(redirected[0], redirected[1],
+				    redirected[2], redirected[3],
+				    redirected[4], redirected[5],
+				    redirected[6]);
+}
 
 static int64_t dispatch_seccomp_syscall(const int64_t *args)
 {
@@ -205,18 +241,9 @@ static int64_t dispatch_seccomp_syscall(const int64_t *args)
 		status->f_type = 0x74726163;
 		return 0;
 	}
-	if (args[0] == __NR_openat && args[2] != 0 &&
-	    kallsyms_path != nullptr &&
-	    strcmp(reinterpret_cast<const char *>(args[2]),
-		   "/proc/kallsyms") == 0) {
-		int64_t redirected[7];
-		std::copy(args, args + 7, redirected);
-		redirected[2] = (int64_t)(uintptr_t)kallsyms_path;
-		return seccomp::raw_syscall(
-			redirected[0], redirected[1], redirected[2],
-			redirected[3], redirected[4], redirected[5],
-			redirected[6]);
-	}
+	if (auto redirected = dispatch_redirected_path_syscall(args);
+	    redirected)
+		return *redirected;
 	if (auto mapped = dispatch_mapped_file_syscall(args); mapped)
 		return *mapped;
 	// Everything else (bpf/perf_event_open/mmap/epoll/fd lifecycle/...) is
@@ -318,7 +345,6 @@ static bool setup_go_seccomp_tracer()
 {
 	if (getenv("BPFTIME_GO_SECCOMP") == nullptr)
 		return false;
-	kallsyms_path = getenv("BPFTIME_KALLSYMS_PATH");
 	start_go_seccomp_workers();
 	struct sock_filter filter[] = {
 		BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
@@ -337,7 +363,10 @@ static bool setup_go_seccomp_tracer()
 		BPFTIME_NOTIFY_SYSCALL(__NR_newfstatat),
 		BPFTIME_NOTIFY_SYSCALL(__NR_readlinkat),
 		BPFTIME_NOTIFY_SYSCALL(__NR_statx),
-		BPFTIME_NOTIFY_SYSCALL(__NR_read),
+		BPFTIME_NOTIFY_SYSCALL(__NR_faccessat),
+#ifdef __NR_faccessat2
+		BPFTIME_NOTIFY_SYSCALL(__NR_faccessat2),
+#endif
 		BPFTIME_NOTIFY_SYSCALL(__NR_close),
 		BPFTIME_NOTIFY_SYSCALL(__NR_ioctl),
 		BPFTIME_NOTIFY_SYSCALL(__NR_mmap),
