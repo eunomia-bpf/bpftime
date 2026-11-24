@@ -87,7 +87,6 @@ using epoll_wait_fn = int (*)(int, epoll_event *, int, int);
 using munmap_fn = int (*)(void *, size_t);
 using openat_fn = int (*)(int, const char *, int, ...);
 using open_fn = int (*)(const char *, int, ...);
-using read_fn = ssize_t (*)(int, void *, size_t);
 using fopen_fn = FILE *(*)(const char *, const char *);
 
 template <typename Fn> struct cached_next_symbol {
@@ -106,7 +105,6 @@ static cached_next_symbol<epoll_wait_fn> next_epoll_wait_symbol;
 static cached_next_symbol<munmap_fn> next_munmap_symbol;
 static cached_next_symbol<openat_fn> next_openat_symbol;
 static cached_next_symbol<open_fn> next_open_symbol;
-static cached_next_symbol<read_fn> next_read_symbol;
 static cached_next_symbol<fopen_fn> next_fopen_symbol;
 static cached_next_symbol<fopen_fn> next_fopen64_symbol;
 
@@ -422,17 +420,6 @@ extern "C" int open(const char *file, int oflag, ...)
 						    (unsigned short)mode); },
 		call_original, safe_ptr_str(file), oflag, mode);
 }
-extern "C" ssize_t read(int fd, void *buf, size_t count)
-{
-	auto call_original = [&]() {
-		return call_next_symbol(next_read_symbol, "read", (ssize_t)-1,
-					fd, buf, count);
-	};
-	return call_with_context(
-		[&]() { return context->handle_read(fd, buf, count); },
-		call_original);
-}
-
 extern "C" FILE *fopen(const char *pathname, const char *flags)
 {
 	auto call_original = [&]() {
@@ -470,14 +457,25 @@ extern "C" FILE *_IO_new_fopen(const char *pathname, const char *flags)
 long dispatch_syscall(long sysno, long arg1, long arg2, long arg3,
 		      long arg4, long arg5, long arg6) noexcept
 {
-	if (sysno == __NR_openat) {
+	// Virtual synthetic paths and explicit overrides resolve to real host
+	// files before the fake kernel is touched. resolve_redirected_path()
+	// is context-free (env plus RTLD_NEXT syscalls), so it also works
+	// before one-time initialization. All redirected paths are absolute.
+	if (sysno == __NR_openat || sysno == __NR_newfstatat ||
+	    sysno == __NR_statx || sysno == __NR_faccessat
+#ifdef __NR_faccessat2
+	    || sysno == __NR_faccessat2
+#endif
+	) {
 		const auto *file = reinterpret_cast<const char *>(arg2);
-		const char *kallsyms_path = getenv("BPFTIME_KALLSYMS_PATH");
-		if (kallsyms_path != nullptr && file != nullptr &&
-		    strcmp(file, "/proc/kallsyms") == 0) {
-			return fallback_syscall(sysno, arg1,
-						(long)kallsyms_path, arg3,
-						arg4, arg5, arg6);
+		if (file != nullptr) {
+			if (auto real_path = bpftime::resolve_redirected_path(
+				    std::filesystem::path(file));
+			    real_path) {
+				return fallback_syscall(sysno, AT_FDCWD,
+							(long)real_path->c_str(),
+							arg3, arg4, arg5, arg6);
+			}
 		}
 	}
 	if (!initialize_ctx())
@@ -519,13 +517,6 @@ long dispatch_syscall(long sysno, long arg1, long arg2, long arg3,
 				return context->handle_openat(
 					(int)arg1, (const char *)arg2, (int)arg3,
 					(unsigned short)arg4);
-			},
-			call_original);
-	} else if (sysno == __NR_read) {
-		return handle_exceptions(
-			[&]() {
-				return context->handle_read(
-					(int)arg1, (void *)arg2, (size_t)arg3);
 			},
 			call_original);
 	} else if (sysno == __NR_ioctl) {

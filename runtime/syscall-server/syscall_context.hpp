@@ -38,12 +38,6 @@ constexpr const int MOCKED_URETPROBE_BIT = 0;
 constexpr const int MOCKED_KPROBE_TYPE_VALUE = 8;
 constexpr const int MOCKED_KRETPROBE_BIT = 0;
 
-struct mocked_file_provider {
-	std::string buf;
-	explicit mocked_file_provider(std::string buf) : buf(std::move(buf))
-	{
-	}
-};
 
 class syscall_context {
 	using syscall_fn = long (*)(long, ...);
@@ -57,7 +51,6 @@ class syscall_context {
 	using munmap_fn = int (*)(void *, size_t);
 	using openat_fn = int (*)(int, const char *, int, ...);
 	using open_fn = int (*)(const char *, int, ...);
-	using read_fn = ssize_t (*)(int fd, void *buf, size_t count);
 	using fopen_fn = FILE *(*)(const char *, const char *);
 
 	close_fn orig_close_fn = nullptr;
@@ -70,7 +63,6 @@ class syscall_context {
 	openat_fn orig_openat_fn = nullptr;
 	open_fn orig_open_fn = nullptr;
 	mmap_fn orig_mmap_fn = nullptr;
-	read_fn orig_read_fn = nullptr;
 	fopen_fn orig_fopen_fn = nullptr;
 
 	std::unordered_set<uintptr_t> mocked_mmap_values;
@@ -107,7 +99,6 @@ class syscall_context {
 		orig_mmap64_fn = (mmap64_fn)orig_mmap_fn;
 		orig_openat_fn = (openat_fn)require_symbol("openat");
 		orig_open_fn = (open_fn)require_symbol("open");
-		orig_read_fn = (read_fn)require_symbol("read");
 		orig_fopen_fn = (fopen_fn)dlsym(RTLD_NEXT, "fopen");
 		if (orig_fopen_fn == nullptr)
 			orig_fopen_fn = (fopen_fn)dlsym(RTLD_NEXT, "fopen64");
@@ -194,7 +185,6 @@ class syscall_context {
 	int handle_openat(int fd, const char *file, int oflag,
 			  unsigned short mode);
 	int handle_open(const char *file, int oflag, unsigned short mode);
-	ssize_t handle_read(int fd, void *buf, size_t count);
 	FILE *handle_fopen(const char *pathname, const char *flags);
 	int handle_dup3(int oldfd, int newfd, int flags);
 	long handle_fcntl(int fd, int cmd, unsigned long arg);

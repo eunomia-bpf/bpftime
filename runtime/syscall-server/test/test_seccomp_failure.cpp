@@ -53,6 +53,13 @@ raw_syscall(int64_t, int64_t, int64_t, int64_t, int64_t, int64_t,
 	return -ENOSYS;
 }
 } // namespace seccomp
+// Standalone seam: the notifier is compiled without syscall_server_utils.cpp
+// in this harness, and the failure paths under test never take a redirect.
+std::optional<std::string>
+resolve_redirected_path(const std::filesystem::path &)
+{
+	return std::nullopt;
+}
 } // namespace bpftime
 
 static bool

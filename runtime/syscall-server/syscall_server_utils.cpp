@@ -30,12 +30,14 @@
 #include <memory>
 #include <mutex>
 #include <signal.h>
+#include <sys/stat.h>
 #include <spdlog/spdlog.h>
 #include <bpftime_shm.hpp>
 #include <string>
 #include <sstream>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 #include <system_error>
 #include <unistd.h>
 #ifdef ENABLE_BPFTIME_VERIFIER
@@ -54,7 +56,7 @@ using namespace bpftime;
 namespace {
 // Probe a tracefs event id file through the next (non-interposed) libc
 // symbols. This translation unit belongs to the LD_PRELOADed syscall server,
-// whose open/openat/fopen handlers call create_mocked_file_based_on_full_path.
+// whose open/openat/fopen handlers call resolve_redirected_path().
 // Opening the file with std::ifstream here re-enters those interposed handlers
 // and recurses until the stack is exhausted, so the real syscalls must be
 // resolved with RTLD_NEXT.
@@ -194,6 +196,175 @@ int32_t rootless_synthetic_id_for_event(std::string_view event)
 	       (enter ? 0 : 1);
 }
 #endif
+// Real libc entry points resolved through RTLD_NEXT. Every filesystem
+// operation below runs inside the LD_PRELOADed syscall server, whose
+// open/openat/fopen handlers call resolve_redirected_path(); going through
+// the interposed symbols would re-enter those handlers and recurse.
+struct real_libc_fs {
+	using openat_fn = int (*)(int, const char *, int, ...);
+	using write_fn = ssize_t (*)(int, const void *, size_t);
+	using close_fn = int (*)(int);
+	using faccessat_fn = int (*)(int, const char *, int, int);
+	openat_fn openat = nullptr;
+	write_fn write = nullptr;
+	close_fn close = nullptr;
+	faccessat_fn faccessat = nullptr;
+	using unlink_fn = int (*)(const char *);
+	unlink_fn unlink = nullptr;
+
+	static const real_libc_fs &instance()
+	{
+		static const real_libc_fs fs = [] {
+			real_libc_fs fs;
+			fs.openat = (openat_fn)dlsym(RTLD_NEXT, "openat");
+			fs.write = (write_fn)dlsym(RTLD_NEXT, "write");
+			fs.close = (close_fn)dlsym(RTLD_NEXT, "close");
+			fs.faccessat =
+				(faccessat_fn)dlsym(RTLD_NEXT, "faccessat");
+			fs.unlink = (unlink_fn)dlsym(RTLD_NEXT, "unlink");
+			return fs;
+		}();
+		return fs;
+	}
+};
+
+// Per-process private directory backing the cached synthetic files. The
+// owner pid makes fork handling explicit: a child process gets its own
+// directory on first use and only the owner removes its directory at exit,
+// so a forked child never deletes the parent's live cache.
+struct synthetic_fs_state {
+	std::mutex lock;
+	std::string temp_dir;
+	pid_t owner_pid = -1;
+	bool atexit_registered = false;
+	std::unordered_map<std::string, std::string> cached_files;
+};
+
+synthetic_fs_state &synthetic_fs()
+{
+	static synthetic_fs_state state;
+	return state;
+}
+
+void cleanup_synthetic_fs() noexcept
+{
+	auto &state = synthetic_fs();
+	std::lock_guard guard(state.lock);
+	if (state.temp_dir.empty() || state.owner_pid != getpid())
+		return;
+	std::error_code ec;
+	std::filesystem::remove_all(state.temp_dir, ec);
+	state.temp_dir.clear();
+	state.cached_files.clear();
+	state.owner_pid = -1;
+}
+
+// Create the private 0700 temp directory. Caller holds synthetic_fs().lock
+// and has already decided the current process owns no live directory.
+bool create_synthetic_fs_dir_locked()
+{
+	auto &state = synthetic_fs();
+	const char *tmp_root = getenv("TMPDIR");
+	if (tmp_root == nullptr || tmp_root[0] == '\0')
+		tmp_root = "/tmp";
+	std::string templ = std::string(tmp_root) +
+			    "/bpftime-synthetic-fs-" +
+			    std::to_string(getpid()) + "-XXXXXX";
+	std::vector<char> buffer(templ.begin(), templ.end());
+	buffer.push_back('\0');
+	if (mkdtemp(buffer.data()) == nullptr) {
+		SPDLOG_WARN("Unable to create synthetic fs directory: {}",
+			    errno);
+		return false;
+	}
+	state.temp_dir = buffer.data();
+	state.owner_pid = getpid();
+	state.cached_files.clear();
+	if (!state.atexit_registered) {
+		// atexit handlers are inherited across fork and run in each
+		// process; cleanup_synthetic_fs() re-checks ownership.
+		std::atexit(cleanup_synthetic_fs);
+		state.atexit_registered = true;
+	}
+	return true;
+}
+
+// Flatten a virtual absolute path into a single safe file name component.
+std::string flatten_virtual_path(const std::string &virtual_path)
+{
+	std::string name;
+	name.reserve(virtual_path.size());
+	for (char ch : virtual_path)
+		name.push_back(ch == '/' ? '_' : ch);
+	return name;
+}
+
+// Write content once into a 0400 file inside the private directory. All
+// syscalls use the RTLD_NEXT entries so materialization cannot recurse into
+// the interposed open path. Caller holds synthetic_fs().lock.
+std::optional<std::string>
+materialize_synthetic_file_locked(const std::string &virtual_path,
+				  const std::string &content)
+{
+	const auto &fs = real_libc_fs::instance();
+	if (fs.openat == nullptr || fs.write == nullptr ||
+	    fs.close == nullptr)
+		return {};
+	if (synthetic_fs().temp_dir.empty() &&
+	    !create_synthetic_fs_dir_locked())
+		return {};
+	const std::string real_path =
+		synthetic_fs().temp_dir + "/" +
+		flatten_virtual_path(virtual_path);
+	int fd = fs.openat(AT_FDCWD, real_path.c_str(),
+			   O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+	if (fd < 0 && errno == EEXIST) {
+		// No cache entry points at this name, so the file is a stale
+		// remnant of an aborted materialization in this private dir.
+		// Drop it and recreate instead of serving truncated content.
+		if (fs.unlink == nullptr ||
+		    fs.unlink(real_path.c_str()) != 0)
+			return {};
+		fd = fs.openat(AT_FDCWD, real_path.c_str(),
+			       O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+	}
+	if (fd < 0) {
+		SPDLOG_WARN("Unable to create synthetic file for {}: {}",
+			    virtual_path, errno);
+		return {};
+	}
+	const char *data = content.data();
+	size_t bytes_left = content.size();
+	bool write_ok = true;
+	while (bytes_left > 0) {
+		ssize_t written = fs.write(fd, data, bytes_left);
+		if (written < 0) {
+			if (errno == EINTR)
+				continue;
+			write_ok = false;
+			break;
+		}
+		if (written == 0) {
+			write_ok = false;
+			break;
+		}
+		data += written;
+		bytes_left -= static_cast<size_t>(written);
+	}
+	// Read-only: callers must not mutate content shared through the cache.
+	if (fchmod(fd, S_IRUSR) != 0)
+		SPDLOG_WARN("Unable to chmod synthetic file {}: {}",
+			    real_path, errno);
+	if (!write_ok) {
+		fs.close(fd);
+		if (fs.unlink != nullptr)
+			fs.unlink(real_path.c_str());
+		return {};
+	}
+	fs.close(fd);
+	return real_path;
+}
+
 } // namespace
 // Why not use string_view? because parse_uint_from_file requires a c-string
 static const std::string UPROBE_TYPE_FILE_NAME =
@@ -468,8 +639,8 @@ int determine_kprobe_retprobe_bit()
 	return parse_uint_from_file(KRETPROBE_BIT_FILE_NAME.c_str(),
 				    "config:%d\n");
 }
-std::optional<std::unique_ptr<mocked_file_provider>>
-create_mocked_file_based_on_full_path(const std::filesystem::path &path)
+std::optional<std::string>
+get_synthetic_file_content(const std::filesystem::path &path)
 {
 	auto path_text = path.string();
 	constexpr std::string_view debug_tracepoint_root =
@@ -485,16 +656,15 @@ create_mocked_file_based_on_full_path(const std::filesystem::path &path)
 	// without an external System.map, but only while the real file hides
 	// its addresses: a privileged kernel reports real ones, and its
 	// addresses must survive. An explicit BPFTIME_KALLSYMS_PATH redirect
-	// is handled before this function is reached and takes precedence.
+	// takes precedence in resolve_redirected_path() and never reaches here.
 	if (is_synthetic_kallsyms_path(path_text) &&
 	    real_kallsyms_hides_addresses()) {
 		SPDLOG_DEBUG("serving built-in synthetic /proc/kallsyms");
-		return std::make_unique<mocked_file_provider>(
-			synthetic_kallsyms_content());
+		return synthetic_kallsyms_content();
 	}
 	if (is_tracepoint_id) {
 		// When tracefs is accessible, the real id file carries a valid
-		// kernel tracepoint id. Returning no provider lets the normal
+		// kernel tracepoint id. Returning no content lets the normal
 		// open path read that ID and keeps kernel-mode opens unchanged.
 		uint32_t real_id = 0;
 		if (read_real_tracepoint_id(path_text, real_id))
@@ -508,7 +678,7 @@ create_mocked_file_based_on_full_path(const std::filesystem::path &path)
 			root_size, path_text.size() - root_size - 3);
 		int32_t id = rootless_synthetic_id_for_event(event);
 		if (id != 0)
-			return std::make_unique<mocked_file_provider>(std::to_string(id) + "\n");
+			return std::to_string(id) + "\n";
 		// rootless_synthetic_id_for_event only encodes
 		// syscalls/sys_enter_* and syscalls/sys_exit_*. Every other
 		// tracepoint (sched/..., raw_syscalls/...) falls back to the
@@ -517,32 +687,74 @@ create_mocked_file_based_on_full_path(const std::filesystem::path &path)
 		// event when it attaches. Without this fallback an unreadable
 		// tracefs id file yields ENOENT and an unmodified profiler
 		// aborts during startup.
-		return std::make_unique<mocked_file_provider>(
-			std::to_string(rootless::synthetic_tracepoint_id(path_text)) +
-			"\n");
+		return std::to_string(
+			       rootless::synthetic_tracepoint_id(path_text)) +
+		       "\n";
 #endif
 		return {};
 	}
 	if (path == UPROBE_TYPE_FILE_NAME) {
 		SPDLOG_DEBUG("{} is uprobe type file", path.c_str());
-		return std::make_unique<mocked_file_provider>(
-			std::to_string(MOCKED_UPROBE_TYPE_VALUE));
+		return std::to_string(MOCKED_UPROBE_TYPE_VALUE);
 	} else if (path == URETPROBE_BIT_FILE_NAME) {
 		SPDLOG_DEBUG("{} is uretprobe bit file", path.c_str());
-		return std::make_unique<mocked_file_provider>(
-			"config:" + std::to_string(MOCKED_URETPROBE_BIT));
+		return "config:" + std::to_string(MOCKED_URETPROBE_BIT);
 	} else if (path == KPROBE_TYPE_FILE_NAME) {
 		SPDLOG_DEBUG("{} is kprobe type file", path.c_str());
-		return std::make_unique<mocked_file_provider>(
-			std::to_string(MOCKED_KPROBE_TYPE_VALUE));
+		return std::to_string(MOCKED_KPROBE_TYPE_VALUE);
 	} else if (path == KRETPROBE_BIT_FILE_NAME) {
 		SPDLOG_DEBUG("{} is kretprobe bit file", path.c_str());
-		return std::make_unique<mocked_file_provider>(
-			"config:" + std::to_string(MOCKED_KRETPROBE_BIT));
-	} else {
-		SPDLOG_DEBUG("Unmocked file path: {}", path.c_str());
-		return {};
+		return "config:" + std::to_string(MOCKED_KRETPROBE_BIT);
 	}
+	SPDLOG_DEBUG("Unmocked file path: {}", path.c_str());
+	return {};
+}
+
+std::optional<std::string>
+resolve_redirected_path(const std::filesystem::path &full_path)
+{
+	const std::string virtual_path = full_path.string();
+	// Explicit user-supplied overrides redirect straight to the given real
+	// file: no generated content, no temp copy, and empty values are treated
+	// as unset.
+	const char *kallsyms_override = getenv("BPFTIME_KALLSYMS_PATH");
+	if (is_synthetic_kallsyms_path(virtual_path) &&
+	    kallsyms_override != nullptr && kallsyms_override[0] != '\0')
+		return std::string(kallsyms_override);
+	const char *btf_override = getenv("BPFTIME_BTF_PATH");
+	if (virtual_path == "/sys/kernel/btf/vmlinux" && btf_override != nullptr &&
+	    btf_override[0] != '\0')
+		return std::string(btf_override);
+	// Everything else is only redirected when generated content exists.
+	auto content = get_synthetic_file_content(full_path);
+	if (!content)
+		return {};
+	auto &state = synthetic_fs();
+	std::lock_guard guard(state.lock);
+	// Fork safety: a child inherits the parent's directory path but must not
+	// touch it. Drop the inherited mapping and lazily create a directory the
+	// child actually owns on its first redirect.
+	if (state.owner_pid != -1 && state.owner_pid != getpid()) {
+		state.temp_dir.clear();
+		state.cached_files.clear();
+		state.owner_pid = -1;
+	}
+	if (auto cached = state.cached_files.find(virtual_path);
+	    cached != state.cached_files.end()) {
+		const auto &fs = real_libc_fs::instance();
+		// Re-materialize if the cached file was removed out of band.
+		if (fs.faccessat == nullptr ||
+		    fs.faccessat(AT_FDCWD, cached->second.c_str(), F_OK, 0) ==
+			    0)
+			return cached->second;
+		state.cached_files.erase(cached);
+	}
+	auto real_path =
+		materialize_synthetic_file_locked(virtual_path, *content);
+	if (!real_path)
+		return {};
+	state.cached_files.emplace(virtual_path, *real_path);
+	return real_path;
 }
 
 std::optional<std::filesystem::path>

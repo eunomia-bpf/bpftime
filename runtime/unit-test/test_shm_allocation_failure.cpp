@@ -12,6 +12,8 @@
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/shared_memory_object.hpp>
 #include <cerrno>
+#include <filesystem>
+#include <set>
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
@@ -500,13 +502,38 @@ TEST_CASE("Syscall server keeps shared memory while a peer server pid is alive",
 			shm_name.c_str()));
 }
 
-TEST_CASE("Syscall server mock files do not leave tmp entries",
+TEST_CASE("Syscall server synthetic files use a cached private temp "
+	  "directory without leftovers",
 	  "[allocation][syscall_server][cleanup]")
 {
-	auto result = run_allocation_helper("mock-tmp", "4", "128", nullptr);
+	// The helper inherits TMPDIR, so the parent watches the same root the
+	// child materializes into. Snapshot the entry set instead of counting
+	// entries so concurrent test processes cannot cause flaky failures.
+	const char *temp_root = getenv("TMPDIR");
+	if (temp_root == nullptr || temp_root[0] == '\0')
+		temp_root = "/tmp";
+	auto snapshot_synthetic_dirs = [&] {
+		std::set<std::string> entries;
+		std::error_code ec;
+		for (const auto &entry :
+		     std::filesystem::directory_iterator(temp_root, ec)) {
+			const std::string name = entry.path().filename();
+			if (name.rfind("bpftime-synthetic-fs-", 0) == 0)
+				entries.insert(name);
+		}
+		return entries;
+	};
+	const auto before = snapshot_synthetic_dirs();
+
+	auto result =
+		run_allocation_helper("synthetic-fs", "4", "128", nullptr);
 
 	REQUIRE(WIFEXITED(result.status));
 	REQUIRE(WEXITSTATUS(result.status) == 0);
 	REQUIRE(result.output.empty());
+
+	const auto after = snapshot_synthetic_dirs();
+	for (const auto &name : after)
+		REQUIRE(before.count(name) == 1);
 }
 #endif

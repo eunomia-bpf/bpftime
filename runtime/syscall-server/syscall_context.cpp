@@ -137,39 +137,6 @@ int create_unlinked_mock_fd(bool close_on_exec)
 	return fd;
 }
 
-bool fopen_flags_request_cloexec(const char *flags)
-{
-	return flags != nullptr && strchr(flags, 'e') != nullptr;
-}
-
-bool write_all_to_fd(int fd, const std::string &buf)
-{
-	const char *data = buf.data();
-	size_t bytes_left = buf.size();
-	while (bytes_left > 0) {
-		ssize_t written = write(fd, data, bytes_left);
-		if (written < 0) {
-			if (errno == EINTR) {
-				continue;
-			}
-			return false;
-		}
-		if (written == 0) {
-			errno = ENOSPC;
-			return false;
-		}
-		data += written;
-		bytes_left -= written;
-	}
-	return true;
-}
-
-// Fill an unlinked mock fd with the mocked content and rewind it.
-bool populate_mock_file_fd(int fake_fd, const std::string &content)
-{
-	return write_all_to_fd(fake_fd, content) &&
-	       lseek(fake_fd, 0, SEEK_SET) >= 0;
-}
 
 bool reject_unsupported_program_helpers(const union bpf_attr *attr)
 {
@@ -636,20 +603,14 @@ int syscall_context::handle_openat(int fd, const char *file, int oflag,
 		SPDLOG_WARN("Failed to resolve fd={}/file=`{}`", fd, file);
 		return orig_openat_fn(fd, file, oflag, mode);
 	}
-	if (auto mocker = create_mocked_file_based_on_full_path(*path);
-	    mocker) {
-		int fake_fd = create_unlinked_mock_fd(
-			(oflag & O_CLOEXEC) != 0);
-		if (fake_fd < 0) {
-			SPDLOG_WARN("Unable to create mock fd: {}", errno);
-			return orig_openat_fn(fd, file, oflag, mode);
-		}
-		if (!populate_mock_file_fd(fake_fd, (*mocker)->buf)) {
-			orig_close_fn(fake_fd);
-			return orig_openat_fn(fd, file, oflag, mode);
-		}
-		SPDLOG_DEBUG("Created mocked file with fd {}", fake_fd);
-		return fake_fd;
+	// Synthetic files are cached real files on disk: open the materialized
+	// host path directly, so every later read/pread/mmap/stat uses the
+	// ordinary kernel file path with no per-open temp fd allocation.
+	if (auto real_path = resolve_redirected_path(*path); real_path) {
+		SPDLOG_DEBUG("Redirecting openat {} -> {}", file,
+			     *real_path);
+		return orig_openat_fn(AT_FDCWD, real_path->c_str(), oflag,
+				      mode);
 	}
 	return orig_openat_fn(fd, file, oflag, mode);
 }
@@ -661,31 +622,12 @@ int syscall_context::handle_open(const char *file, int oflag,
 		return orig_open_fn(file, oflag, mode);
 	SPDLOG_DEBUG("Calling mocked open");
 	try_startup();
-	if (auto mocker = create_mocked_file_based_on_full_path(file); mocker) {
-		int fake_fd = create_unlinked_mock_fd(
-			(oflag & O_CLOEXEC) != 0);
-		if (fake_fd < 0) {
-			SPDLOG_WARN("Unable to create mock fd: {}", errno);
-			return orig_open_fn(file, oflag, mode);
-		}
-		if (!populate_mock_file_fd(fake_fd, (*mocker)->buf)) {
-			orig_close_fn(fake_fd);
-			return orig_open_fn(file, oflag, mode);
-		}
-		SPDLOG_DEBUG("Created mocked file with fd {}", fake_fd);
-		return fake_fd;
+	if (auto real_path = resolve_redirected_path(std::filesystem::path(file));
+	    real_path) {
+		SPDLOG_DEBUG("Redirecting open {} -> {}", file, *real_path);
+		return orig_open_fn(real_path->c_str(), oflag, mode);
 	}
 	return orig_open_fn(file, oflag, mode);
-}
-
-ssize_t syscall_context::handle_read(int fd, void *buf, size_t count)
-{
-	if (!mock_active_for_current_thread())
-		return orig_read_fn(fd, buf, count);
-	SPDLOG_DEBUG("Calling mocked read");
-	try_startup();
-	// Mocked files are populated kernel fds served by the kernel read path.
-	return orig_read_fn(fd, buf, count);
 }
 int syscall_context::create_kernel_bpf_map(int map_fd, int bpftime_map_type)
 {
@@ -1637,28 +1579,14 @@ FILE *syscall_context::handle_fopen(const char *pathname, const char *flags)
 		return orig_fopen_fn(pathname, flags);
 	SPDLOG_DEBUG("Calling mocked fopen");
 	try_startup();
-	if (auto mocker = create_mocked_file_based_on_full_path(pathname);
-	    mocker) {
-		int fake_fd = create_unlinked_mock_fd(
-			fopen_flags_request_cloexec(flags));
-		if (fake_fd < 0) {
-			SPDLOG_WARN("Unable to create mock fd: {}", errno);
-			return orig_fopen_fn(pathname, flags);
-		}
-		if (!populate_mock_file_fd(fake_fd, (*mocker)->buf)) {
-			orig_close_fn(fake_fd);
-			return orig_fopen_fn(pathname, flags);
-		}
-		FILE *replacement_fp = fdopen(fake_fd, "r");
-		if (replacement_fp == nullptr) {
-			orig_close_fn(fake_fd);
-			return orig_fopen_fn(pathname, flags);
-		}
-
-		SPDLOG_DEBUG(
-			"Created fake fd {}, replacement fp {:x}, written {} bytes",
-			fake_fd, (uintptr_t)replacement_fp, (*mocker)->buf.size());
-		return replacement_fp;
+	if (auto real_path =
+		    resolve_redirected_path(std::filesystem::path(pathname));
+	    real_path) {
+		SPDLOG_DEBUG("Redirecting fopen {} -> {}", pathname,
+			     *real_path);
+		// A genuine host FILE*: fileno/fseek/fread/fstat all work
+		// natively, including caller-supplied flags such as "re".
+		return orig_fopen_fn(real_path->c_str(), flags);
 	}
 	return orig_fopen_fn(pathname, flags);
 }
