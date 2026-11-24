@@ -219,25 +219,14 @@ namespace detail
 {
 inline std::map<std::string, create_vm_instance_func> &get_vm_factory_map()
 {
-	union vm_map_holder {
-		std::map<std::string, create_vm_instance_func> map;
-		vm_map_holder()
-		{
-		}
-		~vm_map_holder()
-		{
-		}
-	};
-	static vm_map_holder factory_map;
-	static int initialized = 0;
-	int expected = 0;
-	if (__atomic_compare_exchange_n(&initialized, &expected, 1, false,
-					__ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
-		new (&factory_map.map)
-			std::map<std::string, create_vm_instance_func>;
-	}
-
-	return factory_map.map;
+	// C++11 guarantees thread-safe one-time initialization of this
+	// function-local static, so no manual CAS/placement-new is needed.
+	// It is allocated on the heap and intentionally never destructed so
+	// that accesses during process teardown cannot hit a destroyed
+	// registry (static destruction order fiasco).
+	static auto *factory_map =
+		new std::map<std::string, create_vm_instance_func>();
+	return *factory_map;
 }
 } // namespace detail
 
