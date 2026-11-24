@@ -29,6 +29,7 @@
 #include <bpftime_helper_group.hpp>
 #include <handler/handler_manager.hpp>
 #include <utility>
+#include <vector>
 #include <variant>
 #include <sys/resource.h>
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
@@ -58,20 +59,26 @@ int load_prog_and_helpers(bpftime_prog *prog, const runtime_config &config)
 	return prog->bpftime_prog_load(config.jit_enabled);
 }
 
-int bpf_attach_ctx::init_attach_ctx_from_handlers(const runtime_config &config)
+int bpf_attach_ctx::init_attach_ctx_from_handlers(const runtime_config &config,
+						  int *failed_count)
 {
 	const handler_manager *manager =
 		shm_holder.global_shared_memory.get_manager();
 	if (!manager) {
+		if (failed_count)
+			*failed_count = 0;
 		return -1;
 	}
-	return init_attach_ctx_from_handlers(manager, config);
+	return init_attach_ctx_from_handlers(manager, config, failed_count);
 }
 
 // create a attach context and progs from handlers
 int bpf_attach_ctx::init_attach_ctx_from_handlers(
-	const handler_manager *manager, const runtime_config &config)
+	const handler_manager *manager, const runtime_config &config,
+	int *failed_count)
 {
+	if (failed_count)
+		*failed_count = 0;
 	std::lock_guard<std::mutex> lock(ctx_mutex);
 	for (int attempt = 0; attempt < 3; attempt++) {
 		auto seq = shm_holder.global_shared_memory.read_stable_epoch_seq();
@@ -102,6 +109,17 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			last_epoch_seq_seen = seq;
 		}
 		const std::uint64_t epoch_before = last_epoch_seq_seen;
+		// Failed (handler id, first error) pairs of this scan. The
+		// vector stays empty on the common success path, so a normal
+		// scan performs no heap allocation here.
+		std::vector<std::pair<int, int>> failures;
+		auto record_failure = [&](int id, int err) {
+			for (const auto &[seen_id, _] : failures) {
+				if (seen_id == id)
+					return;
+			}
+			failures.emplace_back(id, err);
+		};
 		for (int i = 0; i < (int)manager->size(); i++) {
 			if (manager->is_allocated(i)) {
 				std::set<int> stk;
@@ -109,11 +127,12 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					    manager, i, stk, config, false);
 				    err < 0) {
 					SPDLOG_DEBUG(
-						"Failed to instantiate handler {}",
-						i);
+						"Failed to instantiate handler {}: {}",
+						i, err);
 					// Unable to instantiate handler may not be an
 					// error. We can continue trying to instantiate
 					// other handlers.
+					record_failure(i, err);
 				}
 			}
 		}
@@ -128,14 +147,44 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					    manager, i, stk, config, true);
 				    err < 0) {
 					SPDLOG_DEBUG(
-						"Failed to instantiate handler {}",
-						i);
+						"Failed to instantiate handler {}: {}",
+						i, err);
+					record_failure(i, err);
 				}
 			}
 		}
+		// Emit the aggregate warning and hand the distinct failed
+		// handler count to the caller only when this scan is about
+		// to be accepted as stable, so an unstable retry never logs
+		// a stale partial result. A handler that failed one pass but
+		// succeeded the other is instantiated by the end of the
+		// scan, so drop it from the final failure set.
+		auto finalize_scan = [&]() {
+			if (failures.empty())
+				return;
+			std::string detail;
+			int failed_total = 0;
+			for (const auto &[id, err] : failures) {
+				if (instantiated_handlers.contains(id))
+					continue;
+				if (failed_total > 0)
+					detail += ", ";
+				detail += std::to_string(id) + " (" +
+					  std::to_string(err) + ")";
+				++failed_total;
+			}
+			if (failed_total == 0)
+				return;
+			SPDLOG_WARN(
+				"bpftime: {} handler(s) could not be instantiated: {}",
+				failed_total, detail);
+			if (failed_count)
+				*failed_count = failed_total;
+		};
 		const std::uint64_t epoch_after =
 			shm_holder.global_shared_memory.read_stable_epoch_seq();
 		if (epoch_after == BPFTIME_EPOCH_SEQ_MISSING) {
+			finalize_scan();
 			return 0;
 		}
 		if (epoch_after == BPFTIME_EPOCH_SEQ_UNSTABLE) {
@@ -147,6 +196,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			continue;
 		}
 		if (epoch_after == epoch_before || epoch_after == last_epoch_seq_seen) {
+			finalize_scan();
 			return 0;
 		}
 		SPDLOG_INFO(
