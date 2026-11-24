@@ -232,6 +232,36 @@ std::string format_verifier_program_dump(const uint64_t *instructions,
 }
 } // namespace
 
+int syscall_context::reserve_handle_fd(bool close_on_exec)
+{
+#if defined(__linux__)
+	// A mocked BPF handle only needs a unique kernel fd number, so a
+	// /dev/null descriptor is sufficient and avoids creating and
+	// unlinking a temp file for every BTF/map/prog/link handle.
+	int open_flags = O_RDONLY | (close_on_exec ? O_CLOEXEC : 0);
+	int fd = orig_openat_fn(AT_FDCWD, "/dev/null", open_flags, 0);
+	if (fd < 0)
+		return -1;
+	if (fd <= 2) {
+		// Standard descriptors must never become mocked handles,
+		// even when the process closed one of them. Move the
+		// descriptor above fd 2 atomically and release the low one.
+		int dup_cmd = close_on_exec ? F_DUPFD_CLOEXEC : F_DUPFD;
+		int duped = (int)orig_syscall_fn(__NR_fcntl, fd, dup_cmd, 3);
+		int saved_errno = errno;
+		orig_close_fn(fd);
+		if (duped < 0) {
+			errno = saved_errno;
+			return -1;
+		}
+		fd = duped;
+	}
+	return fd;
+#else
+	return create_unlinked_mock_fd(close_on_exec);
+#endif
+}
+
 void syscall_context::load_config_from_env()
 {
 	const char *run_with_kernel_env = getenv("BPFTIME_RUN_WITH_KERNEL");
@@ -791,7 +821,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		errno = EINVAL;
 		return -1;
 	case BPF_BTF_LOAD: {
-		int fd = create_unlinked_mock_fd(true);
+		int fd = reserve_handle_fd(true);
 		SPDLOG_DEBUG("Created BTF handle {}", fd);
 		return fd;
 	}
@@ -841,7 +871,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 				orig_close_fn(fd);
 		};
 		for (;;) {
-			int reserved_fd = create_unlinked_mock_fd(true);
+			int reserved_fd = reserve_handle_fd(true);
 			if (reserved_fd < 0) {
 				int saved_errno = errno;
 				close_occupied_fds();
@@ -1043,7 +1073,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 				}
 			}
 #endif
-			int reserved_fd = create_unlinked_mock_fd(true);
+			int reserved_fd = reserve_handle_fd(true);
 			if (reserved_fd < 0)
 				return -1;
 			int id = bpftime_progs_create(
@@ -1071,7 +1101,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 					       (long)(uintptr_t)attr,
 					       (long)size);
 		}
-		int reserved_fd = create_unlinked_mock_fd(true);
+		int reserved_fd = reserve_handle_fd(true);
 		if (reserved_fd < 0)
 			return -1;
 		int id = bpftime_link_create(
@@ -1114,6 +1144,10 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
 					       (long)size);
+		// Keep a regular-file backing: fstat() on the emulated handle
+		// must report S_ISREG so callers can tell it apart from a
+		// kernel anonymous-inode bpf fd (see
+		// test_system_analysis_ptregs.cpp).
 		int fd = create_unlinked_mock_fd(true);
 		SPDLOG_DEBUG(
 			"Created system-analysis raw tracepoint handle {} with pt_regs offset {}",
@@ -1402,6 +1436,11 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 	// (non-mocked) mmap and re-entering the syscall interceptor. Under
 	// ASan that nested interposition crashes (nested SEGV) on e.g. openEuler;
 	// the single passthrough call below is the correct behavior.
+	// Mocked BPF handle fds (backed by /dev/null) never reach this
+	// passthrough: every mmap-able handle kind is intercepted above.
+	// If one ever did, a writable MAP_SHARED mapping would fail with
+	// EPERM on /dev/null where an old temp file succeeded; no
+	// supported handle kind allows that path.
 	return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
 }
 

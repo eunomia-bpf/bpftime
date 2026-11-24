@@ -759,13 +759,26 @@ bool bpftime_shm::is_perf_fd(int fd) const
 
 int bpftime_shm::open_fake_fd()
 {
-	int fd = open("/dev/null", O_RDONLY);
-	int cnt = 5;
-	while (fd <= 2 && fd >= 0 && --cnt > 0) {
-		fd = dup(fd);
+	int fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
+	if (fd >= 0 && fd <= 2) {
+		// A handle must never occupy stdin/stdout/stderr, even if
+		// one of them was closed and open() reused the number. Move
+		// the descriptor above fd 2 atomically and release the low
+		// descriptor instead of leaking it like the old dup() loop.
+		int duped = fcntl(fd, F_DUPFD_CLOEXEC, 3);
+		int saved_errno = errno;
+		// Slots below 3 are never allocated in the handler table, so
+		// the interposed close() on this low fd cannot disturb an
+		// existing mocked handler.
+		close(fd);
+		if (duped < 0) {
+			errno = saved_errno;
+			return -saved_errno;
+		}
+		fd = duped;
 	}
 	if (fd < 0) {
-		// open/dup failed; errno is already set by libc.
+		// open/fcntl failed; errno is already set by libc.
 		return -errno;
 	}
 	if ((std::size_t)fd >= manager->size()) {
