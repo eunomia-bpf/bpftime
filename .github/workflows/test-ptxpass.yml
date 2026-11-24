@@ -12,10 +12,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: gpu-runner-preflight-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   hardware-preflight:
     runs-on: [self-hosted, linux, x64, nvidia, teslam40]
@@ -29,6 +25,10 @@ jobs:
           set +e
           echo "== kernel and architecture =="
           uname -srm
+          echo "== NVIDIA driver version (procfs, no identifiers) =="
+          cat /proc/driver/nvidia/version 2>/dev/null || echo "no /proc/driver/nvidia/version"
+          echo "== GPU model names only (procfs, UUID/BDF excluded) =="
+          grep -h "Model:" /proc/driver/nvidia/gpus/*/information 2>/dev/null || echo "no gpu information file"
           echo "== GPU query (name, driver version, total memory only) =="
           nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv
           echo "nvidia-smi-query-exit=$?"
