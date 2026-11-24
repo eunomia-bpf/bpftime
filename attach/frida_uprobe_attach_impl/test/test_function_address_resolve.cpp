@@ -146,4 +146,36 @@ TEST_CASE("Module membership rejects an address in a VMA gap")
 	REQUIRE(restore_result == 0);
 	REQUIRE_FALSE(accepted_gap);
 }
+
+TEST_CASE("File offset resolves through executable VMA when p_vaddr != p_offset")
+{
+	frida_attach_impl man;
+	char path[] = "/tmp/bpftime-separate-code-XXXXXX";
+	const int fd = mkstemp(path);
+	REQUIRE(fd >= 0);
+	const size_t page_size = static_cast<size_t>(sysconf(_SC_PAGESIZE));
+	REQUIRE(page_size > 0);
+	REQUIRE(ftruncate(fd, static_cast<off_t>(page_size * 2)) == 0);
+
+	// Mirror an ELF linked with -z separate-code (e.g. lld/zig):
+	// an r--p mapping covers file [0, 2*page_size) while the r-xp code
+	// segment starts at file offset page_size in a separate VMA.
+	void *ro_map = mmap(nullptr, page_size * 2, PROT_READ, MAP_PRIVATE, fd, 0);
+	REQUIRE(ro_map != MAP_FAILED);
+	void *exec_map = mmap(nullptr, page_size, PROT_READ | PROT_EXEC,
+			      MAP_PRIVATE, fd, static_cast<off_t>(page_size));
+	REQUIRE(exec_map != MAP_FAILED);
+
+	const uintptr_t file_offset = page_size + 0x123;
+	void *resolved = resolve_function_addr_by_module_offset(path, file_offset);
+
+	REQUIRE(munmap(exec_map, page_size) == 0);
+	REQUIRE(munmap(ro_map, page_size * 2) == 0);
+	REQUIRE(close(fd) == 0);
+	REQUIRE(unlink(path) == 0);
+
+	REQUIRE(resolved ==
+		reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(exec_map) +
+					 0x123));
+}
 #endif

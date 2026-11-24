@@ -107,6 +107,62 @@ resolve_mapped_module_path(const std::string_view &module_name)
 #endif
 }
 
+#if __linux__
+namespace
+{
+// Mirror Linux kernel/events/uprobes.c offset_to_vaddr(): find the executable
+// file-backed VMA for `target_path` in /proc/self/maps covering `file_offset`,
+// and translate to vma_start + (file_offset - vma_pgoff).
+void *resolve_exec_vma_by_file_offset(const std::string &target_path,
+				      uintptr_t file_offset)
+{
+	struct stat target_st = {};
+	const bool have_target_st = !target_path.empty() &&
+				    stat(target_path.c_str(), &target_st) == 0;
+	std::ifstream maps("/proc/self/maps");
+	std::string line;
+	while (std::getline(maps, line)) {
+		unsigned long long start = 0, end = 0, pgoff = 0, inode = 0;
+		unsigned dev_major = 0, dev_minor = 0;
+		char perms[5] = {};
+		int path_offset = 0;
+		if (sscanf(line.c_str(), "%llx-%llx %4s %llx %x:%x %llu %n",
+			   &start, &end, perms, &pgoff, &dev_major, &dev_minor,
+			   &inode, &path_offset) != 7)
+			continue;
+		if (perms[2] != 'x' || end <= start)
+			continue;
+		if (file_offset < pgoff || file_offset - pgoff >= end - start)
+			continue;
+		std::string path = unescape_proc_path(line.substr(path_offset));
+		if (path.empty() || path.front() != '/' ||
+		    path.ends_with(" (deleted)"))
+			continue;
+		bool matched = (path == target_path);
+		if (!matched && have_target_st && inode != 0 &&
+		    inode == target_st.st_ino &&
+		    dev_major == major(target_st.st_dev) &&
+		    dev_minor == minor(target_st.st_dev)) {
+			matched = true;
+		}
+		if (!matched && have_target_st) {
+			std::error_code ec;
+			if (std::filesystem::equivalent(path, target_path,
+							ec) &&
+			    !ec)
+				matched = true;
+		}
+		if (matched) {
+			return reinterpret_cast<void *>(
+				static_cast<uintptr_t>(start) +
+				(file_offset - static_cast<uintptr_t>(pgoff)));
+		}
+	}
+	return nullptr;
+}
+} // namespace
+#endif
+
 void *
 resolve_function_addr_by_module_offset(const std::string_view &module_name,
 				       uintptr_t func_offset)
@@ -118,6 +174,14 @@ resolve_function_addr_by_module_offset(const std::string_view &module_name,
 		(module_name.empty() ||
 		 std::filesystem::equivalent(module_name, exec_path, ec))
 			? "" : std::string(module_name);
+#if __linux__
+	const std::string &target_path =
+		resolved_name.empty() ? exec_path : resolved_name;
+	if (void *vma_addr =
+		    resolve_exec_vma_by_file_offset(target_path, func_offset)) {
+		return vma_addr;
+	}
+#endif
 	void *module_base_addr = get_module_base_addr(resolved_name.c_str());
 	if (!module_base_addr) {
 		// It's not a bug, it might be attach to a unrelated process

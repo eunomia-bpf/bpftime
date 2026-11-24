@@ -210,6 +210,54 @@ void *
 resolve_function_addr_by_module_offset(const std::string_view &module_name,
 				       uintptr_t func_offset)
 {
+	std::string target(module_name);
+	if (target.empty()) {
+		char exe_buf[PATH_MAX] = {};
+		ssize_t n = readlink("/proc/self/exe", exe_buf,
+				     sizeof(exe_buf) - 1);
+		if (n > 0)
+			target.assign(exe_buf, static_cast<size_t>(n));
+	}
+	if (!target.empty()) {
+		struct stat target_st = {};
+		const bool have_st = stat(target.c_str(), &target_st) == 0;
+		std::ifstream maps("/proc/self/maps");
+		std::string line;
+		while (std::getline(maps, line)) {
+			unsigned long long start = 0, end = 0, pgoff = 0,
+					   inode = 0;
+			unsigned dev_major = 0, dev_minor = 0;
+			char perms[5] = {};
+			int path_offset = 0;
+			if (sscanf(line.c_str(),
+				   "%llx-%llx %4s %llx %x:%x %llu %n", &start,
+				   &end, perms, &pgoff, &dev_major, &dev_minor,
+				   &inode, &path_offset) != 7)
+				continue;
+			if (perms[2] != 'x' || end <= start)
+				continue;
+			if (func_offset < pgoff ||
+			    func_offset - pgoff >= end - start)
+				continue;
+			std::string path =
+				unescape_proc_path(line.substr(path_offset));
+			if (path.empty() || path.front() != '/' ||
+			    path.ends_with(" (deleted)"))
+				continue;
+			bool matched = (path == target) ||
+				       (have_st && inode != 0 &&
+					inode == target_st.st_ino &&
+					dev_major == major(target_st.st_dev) &&
+					dev_minor == minor(target_st.st_dev)) ||
+				       same_file(path, target);
+			if (matched) {
+				return reinterpret_cast<void *>(
+					static_cast<uintptr_t>(start) +
+					(func_offset -
+					 static_cast<uintptr_t>(pgoff)));
+			}
+		}
+	}
 	void *base = get_module_base_addr(std::string(module_name).c_str());
 	if (!base) {
 		// Not necessarily a bug: with LD_PRELOAD the agent might have
