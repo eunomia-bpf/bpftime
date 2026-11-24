@@ -6,6 +6,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-runtime.yml"
+      - ".github/script/run_with_backtrace.sh"
       - "attach/**"
       - "example/malloc/**"
       - "runtime/**"
@@ -18,6 +19,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-runtime.yml"
+      - ".github/script/run_with_backtrace.sh"
       - "attach/**"
       - "example/malloc/**"
       - "runtime/**"
@@ -184,7 +186,7 @@ jobs:
         if: matrix.container != 'openeuler-2403sp2'
         run: |
           export BPFTIME_VM_NAME=llvm
-          ./build/runtime/unit-test/bpftime_runtime_tests
+          sh .github/script/run_with_backtrace.sh ./build/runtime/unit-test/bpftime_runtime_tests
       - name: Build runtime libs for example (openEuler)
         if: matrix.container == 'openeuler-2403sp2'
         run: |
@@ -344,7 +346,7 @@ jobs:
           cmake --build build-mpk --config Debug --target bpftime_runtime_tests -j$(nproc)
       - name: test runtime with mpk
         if: matrix.container != 'openeuler-2403sp2'
-        run: ./build-mpk/runtime/unit-test/bpftime_runtime_tests
+        run: sh .github/script/run_with_backtrace.sh ./build-mpk/runtime/unit-test/bpftime_runtime_tests
       - name: Generate runtime with mpk enable coverage (Ubuntu)
         if: "matrix.container == 'ubuntu-2204'"
         run: |
