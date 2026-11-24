@@ -1526,4 +1526,17 @@ int bpftime_shm::add_memfd_handler(const char *name, int flags)
 		     flags);
 	return fd;
 }
+
+int bpftime_shm::add_memfd_handler_at_fd(int fd, const char *name, int flags)
+{
+	if (fd < 0 || (std::size_t)fd >= manager->size())
+		return -ENOSPC;
+	int rc = manager->set_handler(
+		fd, memfd_handler(name, flags, segment), segment);
+	if (rc >= 0)
+		SPDLOG_DEBUG(
+			"Created memfd handler at {}, name {}, flags {}",
+			fd, name, flags);
+	return rc;
+}
 } // namespace bpftime
