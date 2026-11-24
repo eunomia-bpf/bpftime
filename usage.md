@@ -25,7 +25,7 @@ If you find any bugs or suggestions, please feel free to open an issue, thanks!
 
 With `bpftime`, you can build eBPF applications using familiar tools like clang and libbpf, and execute them in userspace. For instance, the `malloc` eBPF program traces malloc calls using uprobe and aggregates the counts using a hash map.
 
-You can refer to [documents/build-and-test.md](build-and-test.md) for how to build the project.
+You can refer to [installation.md](installation.md) for how to build the project.
 
 To get started, you can build and run a libbpf based eBPF program starts with `bpftime` cli:
 
@@ -84,10 +84,10 @@ $ sudo example/malloc/malloc
 
 ## Syscall tracing
 
-An example can be found at [examples/opensnoop](https://github.com/eunomia-bpf/bpftime/tree/master/example/opensnoop)
+An example can be found at [example/tracing/opensnoop](https://github.com/eunomia-bpf/bpftime/tree/master/example/tracing/opensnoop)
 
 ```console
-$ sudo ~/.bpftime/bpftime load ./example/opensnoop/opensnoop
+$ sudo ~/.bpftime/bpftime load ./example/tracing/opensnoop/opensnoop
 [2023-10-09 04:36:33.891] [info] manager constructed
 [2023-10-09 04:36:33.892] [info] global_shm_open_type 0 for bpftime_maps_shm
 [2023-10-09 04:36:33][info][23999] Enabling helper groups ffi, kernel, shm_map by default
@@ -101,7 +101,7 @@ PID    COMM              FD ERR PATH
 In another terminal, run the victim program:
 
 ```console
-$ sudo ~/.bpftime/bpftime start -s example/opensnoop/victim
+$ sudo ~/.bpftime/bpftime start -s example/tracing/opensnoop/victim
 [2023-10-09 04:38:16.196] [info] Entering new main..
 [2023-10-09 04:38:16.197] [info] Using agent /root/.bpftime/libbpftime-agent.so
 [2023-10-09 04:38:16.198] [info] Page zero setted up..
@@ -146,7 +146,7 @@ Set `BPFTIME_DISABLE_JIT=true` in the server to disable JIT, for example, when r
 LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so BPFTIME_DISABLE_JIT=true example/malloc/malloc
 ```
 
-The default behavior is using LLVM JIT, you can also use ubpf JIT by compile with LLVM JIT enabled. See [documents/build-and-test.md](build-and-test.md) for more details.
+The default behavior is using LLVM JIT, you can also use ubpf JIT by compile with LLVM JIT enabled. See [installation.md](installation.md) for more details.
 
 ### Run with kernel eBPF and kernel verifier
 

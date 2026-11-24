@@ -10,7 +10,7 @@
 🔨 [Quick Start](#quick-start) \
 🔌 [Examples & Use Cases](#examples--use-cases) \
 ⌨️ [Linux Plumbers 23 talk](https://lpc.events/event/17/contributions/1639/) \
-📖 [Slides](https://eunomia.dev/bpftime/documents/userspace-ebpf-bpftime-lpc.pdf) \
+📖 [Slides](https://raw.githubusercontent.com/eunomia-bpf/eunomia.dev/main/docs/bpftime/documents/userspace-ebpf-bpftime-lpc.pdf) \
 📚 [OSDI '25 Paper](https://www.usenix.org/conference/osdi25/presentation/zheng-yusheng)
 
 [**Checkout our documents in eunomia.dev**](https://eunomia.dev/bpftime/) and [Deepwiki](https://deepwiki.com/eunomia-bpf/bpftime)!
@@ -45,7 +45,7 @@ bpftime is not `userspace eBPF VM`, it's a userspace runtime framework includes 
 
 With `bpftime`, you can build eBPF applications using familiar tools like clang and libbpf, and execute them in userspace. For instance, the [`malloc`](https://github.com/eunomia-bpf/bpftime/tree/master/example/malloc) eBPF program traces malloc calls using uprobe and aggregates the counts using a hash map.
 
-You can refer to [eunomia.dev/bpftime/documents/build-and-test](https://eunomia.dev/bpftime/documents/build-and-test) or the `installation.md` in the repo for how to build the project. Or You can using the container images from [GitHub packages](https://github.com/eunomia-bpf/bpftime/pkgs/container/bpftime).
+You can refer to [eunomia.dev/bpftime/documents/build-and-test](https://eunomia.dev/bpftime/documents/build-and-test/) or the `installation.md` in the repo for how to build the project. Or You can using the container images from [GitHub packages](https://github.com/eunomia-bpf/bpftime/pkgs/container/bpftime).
 
 To get started, you can build and run a libbpf based eBPF program starts with `bpftime` cli:
 
@@ -105,7 +105,7 @@ $ sudo example/malloc/malloc
         pid=34809       malloc calls: 8
 ```
 
-See [eunomia.dev/bpftime/documents/usage](https://eunomia.dev/bpftime/documents/usage) for more details.
+See [eunomia.dev/bpftime/documents/usage](https://eunomia.dev/bpftime/documents/usage/) for more details.
 
 ## Examples & Use Cases
 
@@ -121,13 +121,13 @@ bpftime supports two modes:
 
 Left: original kernel eBPF | Right: bpftime
 
-![How it works](https://eunomia.dev/bpftime/documents/bpftime.png)
+![How it works](https://raw.githubusercontent.com/eunomia-bpf/eunomia.dev/main/docs/bpftime/documents/bpftime.png)
 
 In this mode, bpftime can run eBPF programs in userspace without kernel, so it can be ported into low version of Linux or even other systems, and running without root permissions. It relies on a [userspace verifier](https://github.com/vbpf/ebpf-verifier) to ensure the safety of eBPF programs.
 
 #### Run with kernel eBPF
 
-![documents/bpftime-kernel.png](https://eunomia.dev/bpftime/documents/bpftime-kernel.png)
+![bpftime with kernel eBPF](https://raw.githubusercontent.com/eunomia-bpf/eunomia.dev/main/docs/bpftime/documents/bpftime-kernel.png)
 
 In this mode, bpftime can run together with kernel eBPF. It can load eBPF programs from kernel, and using kernel eBPF maps to cooperate with kernel eBPF programs like kprobes and network filters.
 
@@ -152,11 +152,11 @@ see [github.com/eunomia-bpf/bpf-benchmark](https://github.com/eunomia-bpf/bpf-be
 - Some kernel helpers and kfuncs may not be available in userspace.
 - It does not support direct access to kernel data structures or functions like `task_struct`.
 
-Refer to [eunomia.dev/bpftime/documents/available-features](https://eunomia.dev/bpftime/documents/available-features) for more details.
+Refer to [eunomia.dev/bpftime/documents/available-features](https://eunomia.dev/bpftime/documents/available-features/) for more details.
 
 ## Build and test
 
-See [eunomia.dev/bpftime/documents/build-and-test](https://eunomia.dev/bpftime/documents/build-and-test) for details.
+See [eunomia.dev/bpftime/documents/build-and-test](https://eunomia.dev/bpftime/documents/build-and-test/) for details.
 
 ## License
 
