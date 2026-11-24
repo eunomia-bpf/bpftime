@@ -13,7 +13,6 @@
 #include <cstddef>
 #include <functional>
 #include <boost/interprocess/containers/set.hpp>
-#include <boost/interprocess/containers/map.hpp>
 #include "bpftime_shm.hpp"
 #include <handler/handler_manager.hpp>
 #include <optional>
@@ -81,17 +80,6 @@ using alive_syscall_server_pid_set =
 	boost::interprocess::set<int, std::less<int>,
 				 alive_syscall_server_pid_set_allocator>;
 
-// map fd -> count of loaded programs referencing it through an LDDW map
-// pseudo instruction (BPF_PSEUDO_MAP_FD / BPF_PSEUDO_MAP_VALUE). Kept in
-// shared memory so every process attached to the segment sees references
-// created by any other process.
-using map_prog_ref_allocator = boost::interprocess::allocator<
-	std::pair<const int, std::uint32_t>,
-	boost::interprocess::managed_shared_memory::segment_manager>;
-using map_prog_ref_count_map =
-	boost::interprocess::map<int, std::uint32_t, std::less<int>,
-				 map_prog_ref_allocator>;
-
 // global bpftime share memory
 class bpftime_shm {
 	std::optional<std::function<void(bool)>> mock_setter;
@@ -117,12 +105,6 @@ class bpftime_shm {
 
 	// Guards pid bookkeeping sets stored in shared memory.
 	boost::interprocess::interprocess_mutex *pid_set_lock = nullptr;
-
-	// Program-held map reference index. Updated on program load/close so
-	// the held-map check is one tree lookup instead of scanning every
-	// historical handler slot.
-	map_prog_ref_count_map *map_prog_refs = nullptr;
-	boost::interprocess::interprocess_mutex *map_prog_refs_lock = nullptr;
 
 	bpftime_global_epoch_state *epoch_state = nullptr;
 	bpftime_cpu_exec_locks *cpu_exec_locks = nullptr;
@@ -258,13 +240,6 @@ public:
 	// Whether a loaded program references map `fd` through an LDDW map
 	// pseudo instruction (BPF_PSEUDO_MAP_FD or BPF_PSEUDO_MAP_VALUE).
 	bool is_map_referenced_by_prog(int fd) const;
-	// Maintain the program-held map reference index for the LDDW pseudo
-	// map instructions in a program being loaded or closed.
-	void register_prog_map_refs(const struct ebpf_inst *insns,
-				   std::size_t insn_cnt);
-	void unregister_prog_map_refs(const struct ebpf_inst *insns,
-				      std::size_t insn_cnt);
-
 	bool is_perf_fd(int fd) const;
 
 	bool is_prog_array_map_fd(int fd) const;
