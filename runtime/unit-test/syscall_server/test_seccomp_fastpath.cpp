@@ -166,6 +166,14 @@ TEST_CASE("Rootless seccomp cBPF argument fast-path", "[seccomp]")
 		}
 		FAIL(detail);
 	}
+	// An exit code of 128+N means the crash handler ran and turned the
+	// death into a normal exit; surface the captured RIP either way, so a
+	// failing exit status still names the faulting frame.
+	if (!outcome.crash_rip.empty()) {
+		INFO("faulting RIP " << outcome.crash_rip
+				     << " (syscall-server base "
+				     << outcome.crash_base << ")");
+	}
 	REQUIRE(outcome.exit_status == 0);
 
 	// The filter must actually be installed (SECCOMP_MODE_FILTER == 2).
