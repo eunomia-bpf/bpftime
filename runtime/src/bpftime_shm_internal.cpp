@@ -13,7 +13,6 @@
 #include "handler/perf_event_handler.hpp"
 #include "spdlog/spdlog.h"
 #include <bpftime_shm_internal.hpp>
-#include <algorithm>
 #include <cerrno>
 #include <cctype>
 #include <chrono>
@@ -697,70 +696,55 @@ bool bpftime_shm::is_prog_fd(int fd) const
 	return std::holds_alternative<bpftime::bpf_prog_handler>(handler);
 }
 
-// Distinct map fds a program names through LDDW map pseudo instructions.
-// Same encoding as the kernel: an LDDW (opcode 0x18) whose src_reg is
-// BPF_PSEUDO_MAP_FD (1) or BPF_PSEUDO_MAP_VALUE (2) carries a map fd in imm,
-// and an LDDW occupies two instruction slots.
-static std::vector<int>
-pseudo_map_fds(const struct ebpf_inst *insns, std::size_t insn_cnt)
-{
-	constexpr uint8_t lddw = 0x18;
-	std::vector<int> fds;
-	for (std::size_t i = 0; i < insn_cnt; i++) {
-		if (insns[i].code != lddw)
-			continue;
-		if (insns[i].src_reg == 1 || insns[i].src_reg == 2)
-			fds.push_back(insns[i].imm);
-		i++; // skip the LDDW's second slot
-	}
-	std::sort(fds.begin(), fds.end());
-	fds.erase(std::unique(fds.begin(), fds.end()), fds.end());
-	return fds;
-}
-
-void bpftime_shm::register_prog_map_refs(const struct ebpf_inst *insns,
-					  std::size_t insn_cnt)
-{
-	if (map_prog_refs == nullptr || map_prog_refs_lock == nullptr ||
-	    insns == nullptr)
-		return;
-	auto fds = pseudo_map_fds(insns, insn_cnt);
-	pid_set_scoped_lock lock(map_prog_refs_lock);
-	if (!lock.owns_lock())
-		return;
-	for (int fd : fds)
-		++(*map_prog_refs)[fd];
-}
-
-void bpftime_shm::unregister_prog_map_refs(const struct ebpf_inst *insns,
-					    std::size_t insn_cnt)
-{
-	if (map_prog_refs == nullptr || map_prog_refs_lock == nullptr ||
-	    insns == nullptr)
-		return;
-	auto fds = pseudo_map_fds(insns, insn_cnt);
-	pid_set_scoped_lock lock(map_prog_refs_lock);
-	if (!lock.owns_lock())
-		return;
-	for (int fd : fds) {
-		auto it = map_prog_refs->find(fd);
-		if (it == map_prog_refs->end() || it->second == 0)
-			continue;
-		if (--it->second == 0)
-			map_prog_refs->erase(it);
-	}
-}
-
+// Derive program-held map references from the LDDW pseudo map instructions
+// (BPF_LD|BPF_IMM|BPF_DW opcode 0x18, src BPF_PSEUDO_MAP_FD=1 or
+// BPF_PSEUDO_MAP_VALUE=2, map fd in imm) already persisted in each loaded
+// program's shm instruction stream. BPF/close emulation is serialized by
+// the syscall server dispatch lock, and agent processes only read the
+// table; the epoch seqlock additionally rejects scans spanning a session
+// reset (clear_all). After three unstable or missing epoch reads the map
+// stays reserved rather than being released while state is changing.
 bool bpftime_shm::is_map_referenced_by_prog(int fd) const
 {
-	if (map_prog_refs == nullptr || map_prog_refs_lock == nullptr ||
-	    !is_map_fd(fd))
+	if (manager == nullptr || !is_map_fd(fd))
 		return false;
-	pid_set_scoped_lock lock(map_prog_refs_lock);
-	if (!lock.owns_lock())
-		return false;
-	auto it = map_prog_refs->find(fd);
-	return it != map_prog_refs->end() && it->second > 0;
+	constexpr std::uint8_t lddw_opcode = 0x18;
+	for (int attempt = 0; attempt < 3; attempt++) {
+		auto before = read_stable_epoch_seq();
+		if (before == BPFTIME_EPOCH_SEQ_UNSTABLE ||
+		    before == BPFTIME_EPOCH_SEQ_MISSING) {
+			usleep(50000);
+			continue;
+		}
+		bool found = false;
+		for (std::size_t i = 0, n = manager->size(); i < n && !found;
+		     i++) {
+			if (!manager->is_allocated((int)i))
+				continue;
+			const auto *prog =
+				std::get_if<bpftime::bpf_prog_handler>(
+					&manager->get_handler((int)i));
+			if (prog == nullptr)
+				continue;
+			for (std::size_t j = 0; j < prog->insns.size();) {
+				auto insn = prog->insns[j++];
+				if (insn.code != lddw_opcode)
+					continue;
+				if ((insn.src_reg == 1 || insn.src_reg == 2) &&
+				    insn.imm == fd) {
+					found = true;
+					break;
+				}
+				j++; // LDDW occupies a second slot
+			}
+		}
+		auto after = read_stable_epoch_seq();
+		if (after != BPFTIME_EPOCH_SEQ_UNSTABLE &&
+		    after != BPFTIME_EPOCH_SEQ_MISSING && after == before)
+			return found;
+		usleep(50000);
+	}
+	return true;
 }
 
 bool bpftime_shm::is_perf_fd(int fd) const
@@ -803,14 +787,11 @@ int bpftime_shm::add_bpf_prog(int fd, const ebpf_inst *insn, size_t insn_cnt,
 	SPDLOG_DEBUG(
 		"Set handler fd {} to bpf_prog_handler, name {}, prog_type {}, insn_cnt {}",
 		fd, prog_name, prog_type, insn_cnt);
-	int result = manager->set_handler(
+	return manager->set_handler(
 		fd,
 		bpftime::bpf_prog_handler(segment, insn, insn_cnt, prog_name,
 					  prog_type),
 		segment);
-	if (result >= 0)
-		register_prog_map_refs(insn, insn_cnt);
-	return result;
 }
 
 // add a bpf link fd
@@ -858,28 +839,9 @@ int bpftime_shm::add_bpf_link(int fd, struct bpf_link_create_args *args)
 
 void bpftime_shm::close_fd(int fd)
 {
-	if (!manager)
-		return;
-	if (fd >= 0 && (std::size_t)fd < manager->size() &&
-	    manager->is_allocated(fd)) {
-		const auto &handler = manager->get_handler(fd);
-		if (const auto *prog =
-			    std::get_if<bpftime::bpf_prog_handler>(&handler)) {
-			unregister_prog_map_refs(prog->insns.data(),
-						 prog->insns.size());
-		} else if (std::holds_alternative<bpftime::bpf_map_handler>(
-				   handler)) {
-			// A map slot released directly must not leave a stale
-			// reference count behind.
-			if (map_prog_refs != nullptr &&
-			    map_prog_refs_lock != nullptr) {
-				pid_set_scoped_lock lock(map_prog_refs_lock);
-				if (lock.owns_lock())
-					map_prog_refs->erase(fd);
-			}
-		}
+	if (manager) {
+		manager->clear_id_at(fd, segment);
 	}
-	manager->clear_id_at(fd, segment);
 }
 
 #if BPFTIME_ENABLE_MPK
@@ -955,14 +917,6 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		cpu_exec_locks = segment.find<bpftime_cpu_exec_locks>(
 					 "bpftime_cpu_exec_locks")
 				  .first;
-		map_prog_refs =
-			segment.find<map_prog_ref_count_map>(
-				bpftime::DEFAULT_MAP_PROG_REFS_NAME)
-				.first;
-		map_prog_refs_lock =
-			segment.find<boost::interprocess::interprocess_mutex>(
-				bpftime::DEFAULT_MAP_PROG_REFS_LOCK_NAME)
-				.first;
 		SPDLOG_DEBUG("done: bpftime_shm for client setup");
 	} else if (type == shm_open_type::SHM_CREATE_OR_OPEN ||
 		   type == shm_open_type::SHM_CREATE_ONLY) {
@@ -1017,14 +971,6 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		cpu_exec_locks =
 			segment.find_or_construct<bpftime_cpu_exec_locks>(
 				"bpftime_cpu_exec_locks")();
-		map_prog_refs = segment.find_or_construct<map_prog_ref_count_map>(
-			bpftime::DEFAULT_MAP_PROG_REFS_NAME)(
-			std::less<int>(),
-			map_prog_ref_allocator(segment.get_segment_manager()));
-		map_prog_refs_lock =
-			segment.find_or_construct<
-				boost::interprocess::interprocess_mutex>(
-				bpftime::DEFAULT_MAP_PROG_REFS_LOCK_NAME)();
 		SPDLOG_DEBUG("done: bpftime_shm for open_or_create setup");
 	} else if (type == shm_open_type::SHM_REMOVE_AND_CREATE) {
 		SPDLOG_DEBUG(
@@ -1077,14 +1023,6 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			"bpftime_global_epoch_state")();
 		cpu_exec_locks = segment.construct<bpftime_cpu_exec_locks>(
 			"bpftime_cpu_exec_locks")();
-		map_prog_refs = segment.construct<map_prog_ref_count_map>(
-			bpftime::DEFAULT_MAP_PROG_REFS_NAME)(
-			std::less<int>(),
-			map_prog_ref_allocator(segment.get_segment_manager()));
-		map_prog_refs_lock =
-			segment.construct<
-				boost::interprocess::interprocess_mutex>(
-				bpftime::DEFAULT_MAP_PROG_REFS_LOCK_NAME)();
 		SPDLOG_DEBUG("done: bpftime_shm for server setup.");
 	} else if (type == shm_open_type::SHM_NO_CREATE) {
 		// not create any shm
@@ -1608,11 +1546,6 @@ void bpftime_shm::reset_server_state()
 			return;
 		}
 		clear_syscall_pids();
-	}
-	if (map_prog_refs != nullptr && map_prog_refs_lock != nullptr) {
-		pid_set_scoped_lock lock(map_prog_refs_lock);
-		if (lock.owns_lock())
-			map_prog_refs->clear();
 	}
 }
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
