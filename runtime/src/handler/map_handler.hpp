@@ -15,9 +15,6 @@
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/string.hpp>
 #include <boost/interprocess/smart_ptr/unique_ptr.hpp>
-#include <boost/interprocess/sync/interprocess_sharable_mutex.hpp>
-#include <boost/interprocess/sync/scoped_lock.hpp>
-#include <boost/interprocess/sync/sharable_lock.hpp>
 #include <optional>
 #include <unistd.h>
 #include <bpf_map/shared/perf_event_array_kernel_user.hpp>
@@ -36,10 +33,6 @@ using char_allocator = boost::interprocess::allocator<
 using boost_shm_string =
 	boost::interprocess::basic_string<char, std::char_traits<char>,
 					  char_allocator>;
-
-using sharable_mutex_ptr = boost::interprocess::managed_unique_ptr<
-	boost::interprocess::interprocess_sharable_mutex,
-	boost::interprocess::managed_shared_memory>::type;
 
 // lock guad for RAII
 class bpftime_lock_guard {

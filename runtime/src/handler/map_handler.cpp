@@ -44,10 +44,6 @@
 #include <bpf_map/userspace/map_in_maps.hpp>
 #include <unistd.h>
 
-using boost::interprocess::interprocess_sharable_mutex;
-using boost::interprocess::scoped_lock;
-using boost::interprocess::sharable_lock;
-
 namespace bpftime
 {
 
