@@ -1939,18 +1939,13 @@ void nv_attach_impl::bootstrap_existing_fatbins_once()
 	std::lock_guard<std::mutex> guard(late_bootstrap_mutex);
 	if (late_bootstrap_done.load(std::memory_order_acquire))
 		return;
-	if (!late_bootstrap_once) {
-		late_bootstrap_once = std::make_unique<std::once_flag>();
-	}
 	bool ok = false;
+	// A failure leaves late_bootstrap_done clear, so a later call retries,
+	// matching the previous std::call_once exception-retry semantics.
 	try {
-		// If the bootstrap lambda throws, std::call_once will allow a
-		// subsequent retry. Do not swallow exceptions inside the lambda.
-		std::call_once(*late_bootstrap_once, [&]() {
-			ensure_cuda_context_for_current_thread();
-			build_host_symbol_cache_once();
-			bootstrap_existing_fatbins();
-		});
+		ensure_cuda_context_for_current_thread();
+		build_host_symbol_cache_once();
+		bootstrap_existing_fatbins();
 		ok = true;
 	} catch (const std::exception &ex) {
 		SPDLOG_WARN("nv_attach_impl: late bootstrap failed: {}", ex.what());
@@ -1967,7 +1962,6 @@ void nv_attach_impl::reset_late_bootstrap_state_for_next_attach()
 	std::lock_guard<std::mutex> guard(late_bootstrap_mutex);
 	late_bootstrap_done.store(false, std::memory_order_release);
 	late_bootstrap_started.store(false, std::memory_order_release);
-	late_bootstrap_once = std::make_unique<std::once_flag>();
 }
 
 void nv_attach_impl::start_late_bootstrap_async()
