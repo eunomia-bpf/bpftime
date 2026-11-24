@@ -53,6 +53,7 @@ set(TEST_SOURCES
     test_ringbuf_tail_wrap.cpp
     test_epoll.cpp
     test_unregistered_helper.cpp
+    test_ringbuf_eventfd_epoll.cpp
     test_xdp_adjust_head.cpp
     test_synthetic_kallsyms.cpp
     test_mocked_file_fd.cpp

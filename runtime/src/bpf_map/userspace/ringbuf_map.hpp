@@ -40,6 +40,13 @@ class ringbuf {
 	boost::interprocess::offset_ptr<unsigned long> consumer_pos;
 	boost::interprocess::offset_ptr<unsigned long> producer_pos;
 	boost::interprocess::offset_ptr<uint8_t> data;
+#if defined(__linux__)
+	// Kernel eventfd backing this ringbuf. The fd number is only valid in
+	// the process that constructed the ringbuf (the syscall server); other
+	// processes obtain a dup through the SCM_RIGHTS export socket.
+	int kernel_eventfd = -1;
+	int32_t eventfd_owner_pid = 0;
+#endif
 	// Guard for reserving memory
 	mutable pthread_spinlock_t reserve_spin_lock;
 	// raw buffer
@@ -49,7 +56,22 @@ class ringbuf {
 	bool has_data() const;
 	void *reserve(size_t size, int self_fd);
 	void submit(const void *sample, bool discard);
+	// libbpf-adaptive wakeup decision: BPF_RB_FORCE_WAKEUP always wakes,
+	// BPF_RB_NO_WAKEUP never wakes, otherwise wake only when the consumer
+	// had drained every record before this one (it is likely blocked in
+	// epoll_wait). `sample` is the pointer returned by reserve().
+	bool should_wakeup(const void *sample, uint64_t flags) const;
 	int fetch_data(int (*)(void *ctx, void *data, size_t len), void *ctx);
+#if defined(__linux__)
+	int get_kernel_eventfd() const
+	{
+		return kernel_eventfd;
+	}
+	int32_t get_eventfd_owner_pid() const
+	{
+		return eventfd_owner_pid;
+	}
+#endif
 	ringbuf(uint32_t max_ent,
 		boost::interprocess::managed_shared_memory &memory);
 	friend class ringbuf_map_impl;
@@ -86,6 +108,20 @@ class ringbuf_map_impl {
 	void *get_producer_page() const;
 	void *reserve(size_t size, int self_fd);
 	void submit(const void *sample, bool discard);
+#if defined(__linux__)
+	int get_kernel_eventfd() const
+	{
+		return ringbuf_impl->get_kernel_eventfd();
+	}
+	int32_t get_eventfd_owner_pid() const
+	{
+		return ringbuf_impl->get_eventfd_owner_pid();
+	}
+	bool should_wakeup(const void *sample, uint64_t flags) const
+	{
+		return ringbuf_impl->should_wakeup(sample, flags);
+	}
+#endif
 };
 
 } // namespace bpftime
