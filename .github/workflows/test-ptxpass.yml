@@ -14,7 +14,7 @@ permissions:
 
 concurrency:
   group: gpu-runner-preflight-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   hardware-preflight:
@@ -24,19 +24,28 @@ jobs:
       - name: Read-only GPU hardware and toolchain preflight
         shell: bash
         run: |
-          set -u -o pipefail
+          # Diagnostics must always complete: record real exit codes instead
+          # of aborting on the first failing query.
+          set +e
           echo "== kernel and architecture =="
           uname -srm
           echo "== GPU query (name, driver version, total memory only) =="
           nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv
+          echo "nvidia-smi-query-exit=$?"
+          echo "== GPU adapter list =="
+          nvidia-smi -L
+          echo "nvidia-smi-L-exit=$?"
           echo "== CUDA compiler =="
           if command -v nvcc >/dev/null 2>&1; then
             nvcc --version
+            echo "nvcc-exit=$?"
           else
             echo "nvcc: not found on PATH"
           fi
           echo "== CUDA installation directories =="
           ls -d /usr/local/cuda* 2>/dev/null || echo "no /usr/local/cuda* entries"
+          echo "== CUDA driver/runtime libraries =="
+          ldconfig -p 2>/dev/null | grep -E "libcuda\.so|libcudart\.so" | head -n 6 || echo "no libcuda/libcudart in ldconfig cache"
           echo "== compiler and tool versions =="
           for tool in gcc g++ clang clang-18 cmake ninja python3 llvm-config-18; do
             if command -v "$tool" >/dev/null 2>&1; then
@@ -46,4 +55,5 @@ jobs:
               echo "$tool: not found"
             fi
           done
-          echo "preflight-ok"
+          echo "preflight-complete"
+          exit 0
