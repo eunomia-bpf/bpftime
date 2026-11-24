@@ -35,11 +35,36 @@
  * RIP and the load base of the preloaded syscall server, so the Catch2
  * driver can turn them into a source line with addr2line; every write is
  * a raw write(2), safe inside a signal handler. */
+/* A death by signal loses the stack, so the killing frame has to be
+ * captured from inside the signal handler. The handler first writes the
+ * signal and the faulting RIP with raw write(2) — async-signal-safe and
+ * independent of any later step — and only then enriches the line with the
+ * load base of the preloaded syscall server. A crash whose cause also
+ * breaks stdio or the heap (the exit-path teardown race) must still emit
+ * the first line, so nothing that can fault may run before the write. */
 static void
 crash_handler(int sig, siginfo_t *info __attribute__((unused)), void *uctx)
 {
 	ucontext_t *uc = (ucontext_t *)uctx;
 	unsigned long rip = uc->uc_mcontext.gregs[REG_RIP];
+	char buf[128];
+	int n = snprintf(buf, sizeof(buf), "crash_sig=%d crash_rip=0x%lx\n",
+			 sig, rip);
+	if (n > 0) {
+		size_t off = 0;
+		while (off < (size_t)n) {
+			ssize_t written =
+				write(STDOUT_FILENO, buf + off, (size_t)n - off);
+			if (written < 0) {
+				if (errno == EINTR)
+					continue;
+				break;
+			}
+			off += (size_t)written;
+		}
+	}
+	/* The maps walk needs stdio and heap; if either is already broken by
+	 * the crash it must not stop the exit-code report below. */
 	unsigned long server_base = 0;
 	FILE *maps = fopen("/proc/self/maps", "re");
 	if (maps) {
@@ -54,12 +79,12 @@ crash_handler(int sig, siginfo_t *info __attribute__((unused)), void *uctx)
 		}
 		fclose(maps);
 	}
-	char buf[128];
-	int n = snprintf(buf, sizeof(buf),
-			 "crash_sig=%d crash_rip=0x%lx crash_base=0x%lx\n", sig,
-			 rip, server_base);
-	if (n > 0)
-		write(STDOUT_FILENO, buf, (size_t)n);
+	if (server_base != 0) {
+		int m = snprintf(buf, sizeof(buf), "crash_base=0x%lx\n",
+				 server_base);
+		if (m > 0)
+			(void)write(STDOUT_FILENO, buf, (size_t)m);
+	}
 	_exit(128 + sig);
 }
 
@@ -346,7 +371,14 @@ main(void)
 	close(pipefds[0]);
 	close(pipefds[1]);
 	printf("SUMMARY failures=%d\n", failures);
-	return failures == 0 ? 0 : 1;
+	fflush(stdout);
+	/* Leave via _exit instead of returning from main: the preload's
+	 * detached seccomp worker threads are never joined, and a full glibc
+	 * exit runs global/atexit teardown that races those workers and
+	 * crashes the process after every check has already passed. The
+	 * runtimes this fast-path targets (e.g. Go) terminate with a raw
+	 * exit_group and never run that teardown either. */
+	_exit(failures == 0 ? 0 : 1);
 }
 #else
 int
