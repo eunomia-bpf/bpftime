@@ -87,21 +87,37 @@ select_accessible_path(const std::string &logical_path,
 		       const struct stat *logical_st,
 		       unsigned long long maps_inode, dev_t maps_dev)
 {
-	auto matches_mapping = [&](const struct stat &st) {
-		return (maps_inode == 0 || st.st_ino == (ino_t)maps_inode) &&
-		       st.st_dev == maps_dev;
+	auto inode_matches = [&](const struct stat &st) {
+		return maps_inode == 0 || st.st_ino == (ino_t)maps_inode;
 	};
-	if (root_stat_rc == 0 && root_st != nullptr &&
-	    matches_mapping(*root_st))
-		return proc_root_path;
+	auto exact_matches = [&](const struct stat &st) {
+		return inode_matches(st) && st.st_dev == maps_dev;
+	};
+	// Accessible /proc/<pid>/root view: require the strict dev+inode
+	// identity first.
+	if (root_stat_rc == 0 && root_st != nullptr) {
+		if (exact_matches(*root_st))
+			return proc_root_path;
+		// overlayfs/nydus images report the backing lower-fs st_dev in
+		// /proc/<pid>/maps while the live /proc/<pid>/root mount carries
+		// the overlay st_dev for the same inode, so a strict device check
+		// rejects every file-backed mapping. Inode remains the
+		// authoritative identity (the pre-#900 behavior); relax only the
+		// device gate, and only for real file-backed (non-zero inode)
+		// mappings where inode identity is meaningful.
+		if (maps_inode != 0 && inode_matches(*root_st))
+			return proc_root_path;
+	}
 	// /proc/<pid>/root is gated by ptrace access (yama ptrace_scope >= 2 or
-	// a non-dumpable target). On denial, a same-mount-namespace process can
-	// open the logical path directly; accept it only when dev+inode prove
-	// it names the same backing inode as the mapping.
+	// a non-dumpable target). On denial a same-mount-namespace process opens
+	// the logical path directly; apply the same exact-then-inode policy.
 	if ((root_stat_rc == -EACCES || root_stat_rc == -EPERM) &&
-	    logical_stat_rc == 0 && logical_st != nullptr &&
-	    matches_mapping(*logical_st))
-		return logical_path;
+	    logical_stat_rc == 0 && logical_st != nullptr) {
+		if (exact_matches(*logical_st))
+			return logical_path;
+		if (maps_inode != 0 && inode_matches(*logical_st))
+			return logical_path;
+	}
 	return {};
 }
 } // namespace detail

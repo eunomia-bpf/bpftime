@@ -92,20 +92,35 @@ TEST_CASE("root EACCES falls back to the logical path on dev+inode match",
 	}
 }
 
-TEST_CASE("logical fallback is rejected on st_ino or st_dev mismatch",
-	  "[rootless]")
+TEST_CASE("logical fallback is rejected on st_ino mismatch", "[rootless]")
 {
 	struct stat wrong_inode = make_stat(kMapsDev, (ino_t)kMapsInode + 1);
 	auto picked = select_accessible_path(
 		kLogical, kProcRoot, -EACCES, nullptr, 0, &wrong_inode,
 		kMapsInode, kMapsDev);
 	REQUIRE_FALSE(picked.has_value());
+}
 
+TEST_CASE("st_dev mismatch with matching inode is accepted (overlayfs)",
+	  "[rootless]")
+{
+	// overlayfs/nydus: the live mount reports a different st_dev than the
+	// backing lower-fs dev recorded in /proc/<pid>/maps for the same inode.
+	// The inode is the authoritative identity for a file-backed mapping.
 	struct stat wrong_dev =
 		make_stat(kMapsDev + 1, (ino_t)kMapsInode);
-	picked = select_accessible_path(kLogical, kProcRoot, -EACCES, nullptr,
-					0, &wrong_dev, kMapsInode, kMapsDev);
-	REQUIRE_FALSE(picked.has_value());
+	auto picked = select_accessible_path(kLogical, kProcRoot, -EACCES,
+						nullptr, 0, &wrong_dev,
+						kMapsInode, kMapsDev);
+	REQUIRE(picked.has_value());
+	REQUIRE(*picked == kLogical);
+
+	// Same divergence on an accessible /proc/<pid>/root view resolves to
+	// the root path without needing the logical fallback.
+	picked = select_accessible_path(kLogical, kProcRoot, 0, &wrong_dev, -1,
+					nullptr, kMapsInode, kMapsDev);
+	REQUIRE(picked.has_value());
+	REQUIRE(*picked == kProcRoot);
 }
 
 TEST_CASE("non-denial root errors never trigger the logical fallback",
