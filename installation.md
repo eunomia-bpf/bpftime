@@ -9,6 +9,7 @@
   - [Use docker image](#use-docker-image)
   - [Install Dependencies](#install-dependencies)
     - [Build and install all things](#build-and-install-all-things)
+    - [Build on macOS (Apple Silicon)](#build-on-macos-apple-silicon)
   - [Detailed things about building](#detailed-things-about-building)
     - [build options](#build-options)
     - [Build and install the complete runtime in release mode(With ubpf jit)](#build-and-install-the-complete-runtime-in-release-modewith-ubpf-jit)
@@ -93,6 +94,36 @@ Usage: bpftime [OPTIONS] <COMMAND>
 
 See the [Makefile](https://github.com/eunomia-bpf/bpftime/blob/master/Makefile) for some common commands.
 
+### Build on macOS (Apple Silicon)
+
+The cross-platform core of bpftime builds on macOS `arm64` (Apple Silicon), using the same configuration as the `Build on macOS` GitHub Actions workflow. Components that depend on the Linux kernel UAPI, `seccomp` or `LD_PRELOAD` — libbpf support, `bpftime-syscall-server` and `bpftime_daemon` — are not available on macOS.
+
+Install the build tools and initialize the submodules:
+
+```bash
+brew install cmake ninja boost
+git submodule update --init --recursive
+```
+
+Configure and build the runtime with the uBPF interpreter and its ARM64 JIT:
+
+```bash
+cmake -S . -B build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBPFTIME_BUILD_WITH_LIBBPF=OFF \
+  -DBPFTIME_LLVM_JIT=OFF \
+  -DBPFTIME_UBPF_JIT=ON \
+  -DBUILD_BPFTIME_DAEMON=OFF \
+  -DBPFTIME_ENABLE_FRIDA=OFF \
+  -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
+  -DENABLE_EBPF_VERIFIER=OFF
+cmake --build build --target runtime
+```
+
+`BPFTIME_ENABLE_FRIDA` defaults to `ON` on non-RISC-V platforms; the configuration above sets it `OFF` to match the CI gate and avoid any Frida devkit download. To build the Frida-based userspace uprobe backend, pass `-DBPFTIME_ENABLE_FRIDA=ON` instead: CMake then downloads the pinned Frida Core and Frida Gum `macos-arm64` devkits into `third_party/frida/` and builds the `bpftime_frida_uprobe_attach_impl` target together with the runtime.
+
+On macOS `arm64` the supported scope is the `runtime` library (shared-memory maps, helpers and handler management), the `ubpf` VM (interpreter and JIT) and the optional `bpftime_frida_uprobe_attach_impl` Frida backend. Everything requiring the Linux kernel UAPI, `seccomp` or `LD_PRELOAD` — libbpf, the syscall server and the daemon — remains Linux-only.
+
 ## Detailed things about building
 
 We use cmake as build system.
@@ -110,7 +141,7 @@ You may be interested in the following cmake options:
 - `BPFTIME_LLVM_JIT`: Whether to use LLVM JIT as the ebpf runtime. Requires LLVM >= 15. It's recommended to enable this, since the ubpf intepreter is no longer maintained. Default to `ON`.
 - `BPFTIME_UBPF_JIT`: Whether to use uBPF JIT backend. Default to `ON`.
 - `LLVM_DIR`: Specify the installing directory of LLVM. CMake may not discover the LLVM installation by default. Set this option to the directory that contains `LLVMConfig.cmake`, such as `/usr/lib/llvm-15/cmake` on Ubuntu
-- `BUILD_BPFTIME_DAEMON`: Build with the daemon for load the eBPF program into hkernel and se kernel verifier. Default to `ON`.
+- `BUILD_BPFTIME_DAEMON`: Build with the daemon for loading the eBPF program into the kernel and using the kernel verifier. Default to `ON`.
 - `BPFTIME_BUILD_WITH_LIBBPF`: Build bpftime with libbpf. When disabled, it can only be run in userspace but can be easily ported to other platforms, e.g. macOS. Default to `ON`.
 - `BPFTIME_BUILD_STATIC_LIB`: Build bpftime runtime into a whole static libraries. It can be easily linked into other programs. Default to `OFF`.
 - `BPFTIME_ENABLE_MPK`: Enable Memory Protection Keys for the shared memory. Default to `OFF`.
