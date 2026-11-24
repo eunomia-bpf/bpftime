@@ -39,9 +39,9 @@ jobs:
           if command -v nvcc >/dev/null 2>&1; then
             nvcc --version
             echo "nvcc-exit=$?"
-          else
-            echo "nvcc: not found on PATH"
-          fi
+            echo "== nvcc supported GPU architectures (compiler capability) =="
+            nvcc --list-gpu-arch
+            echo "nvcc-list-gpu-arch-exit=$?"
           echo "== CUDA installation directories =="
           ls -d /usr/local/cuda* 2>/dev/null || echo "no /usr/local/cuda* entries"
           echo "== CUDA driver/runtime libraries =="
