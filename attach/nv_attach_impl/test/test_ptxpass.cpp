@@ -37,6 +37,9 @@ std::filesystem::path
 pick_ptxpass_runner_path_for_test(const char *override_path,
 				   const std::filesystem::path &self,
 				   const std::filesystem::path &installed);
+std::filesystem::path resolve_ptxpass_library_path_for_test(
+	const std::filesystem::path &baked, const std::filesystem::path &self,
+	const std::filesystem::path &installed_dir);
 }
 #endif
 
@@ -575,6 +578,43 @@ TEST_CASE("PTX pass runner path survives relocation", "[ptxpass_runner]")
 	REQUIRE(fallback != installed);
 	REQUIRE(bpftime::attach::pick_ptxpass_runner_path_for_test(
 			"", {}, root / "absent") == fallback);
+	std::filesystem::remove_all(root);
+
+// The pass libraries and the PTX compiler library carry the same baked
+// build-tree paths as the runner, so the resolution that keeps a relocated
+// or installed tree working has to cover them too.
+TEST_CASE("PTX pass library path survives relocation", "[ptxpass_runner]")
+{
+	const std::filesystem::path root =
+		std::filesystem::temp_directory_path() /
+		("bpftime-library-path-" + std::to_string(getpid()));
+	const std::filesystem::path self = root / "bin" / "app";
+	const std::filesystem::path installed_dir = root / "installed";
+	std::filesystem::create_directories(self.parent_path());
+	std::filesystem::create_directories(installed_dir);
+
+	const std::filesystem::path baked = root / "build" / "libpass.so";
+	// An existing path wins unchanged, whatever it names.
+	REQUIRE(bpftime::attach::resolve_ptxpass_library_path_for_test(
+			baked, self, installed_dir) == baked);
+	std::ofstream(baked).close();
+	// Once the baked path is gone, the same basename in the installed
+	// directory takes over, then a library next to the executable.
+	std::filesystem::remove(baked);
+	const std::filesystem::path installed = installed_dir / "libpass.so";
+	std::ofstream(installed).close();
+	REQUIRE(bpftime::attach::resolve_ptxpass_library_path_for_test(
+			baked, self, installed_dir) == installed);
+	std::filesystem::remove(installed);
+	const std::filesystem::path sibling = self.parent_path() / "libpass.so";
+	std::ofstream(sibling).close();
+	REQUIRE(bpftime::attach::resolve_ptxpass_library_path_for_test(
+			baked, self, installed_dir) == sibling);
+	// Nothing reachable anywhere: the baked path is returned so the runner
+	// reports the failure with the original name.
+	std::filesystem::remove(sibling);
+	REQUIRE(bpftime::attach::resolve_ptxpass_library_path_for_test(
+			baked, {}, root / "absent") == baked);
 	std::filesystem::remove_all(root);
 }
 #endif

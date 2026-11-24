@@ -131,6 +131,35 @@ static std::filesystem::path ptxpass_runner_path()
 		std::filesystem::read_symlink("/proc/self/exe", ec),
 		PTXPASS_RUNNER_INSTALLED_PATH);
 }
+// Same relocation story for the pass libraries: a baked build-tree path stops
+// existing once the tree moves, so fall back to the same basename inside the
+// installed directory, then next to the executable, before giving the baked
+// path to the runner (which reports the failure).
+std::filesystem::path
+resolve_ptxpass_library_path(const std::filesystem::path &baked,
+			     const std::filesystem::path &self,
+			     const std::filesystem::path &installed_dir)
+{
+	std::error_code ec;
+	if (std::filesystem::exists(baked, ec))
+		return baked;
+	const std::filesystem::path name = baked.filename();
+	if (!name.empty()) {
+		if (!installed_dir.empty()) {
+			const std::filesystem::path installed =
+				installed_dir / name;
+			if (std::filesystem::exists(installed, ec))
+				return installed;
+		}
+		if (!self.empty()) {
+			const std::filesystem::path sibling =
+				self.parent_path() / name;
+			if (std::filesystem::exists(sibling, ec))
+				return sibling;
+		}
+	}
+	return baked;
+}
 } // namespace
 
 // Exercised by the tests below; the picker itself stays internal.
@@ -139,6 +168,13 @@ std::filesystem::path pick_ptxpass_runner_path_for_test(
 	const std::filesystem::path &installed)
 {
 	return pick_ptxpass_runner_path(override_path, self, installed);
+}
+
+std::filesystem::path resolve_ptxpass_library_path_for_test(
+	const std::filesystem::path &baked, const std::filesystem::path &self,
+	const std::filesystem::path &installed_dir)
+{
+	return resolve_ptxpass_library_path(baked, self, installed_dir);
 }
 
 std::optional<std::string>
@@ -696,7 +732,12 @@ nv_attach_impl::nv_attach_impl()
 		}
 	}
 	auto paths = split_by_colon(ptx_pass_libraries);
-	for (const auto &path : paths) {
+	const std::error_code ec;
+	const std::filesystem::path self_exec =
+		std::filesystem::read_symlink("/proc/self/exe", ec);
+	for (auto &path : paths) {
+		path = resolve_ptxpass_library_path(path, self_exec,
+						    PTXPASS_LIBS_INSTALLED_DIR);
 		SPDLOG_INFO("Found path: {}, loading config..", path.c_str());
 		ptxpass::pass_config::PassConfig config;
 		auto output = run_ptxpass_runner("--config", path, nullptr,
@@ -721,11 +762,16 @@ nv_attach_impl::nv_attach_impl()
 	{
 		const char *provided_compiler_lib =
 			getenv("BPFTIME_PTX_COMPILER_LIB");
-		const char *compiler_lib =
+		std::filesystem::path compiler_path =
 			(provided_compiler_lib &&
 			 strlen(provided_compiler_lib) > 0)
-				? provided_compiler_lib
-				: DEFAULT_PTX_COMPILER_SHARED_LIB;
+			? std::filesystem::path(provided_compiler_lib)
+			: std::filesystem::path(
+				  DEFAULT_PTX_COMPILER_SHARED_LIB);
+		compiler_path = resolve_ptxpass_library_path(
+			compiler_path, self_exec,
+			PTXPASS_LIBS_INSTALLED_DIR);
+		const std::string compiler_lib = compiler_path.string();
 		if (provided_compiler_lib &&
 		    strlen(provided_compiler_lib) > 0) {
 			SPDLOG_INFO(

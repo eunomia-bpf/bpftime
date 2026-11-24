@@ -88,10 +88,18 @@ if(LLVMBPF_VM_INCLUDES)
   target_include_directories(bpftime_nv_attach_impl PRIVATE ${LLVMBPF_VM_INCLUDES})
 endif()
 
+# Install the pass libraries and the PTX compiler library next to the runner
+# so an installed tree keeps working when the build-tree paths baked into
+# DEFAULT_PTX_PASS_EXECUTABLE no longer exist; the runtime resolves each
+# baked basename inside PTXPASS_LIBS_INSTALLED_DIR.
+install(TARGETS ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture nv_attach_impl_ptx_compiler
+        CONFIGURATIONS Release Debug RelWithDebInfo
+        DESTINATION ${PTXPASS_RUNNER_INSTALL_DIR})
+
 # Create a build-time header file with the PTX pass paths
 # This avoids shell escaping issues with colons and quotes
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ptx_pass_config.h"
-     CONTENT "#pragma once\nstatic constexpr const char *DEFAULT_PTX_PASS_EXECUTABLE = \"$<JOIN:${PTX_PASS_EXECUTABLE},:>\";static constexpr const char *DEFAULT_PTX_PASS_RUNNER_EXECUTABLE = \"$<TARGET_FILE:bpftime_ptxpass_runner>\";static constexpr const char *PTXPASS_RUNNER_INSTALLED_PATH = \"${PTXPASS_RUNNER_INSTALL_DIR}/bpftime_ptxpass_runner\";static constexpr const char* DEFAULT_PTX_COMPILER_SHARED_LIB=\"$<JOIN:${PTX_COMPILER_SHARED_LIB},:>\";\n")
+     CONTENT "#pragma once\nstatic constexpr const char *DEFAULT_PTX_PASS_EXECUTABLE = \"$<JOIN:${PTX_PASS_EXECUTABLE},:>\";static constexpr const char *DEFAULT_PTX_PASS_RUNNER_EXECUTABLE = \"$<TARGET_FILE:bpftime_ptxpass_runner>\";static constexpr const char *PTXPASS_RUNNER_INSTALLED_PATH = \"${PTXPASS_RUNNER_INSTALL_DIR}/bpftime_ptxpass_runner\";static constexpr const char *PTXPASS_LIBS_INSTALLED_DIR = \"${PTXPASS_RUNNER_INSTALL_DIR}\";static constexpr const char* DEFAULT_PTX_COMPILER_SHARED_LIB=\"$<JOIN:${PTX_COMPILER_SHARED_LIB},:>\";\n")
 
 
 target_link_options(bpftime_nv_attach_impl PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_nv_attach_impl>" "-Wl,--no-whole-archive")
