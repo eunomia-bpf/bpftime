@@ -56,6 +56,9 @@ jobs:
   cross-build-and-test:
     runs-on: ubuntu-24.04
     strategy:
+      # Keep every matrix leg independent: one flaky leg must not cancel
+      # the others and hide their real results (GitHub defaults to true).
+      fail-fast: false
       matrix:
         build_type: [Debug, Release]
     steps:
