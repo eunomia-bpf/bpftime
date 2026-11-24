@@ -133,12 +133,19 @@ TEST_CASE("Rootless seccomp cBPF argument fast-path", "[seccomp]")
 
 	REQUIRE(outcome.summary_failures == 0);
 	if (outcome.checks.count("helper_signal") == 1) {
-		// Name the killing signal before anything else: with the
-		// REQUIRE on exit_status alone, a helper death by signal
-		// reports as an opaque -1 == 0 and the recorded signal
-		// never surfaces.
-		FAIL("helper died by signal " +
-		     std::to_string(outcome.checks.at("helper_signal")));
+		// Name the killing signal and every check the helper
+		// completed before dying: the expansion then shows where in
+		// the sequence the crash happened, not only the signal.
+		std::string detail = "helper died by signal " +
+				     std::to_string(
+					     outcome.checks.at(
+						     "helper_signal"));
+		for (const auto &[name, value] : outcome.checks) {
+			if (name == "helper_signal")
+				continue;
+			detail += "; " + name + "=" + std::to_string(value);
+		}
+		FAIL(detail);
 	}
 	REQUIRE(outcome.exit_status == 0);
 
