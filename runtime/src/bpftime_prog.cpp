@@ -441,11 +441,9 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 	}
 	uint64_t val = 0;
 	int res = 0;
-	// set share memory read and write able
-	bpftime_protect_disable();
+	shm_write_window_guard shm_window;
 	bpf_cpu_execution_guard cpu_guard;
 	if (!cpu_guard.entered()) {
-		bpftime_protect_enable();
 		return -EAGAIN;
 	}
 	SPDLOG_DEBUG(
@@ -466,8 +464,6 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 	*return_val = current_thread_tail_call_ret.value_or(val);
 	current_thread_tail_call_ret.reset();
 	cpu_guard.release();
-	// set share memory read only
-	bpftime_protect_enable();
 	return res;
 }
 

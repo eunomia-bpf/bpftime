@@ -60,6 +60,7 @@ int handler_manager::set_handler_at_empty_slot(handler_variant &&handler,
 int handler_manager::set_handler(int fd, handler_variant &&handler,
 				 managed_shared_memory &memory)
 {
+	shm_write_window_guard shm_window;
 	if (fd < 0 || (std::size_t)fd >= handlers.size()) {
 		SPDLOG_ERROR("set_handler: fd {} out of range [0, {})", fd, handlers.size());
 		return -ENOSPC;
@@ -104,6 +105,7 @@ bool handler_manager::is_allocated(int fd) const
 
 void handler_manager::clear_id_at(int fd, managed_shared_memory &memory)
 {
+	shm_write_window_guard shm_window;
 	if (fd < 0 || (std::size_t)fd >= handlers.size()) {
 		return;
 	}
@@ -166,6 +168,7 @@ int handler_manager::find_minimal_unused_idx() const
 
 void handler_manager::clear_all(managed_shared_memory &memory)
 {
+	shm_write_window_guard shm_window;
 	for (std::size_t i = 0; i < handlers.size(); i++) {
 		if (is_allocated(i)) {
 			clear_id_at(i, memory);
