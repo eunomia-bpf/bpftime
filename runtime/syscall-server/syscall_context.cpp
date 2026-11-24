@@ -27,6 +27,8 @@
 #include <asm/unistd.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include "ringbuf_eventfd.hpp"
+#include "handler/handler_manager.hpp"
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include <bpf/bpf.h>
 #endif
@@ -429,8 +431,30 @@ syscall_context::~syscall_context()
 		release_map_in_map_refs(fd);
 }
 
+#if defined(__linux__)
+void syscall_context::ensure_ringbuf_eventfd_exporter()
+{
+	std::lock_guard<std::mutex> guard(mapfd_exporter_mutex);
+	if (mapfd_exporter)
+		return;
+	auto exporter = std::make_unique<bpftime::ringbuf_eventfd_exporter>(
+		bpftime::get_global_shm_name(),
+		[](int map_fd) -> int {
+			return bpftime_ringbuf_creator_eventfd(map_fd);
+		});
+	if (exporter->start())
+		mapfd_exporter = std::move(exporter);
+	else
+		SPDLOG_WARN(
+			"ringbuf eventfd exporter unavailable; cross-process ringbuf wakeup falls back to the polling loop");
+}
+#endif
 void syscall_context::release_owned_map_fd(int fd)
 {
+#if defined(__linux__)
+	if (bpftime_is_ringbuf_map(fd))
+		bpftime_ringbuf_drop_local_eventfd(fd);
+#endif
 	bpftime_close(fd);
 	(void)orig_close_fn(fd);
 }
@@ -582,6 +606,10 @@ int syscall_context::handle_close(int fd)
 	}
 	const bool closing_prog = bpftime_is_prog_fd(fd);
 	release_map_in_map_refs(fd);
+#if defined(__linux__)
+	if (bpftime_is_ringbuf_map(fd))
+		bpftime_ringbuf_drop_local_eventfd(fd);
+#endif
 	bpftime_close(fd);
 	int result = orig_close_fn(fd);
 	if (closing_prog)
@@ -891,6 +919,10 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 				// The map keeps the reserved real fd, so the
 				// program sees a kernel fd number.
 				close_occupied_fds();
+#if defined(__linux__)
+				if (attr->map_type == BPF_MAP_TYPE_RINGBUF)
+					ensure_ringbuf_eventfd_exporter();
+#endif
 				return id;
 			}
 			// Internal failures return a negative errno as the
@@ -1528,24 +1560,66 @@ int syscall_context::handle_epoll_ctl(int epfd, int op, int fd,
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_epoll_ctl_fn(epfd, op, fd, evt);
 	try_startup();
-	if (op == EPOLL_CTL_ADD) {
-		if (bpftime_is_ringbuf_map(fd)) {
-			int err = bpftime_add_ringbuf_fd_to_epoll(fd, epfd,
-								  evt->data);
-			if (err == 0) {
+	bool is_ringbuf = bpftime_is_ringbuf_map(fd);
+	bool is_swpe = bpftime_is_software_perf_event(fd);
+	if (is_ringbuf || is_swpe) {
+		if (op == EPOLL_CTL_ADD) {
+			int err = is_ringbuf
+					 ? bpftime_add_ringbuf_fd_to_epoll(
+						 fd, epfd, evt->data)
+					 : bpftime_add_software_perf_event_fd_to_epoll(
+						 fd, epfd, evt->data);
+			if (err != 0)
 				return err;
+#if defined(__linux__)
+			if (is_ringbuf) {
+				// Register the ringbuf's kernel eventfd with
+				// the real kernel epfd so blocked consumers
+				// wake without a userspace polling loop. A
+				// failure only degrades latency (the legacy
+				// poll path still works); keep the userspace
+				// registration intact.
+				int eventfd =
+					bpftime_ringbuf_get_local_eventfd(fd);
+				if (eventfd >= 0 &&
+				    orig_epoll_ctl_fn(epfd, EPOLL_CTL_ADD,
+						      eventfd, evt) != 0) {
+					SPDLOG_DEBUG(
+						"kernel epoll add of ringbuf eventfd {} failed: {}",
+						eventfd, errno);
+				}
 			}
-		} else if (bpftime_is_software_perf_event(fd)) {
-			int err = bpftime_add_software_perf_event_fd_to_epoll(
-				fd, epfd, evt->data);
-			if (err == 0)
-				return err;
-
-		} else {
-			SPDLOG_DEBUG(
-				"Unsupported map fd for mocked epoll_ctl: {}, call the original one..",
-				fd);
+#endif
+			return 0;
 		}
+#if defined(__linux__)
+		if (op == EPOLL_CTL_MOD) {
+			if (is_ringbuf) {
+				int eventfd =
+					bpftime_ringbuf_get_local_eventfd(fd);
+				if (eventfd >= 0)
+					orig_epoll_ctl_fn(epfd, EPOLL_CTL_MOD,
+							  eventfd, evt);
+			}
+			return 0;
+		}
+		if (op == EPOLL_CTL_DEL) {
+			if (is_ringbuf) {
+				int eventfd =
+					bpftime_ringbuf_get_local_eventfd(fd);
+				if (eventfd >= 0)
+					orig_epoll_ctl_fn(epfd, EPOLL_CTL_DEL,
+							  eventfd, nullptr);
+			}
+			if (bpftime_is_epoll_handler(epfd))
+				bpftime_epoll_remove_origin(epfd, fd);
+			return 0;
+		}
+#endif
+	} else if (op == EPOLL_CTL_ADD) {
+		SPDLOG_WARN(
+			"Unsupported map fd for mocked epoll_ctl: {}, call the original one..",
+			fd);
 	}
 
 	return orig_epoll_ctl_fn(epfd, op, fd, evt);
@@ -1560,6 +1634,69 @@ int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,
 		return orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
 	try_startup();
 	if (bpftime_is_epoll_handler(epfd)) {
+#if defined(__linux__)
+		// Fast path: every userspace source on this epfd is a ringbuf
+		// with a real kernel eventfd registered on the kernel epfd, so
+		// the kernel performs the blocking. No 1ms polling loop, no
+		// sigprocmask: signals interrupt the syscall with native EINTR.
+		if (!bpftime_epoll_requires_userspace_polling(epfd)) {
+			using namespace std::chrono;
+			auto start = steady_clock::now();
+			for (;;) {
+				if (timeout == 0) {
+					// Non-blocking: consult the real kernel
+					// epfd first (it may hold ordinary fds
+					// registered alongside ringbufs), then
+					// userspace sources.
+					int kernel_result = orig_epoll_wait_fn(
+						epfd, evt, maxevents, 0);
+					if (kernel_result != 0)
+						return kernel_result;
+					return bpftime_epoll_poll_userspace(
+						epfd, evt, maxevents);
+				}
+				int ready = bpftime_epoll_poll_userspace(
+					epfd, evt, maxevents);
+				if (ready > 0)
+					return ready;
+				// Drain eventfds of empty ringbufs, re-checking
+				// SHM afterwards so a submit racing the drain
+				// cannot lose a wakeup.
+				if (bpftime_epoll_prepare_kernel_block(epfd))
+					continue;
+				int block_timeout = timeout;
+				if (timeout > 0) {
+					auto elapsed = duration_cast<
+						milliseconds>(
+						steady_clock::now() - start);
+					block_timeout =
+						timeout - (int)elapsed.count();
+					if (block_timeout <= 0)
+						return 0;
+				}
+				int kernel_result = orig_epoll_wait_fn(
+					epfd, evt, maxevents, block_timeout);
+				if (kernel_result <= 0)
+					return kernel_result;
+				int userspace = bpftime_epoll_poll_userspace(
+					epfd, evt, maxevents);
+				if (userspace > 0)
+					return userspace;
+				// The kernel event came from a non-mocked fd
+				// registered on the same kernel epfd, or a
+				// ringbuf record consumed concurrently. Drain
+				// and re-check once; if SHM has data, collect
+				// it, otherwise return the kernel events as-is
+				// (spurious readiness is legal for
+				// level-triggered epoll).
+				if (bpftime_epoll_prepare_kernel_block(epfd))
+					continue;
+				return kernel_result;
+			}
+		}
+#endif
+		// Legacy path: software perf event sources (no kernel backing
+		// fd) and non-Linux builds keep the userspace polling loop.
 		using namespace std::chrono;
 		auto start = steady_clock::now();
 		for (;;) {

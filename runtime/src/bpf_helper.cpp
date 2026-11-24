@@ -31,6 +31,12 @@
 #include "bpf/libbpf_common.h"
 #endif
 #include "bpftime_helper_group.hpp"
+#ifndef BPF_RB_NO_WAKEUP
+#define BPF_RB_NO_WAKEUP (1ULL << 0)
+#endif
+#ifndef BPF_RB_FORCE_WAKEUP
+#define BPF_RB_FORCE_WAKEUP (1ULL << 1)
+#endif
 #include <cerrno>
 #ifdef ENABLE_BPFTIME_VERIFIER
 #include "bpftime-verifier.hpp"
@@ -911,7 +917,7 @@ uint64_t bpf_ringbuf_output(uint64_t rb, uint64_t data, uint64_t size,
 		return (uint64_t)-1;
 	}
 	memcpy(buf, (const void *)(uintptr_t)data, size);
-	bpftime_ringbuf_submit(fd, buf, false);
+	bpftime_ringbuf_submit_with_flags(fd, buf, false, flags);
 	return 0;
 }
 
@@ -931,11 +937,10 @@ uint64_t bpf_ringbuf_submit(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 {
 	int32_t *ptr = (int32_t *)(uintptr_t)data;
 	int fd = ptr[-1];
-	if (flags != 0) {
-		SPDLOG_WARN(
-			"Currently only supports ringbuf_submit with flags=0");
-	}
-	bpftime_ringbuf_submit(fd, (void *)(uintptr_t)data, false);
+	if (flags & ~(BPF_RB_NO_WAKEUP | BPF_RB_FORCE_WAKEUP))
+		return (uint64_t)-EINVAL;
+	bpftime_ringbuf_submit_with_flags(fd, (void *)(uintptr_t)data, false,
+					  flags);
 	return 0;
 }
 
