@@ -35,6 +35,7 @@
 #include <linux/perf_event.h>
 #include <linux/filter.h>
 #include <limits.h>
+#include <linux/memfd.h>
 #elif __APPLE__
 #include "bpftime_epoll.h"
 #endif
@@ -1827,7 +1828,37 @@ int syscall_context::handle_memfd_create(const char *name, int flags)
 				       (long)flags);
 	}
 	try_startup();
+#if defined(__linux__) && defined(__NR_memfd_create)
+	// Back the mocked fd with a real kernel memfd so that ftruncate,
+	// write, read and MAP_SHARED mmap keep their native semantics. The SHM
+	// handler table only records bookkeeping at the same fd number.
+	int fd = (int)orig_syscall_fn(__NR_memfd_create, (long)name,
+				      (long)flags);
+	if (fd < 0)
+		return fd;
+	if (fd <= 2) {
+		// Standard descriptors 0-2 must stay usable; relocate the
+		// memfd above them, preserving the CLOEXEC semantics.
+		int moved = (int)orig_syscall_fn(
+			__NR_fcntl, fd,
+			(flags & MFD_CLOEXEC) ? F_DUPFD_CLOEXEC : F_DUPFD, 3);
+		int saved_errno = errno;
+		orig_close_fn(fd);
+		if (moved < 0) {
+			errno = saved_errno;
+			return moved;
+		}
+		fd = moved;
+	}
+	int rc = bpftime_add_memfd_handler_at_fd(fd, name, flags);
+	if (rc < 0) {
+		orig_close_fn(fd);
+		return rc;
+	}
+	return fd;
+#else
 	return bpftime_add_memfd_handler(name, flags);
+#endif
 }
 
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)

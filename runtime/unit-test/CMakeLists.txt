@@ -60,6 +60,7 @@ set(TEST_SOURCES
     test_system_analysis_ptregs.cpp
     test_handle_fd_reservation.cpp
     test_attach_failures.cpp
+    test_memfd_create.cpp
 
     attach_with_ebpf/test_attach_uprobe_with_ebpf_trap.cpp
     attach_with_ebpf/test_helpers.cpp
@@ -109,7 +110,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_options(bpftime_runtime_tests PRIVATE -Wl,--wrap=dlsym)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
         target_sources(bpftime_runtime_tests PRIVATE
-            test_rootless_seccomp_constructor.cpp)
+            test_rootless_seccomp_constructor.cpp
+            syscall_server/test_seccomp_fastpath.cpp)
     endif()
     target_sources(bpftime_runtime_tests PRIVATE
         test_get_current_uid_gid.cpp
@@ -145,6 +147,7 @@ if(UNIX AND NOT APPLE)
     # rootless seccomp USER_NOTIF entry itself is x86_64-only.
     set(_rootless_custom_helper_expr "")
     set(_rootless_normal_helper_expr "")
+    set(_seccomp_fastpath_helper_expr "")
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
         add_executable(bpftime-rootless-custom-start-helper
             assets/rootless_start_helper.c)
@@ -164,6 +167,14 @@ if(UNIX AND NOT APPLE)
         add_dependencies(bpftime_runtime_tests
             bpftime-rootless-custom-start-helper
             bpftime-rootless-normal-start-helper)
+        add_executable(bpftime-seccomp-fastpath-test-helper
+            assets/seccomp_fastpath_helper.c)
+        set_property(TARGET bpftime-seccomp-fastpath-test-helper
+                     PROPERTY C_STANDARD 11)
+        add_dependencies(bpftime_runtime_tests
+            bpftime-seccomp-fastpath-test-helper)
+        set(_seccomp_fastpath_helper_expr
+            "$<TARGET_FILE:bpftime-seccomp-fastpath-test-helper>")
     endif()
     add_dependencies(bpftime_runtime_tests
         bpftime-agent
@@ -173,7 +184,7 @@ if(UNIX AND NOT APPLE)
         bpftime-shm-allocation-test-helper)
     file(GENERATE
         OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/shm_allocation_test_paths.hpp"
-        CONTENT "#define BPFTIME_SHM_ALLOCATION_TEST_HELPER \"$<TARGET_FILE:bpftime-shm-allocation-test-helper>\"\n#define BPFTIME_MAP_SYSCALL_TEST_HELPER \"$<TARGET_FILE:bpftime-map-syscall-test-helper>\"\n#define BPFTIME_SYSCALL_SERVER_LIBRARY \"$<TARGET_FILE:bpftime-syscall-server>\"\n#define BPFTIME_AGENT_LIBRARY \"$<TARGET_FILE:bpftime-agent>\"\n#define BPFTIME_ROOTLESS_CUSTOM_START_HELPER \"${_rootless_custom_helper_expr}\"\n#define BPFTIME_ROOTLESS_NORMAL_START_HELPER \"${_rootless_normal_helper_expr}\"\n")
+        CONTENT "#define BPFTIME_SHM_ALLOCATION_TEST_HELPER \"$<TARGET_FILE:bpftime-shm-allocation-test-helper>\"\n#define BPFTIME_MAP_SYSCALL_TEST_HELPER \"$<TARGET_FILE:bpftime-map-syscall-test-helper>\"\n#define BPFTIME_SYSCALL_SERVER_LIBRARY \"$<TARGET_FILE:bpftime-syscall-server>\"\n#define BPFTIME_AGENT_LIBRARY \"$<TARGET_FILE:bpftime-agent>\"\n#define BPFTIME_ROOTLESS_CUSTOM_START_HELPER \"${_rootless_custom_helper_expr}\"\n#define BPFTIME_ROOTLESS_NORMAL_START_HELPER \"${_rootless_normal_helper_expr}\"\n#define BPFTIME_SECCOMP_FASTPATH_TEST_HELPER \"${_seccomp_fastpath_helper_expr}\"\n")
     target_include_directories(bpftime_runtime_tests PRIVATE
         "${CMAKE_CURRENT_BINARY_DIR}")
 endif()
