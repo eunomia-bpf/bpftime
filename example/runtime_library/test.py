@@ -11,8 +11,12 @@ import uuid
 exe, mode = sys.argv[1:]
 env = os.environ.copy()
 env.update(BPFTIME_SHM_MEMORY_MB="8", BPFTIME_MAX_FD_COUNT="128")
+# Boost.Interprocess uses POSIX shm under /dev/shm on Linux and falls back
+# to files under /tmp/boost_interprocess on Darwin.
+shm_dir = Path("/tmp/boost_interprocess") if sys.platform == "darwin" else Path("/dev/shm")
+shm_dir.mkdir(parents=True, exist_ok=True)
 # Prove an inherited SHM name is untouched; never use the user's default.
-sentinel = Path("/dev/shm") / ("runtime-library-sentinel-" + uuid.uuid4().hex)
+sentinel = shm_dir / ("runtime-library-sentinel-" + uuid.uuid4().hex)
 sentinel.write_bytes(b"owned by test, must survive")
 env["BPFTIME_GLOBAL_SHM_NAME"] = sentinel.name
 names = set()
@@ -41,7 +45,7 @@ def check(process, events, cycles):
         for i in range(1, cycles + 1)
     ], out
     assert out.endswith("cleanup=ok\n"), out
-    assert not (Path("/dev/shm") / name).exists(), name
+    assert not (shm_dir / name).exists(), name
     assert sentinel.read_bytes() == b"owned by test, must survive"
 
 
@@ -63,7 +67,7 @@ try:
                             text=True, timeout=10)
     assert failed.returncode != 0 and "bad_alloc" in failed.stderr, failed
     failed_name = re.search(r"^shm=(.+)$", failed.stdout, re.M).group(1)
-    assert not (Path("/dev/shm") / failed_name).exists(), failed_name
+    assert not (shm_dir / failed_name).exists(), failed_name
     assert sentinel.read_bytes() == b"owned by test, must survive"
     print(f"{mode}: zero events, repeated lifecycles, concurrent isolation, "
           "detach, fd/SHM cleanup, failed initialization and inherited SHM "

@@ -21,6 +21,7 @@
   - [Nginx eBPF module](#nginx-ebpf-module)
   - [Use DPDK with userspace eBPF to run XDP seamlessly](#use-dpdk-with-userspace-ebpf-to-run-xdp-seamlessly)
   - [Use the vm only(No runtime, No uprobe) as a library](#use-the-vm-onlyno-runtime-no-uprobe-as-a-library)
+  - [Running on macOS (Apple Silicon)](#running-on-macos-apple-silicon)
 
 ## minimal examples
 
@@ -141,6 +142,15 @@ The [example/attach_implementation](https://github.com/eunomia-bpf/bpftime/tree/
 
 - [`libbpftime_example`](https://github.com/eunomia-bpf/bpftime/tree/master/example/libbpftime_example): Example of using bpftime's shared memory and runtime features as a library
 - [`runtime_library`](https://github.com/eunomia-bpf/bpftime/tree/master/example/runtime_library): Self-contained C++ example that drives the runtime API directly through its full lifecycle — shared-memory maps, embedded eBPF instructions, a custom cooperative event source and the uBPF interpreter/JIT — without libbpf, syscall interception or an injected agent
+
+## Running on macOS (Apple Silicon)
+
+bpftime runs userspace eBPF natively on macOS with SIP enabled and no root
+privileges: the uBPF interpreter and ARM64 JIT execute eBPF programs in
+process, while Frida-gum installs dynamic uprobe/uretprobe inline hooks.
+
+- [`example/macos`](https://github.com/eunomia-bpf/bpftime/tree/master/example/macos): cross-platform dynamic uprobe demo that traces a shared-library function with eBPF maps on both macOS (`.dylib`) and Linux (`.so`), with a full architecture and platform guide
+- [`example/runtime_library`](https://github.com/eunomia-bpf/bpftime/tree/master/example/runtime_library): direct in-process runtime API lifecycle example, also building and running on macOS
 
 ## Nginx eBPF module
 

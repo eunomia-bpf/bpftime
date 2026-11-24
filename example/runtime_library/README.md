@@ -1,6 +1,6 @@
 # Direct runtime-library lifecycle
 
-This Linux C++ example addresses [issue #421](https://github.com/eunomia-bpf/bpftime/issues/421).
+This cross-platform (Linux and macOS) C++ example addresses [issue #421](https://github.com/eunomia-bpf/bpftime/issues/421).
 It creates a userspace array map, an embedded eBPF counter program, a custom
 event handler and a link using bpftime APIs. It loads and attaches the program,
 triggers N cooperative events, reads count N, detaches, proves another trigger
@@ -32,6 +32,13 @@ cmake --build build-library --target runtime_library -j2
 ./build-library/example/runtime_library/runtime_library
 ctest --test-dir build-library -R '^runtime_library_' --output-on-failure
 ```
+
+On macOS (Apple Silicon), install prerequisites with
+`brew install cmake ninja boost` and use the same CMake commands above. The
+test driver checks Boost.Interprocess's Darwin fallback directory
+`/tmp/boost_interprocess` instead of Linux-only `/dev/shm`, and counts open
+descriptors through `/dev/fd`. No root privileges or kernel eBPF support are
+required on either platform.
 
 Arguments are `[events [cycles [interpreter|jit]]]`; defaults are `5 1 interpreter`.
 For example, `runtime_library 37 32 jit` repeats the full lifecycle 32 times.

@@ -171,6 +171,9 @@ endif()
 
 if(UNIX AND NOT APPLE)
   target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_DL_LIBS})
+  # glibc before 2.34 keeps shm_open/shm_unlink (used by the shared-memory
+  # runtime) in librt; newer glibc and Darwin libSystem export them from libc.
+  target_link_libraries(${PROJECT_NAME} PUBLIC rt)
 endif()
 
 

@@ -215,6 +215,15 @@ void *find_function_addr_by_name(const char *name)
 
 void *get_module_base_addr(const char *module_name)
 {
+#if __APPLE__
+	// dyld/gum-darwin identifies the main executable by its full path;
+	// the Linux empty-string alias is unknown, so resolve it explicitly.
+	std::string exec_storage;
+	if (!module_name || module_name[0] == '\0') {
+		exec_storage = get_executable_path();
+		module_name = exec_storage.c_str();
+	}
+#endif
 	gum_module_load(module_name, nullptr);
 	return (void *)gum_module_find_base_address(module_name);
 }
@@ -263,7 +272,13 @@ gboolean find_mapped_address(const GumRangeDetails *details, gpointer user_data)
 bool module_contains_address(std::string_view module_name, uintptr_t address)
 {
 	AddressLookup lookup{address};
+#if __APPLE__
+	const std::string name = module_name.empty()
+					 ? get_executable_path()
+					 : std::string(module_name);
+#else
 	const std::string name(module_name);
+#endif
 	gum_module_enumerate_ranges(name.c_str(), GUM_PAGE_READ,
 				    find_mapped_address, &lookup);
 	if (lookup.found)
@@ -281,7 +296,13 @@ bool module_contains_address(std::string_view module_name, uintptr_t address)
 // or 0 when the ranges cannot be determined.
 uintptr_t module_mapped_extent(const std::string_view &module_name)
 {
+#if __APPLE__
+	const std::string name = module_name.empty()
+					 ? get_executable_path()
+					 : std::string(module_name);
+#else
 	const std::string name(module_name);
+#endif
 	ExtentAccumulator acc;
 	gum_module_enumerate_ranges(name.c_str(), GUM_PAGE_READ,
 				    accumulate_range, &acc);

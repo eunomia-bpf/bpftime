@@ -13,6 +13,9 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#if __APPLE__
+#include <mach-o/dyld.h>
+#endif
 #include <memory>
 #include <string>
 #include <typeinfo>
@@ -182,6 +185,25 @@ int frida_attach_impl::create_attach_with_ebpf_callback(
 		// means we won't rely on module_name
 		if (!sub.module_name.empty()) {
 			bool ok = false;
+#if __APPLE__
+			// Darwin has no /proc/self/maps; dyld owns the loaded
+			// image list. Match by exact path or same filesystem
+			// object (symlinks such as /tmp -> /private/tmp).
+			const uint32_t img_cnt = _dyld_image_count();
+			for (uint32_t i = 0; i < img_cnt; ++i) {
+				const char *img = _dyld_get_image_name(i);
+				if (!img)
+					continue;
+				std::error_code ec;
+				if (sub.module_name == img ||
+				    (std::filesystem::exists(img, ec) &&
+				     std::filesystem::equivalent(
+					     sub.module_name, img, ec))) {
+					ok = true;
+					break;
+				}
+			}
+#else
 			std::ifstream ifs("/proc/self/maps");
 			std::string line;
 			while (ifs) {
@@ -214,6 +236,7 @@ int frida_attach_impl::create_attach_with_ebpf_callback(
 					}
 				}
 			}
+#endif
 			if (!ok) {
 				SPDLOG_INFO(
 					"Unable to attach: module name {} doesn't exist in current process's memory maps",
