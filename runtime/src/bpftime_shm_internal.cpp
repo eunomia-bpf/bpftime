@@ -238,41 +238,6 @@ shm_lifecycle_lock::~shm_lifecycle_lock()
 #endif
 }
 
-// Check whether a certain pid was already equipped with syscall tracer
-// Using a set stored in the shared memory
-bool bpftime_shm::check_syscall_trace_setup(int pid)
-{
-	if (syscall_installed_pids == nullptr) {
-		return false;
-	}
-	pid_set_scoped_lock lock(pid_set_lock);
-	if (!lock.owns_lock()) {
-		return false;
-	}
-	return syscall_installed_pids->contains(pid);
-}
-
-// Set whether a certain pid was already equipped with syscall tracer
-// Using a set stored in the shared memory
-void bpftime_shm::set_syscall_trace_setup(int pid, bool whether)
-{
-	if (syscall_installed_pids == nullptr) {
-		return;
-	}
-	auto update = [&]() {
-		if (whether) {
-			syscall_installed_pids->insert(pid);
-		} else {
-			syscall_installed_pids->erase(pid);
-		}
-	};
-	pid_set_scoped_lock lock(pid_set_lock);
-	if (!lock.owns_lock()) {
-		return;
-	}
-	update();
-}
-
 const bpf_map_handler *bpftime_shm::try_get_map_handler(int fd) const
 {
 	if (!is_map_fd(fd)) {
@@ -903,10 +868,6 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		manager = segment.find<bpftime::handler_manager>(
 					 bpftime::DEFAULT_GLOBAL_HANDLER_NAME)
 				  .first;
-		syscall_installed_pids =
-			segment.find<syscall_pid_set>(
-				       DEFAULT_SYSCALL_PID_SET_NAME)
-				.first;
 		runtime_config =
 			segment.find<struct runtime_config>(
 				       bpftime::DEFAULT_AGENT_CONFIG_NAME)
@@ -951,15 +912,6 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 							      max_fd_count);
 		SPDLOG_DEBUG("done: bpftime_shm for server setup: manager");
 
-		syscall_installed_pids =
-			segment.find_or_construct<syscall_pid_set>(
-				bpftime::DEFAULT_SYSCALL_PID_SET_NAME)(
-				std::less<int>(),
-				syscall_pid_set_allocator(
-					segment.get_segment_manager()));
-		SPDLOG_DEBUG(
-			"done: bpftime_shm for server setup: syscall_pid_set");
-
 		runtime_config = segment.find_or_construct<struct runtime_config>(
 			bpftime::DEFAULT_AGENT_CONFIG_NAME)(config);
 
@@ -1003,14 +955,6 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment,
 							      max_fd_count);
 		SPDLOG_DEBUG("done: bpftime_shm for server setup: manager");
-
-		syscall_installed_pids = segment.construct<syscall_pid_set>(
-			bpftime::DEFAULT_SYSCALL_PID_SET_NAME)(
-			std::less<int>(),
-			syscall_pid_set_allocator(
-				segment.get_segment_manager()));
-		SPDLOG_DEBUG(
-			"done: bpftime_shm for server setup: syscall_pid_set");
 
 		runtime_config = segment.construct<struct runtime_config>(
 			bpftime::DEFAULT_AGENT_CONFIG_NAME)(config);
@@ -1550,16 +1494,6 @@ void bpftime_shm::reset_server_state()
 		return;
 	}
 	manager->clear_all(segment);
-	if (syscall_installed_pids != nullptr) {
-		auto clear_syscall_pids = [&]() {
-			syscall_installed_pids->clear();
-		};
-		pid_set_scoped_lock lock(pid_set_lock);
-		if (!lock.owns_lock()) {
-			return;
-		}
-		clear_syscall_pids();
-	}
 }
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 int bpftime_shm::poll_gpu_ringbuf_map(

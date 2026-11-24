@@ -60,11 +60,6 @@ struct bpftime_cpu_exec_locks {
 	boost::interprocess::interprocess_mutex locks[BPFTIME_MAX_CPU_COUNT];
 };
 
-using syscall_pid_set_allocator = boost::interprocess::allocator<
-	int, boost::interprocess::managed_shared_memory::segment_manager>;
-using syscall_pid_set =
-	boost::interprocess::set<int, std::less<int>, syscall_pid_set_allocator>;
-
 using alive_agent_pid_set_allocator = boost::interprocess::allocator<
 	int, boost::interprocess::managed_shared_memory::segment_manager>;
 
@@ -90,9 +85,6 @@ class bpftime_shm {
 
 	// manage the bpf fds in the shared memory
 	bpftime::handler_manager *manager = nullptr;
-
-	// A set to record whether a process was setted up with syscall tracer
-	syscall_pid_set *syscall_installed_pids = nullptr;
 
 	// Configuration for the agent. e.g, which helpers are enabled
 	struct bpftime::runtime_config *runtime_config = nullptr;
@@ -156,12 +148,6 @@ class bpftime_shm {
 	const struct runtime_config &get_runtime_config();
 	// Set the configuration object
 	void set_runtime_config(struct runtime_config &&config);
-	// Check whether a certain pid was already equipped with syscall tracer
-	// Using a set stored in the shared memory
-	bool check_syscall_trace_setup(int pid);
-	// Set whether a certain pid was already equipped with syscall tracer
-	// Using a set stored in the shared memory
-	void set_syscall_trace_setup(int pid, bool whether);
 
 		// Add a pid into alive agent set
 		bool add_pid_into_alive_agent_set(int pid);
