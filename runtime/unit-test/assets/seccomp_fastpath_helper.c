@@ -117,6 +117,10 @@ report_seccomp_mode(void)
 int
 main(void)
 {
+	/* Output goes into a pipe, which makes stdout fully buffered; a
+	 * death by signal would lose every printed check. Line-buffering
+	 * keeps each check visible up to the point of death. */
+	setvbuf(stdout, NULL, _IOLBF, 0);
 	report_seccomp_mode();
 
 	/* Anonymous mmap/munmap: allowed directly in-kernel. */

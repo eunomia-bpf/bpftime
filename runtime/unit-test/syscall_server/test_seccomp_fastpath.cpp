@@ -20,6 +20,7 @@
 #if defined(__linux__) && defined(__x86_64__)
 #include "shm_allocation_test_paths.hpp"
 #include <boost/interprocess/shared_memory_object.hpp>
+#include <sys/statvfs.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -88,6 +89,13 @@ run_helper()
 
 	helper_outcome result;
 	result.exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+	if (WIFSIGNALED(status)) {
+		// The helper's stdout is fully buffered into the pipe, so a
+		// death by signal loses everything it printed. Expose the
+		// signal through the parsed output instead: the checks below
+		// then fail with the killing signal in the expansion.
+		result.checks["helper_signal"] = WTERMSIG(status);
+	}
 	size_t pos = 0;
 	while (pos < output.size()) {
 		size_t end = output.find('\n', pos);
@@ -111,6 +119,16 @@ run_helper()
 
 TEST_CASE("Rootless seccomp cBPF argument fast-path", "[seccomp]")
 {
+	// The helper's server creates its 2 MiB shared-memory segment before
+	// main() runs, so a SIGBUS from a nearly full /dev/shm surfaces as an
+	// opaque exit_status == -1. Skip when the mount cannot hold the
+	// segment: the whole-suite run leaves several static segments behind,
+	// and sizing the mount is the CI workflow's job, not this test's.
+	struct statvfs stat;
+	if (statvfs("/dev/shm", &stat) == 0 &&
+	    stat.f_bavail * stat.f_bsize < 8ULL * 1024 * 1024) {
+		SKIP("free /dev/shm below the 8 MiB the helper needs");
+	}
 	const helper_outcome outcome = run_helper();
 
 	REQUIRE(outcome.summary_failures == 0);
