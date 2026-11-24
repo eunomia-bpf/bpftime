@@ -59,10 +59,15 @@ jobs:
 
       - name: Check and install required tools
         run: |
+          # GPU runners are shared hosts running several jobs per machine:
+          # wait out a concurrent dpkg run instead of failing on the lock,
+          # keep debconf non-interactive, and retry transient fetch errors.
+          export DEBIAN_FRONTEND=noninteractive
+          APT_OPTS=(-o DPkg::Lock::Timeout=120 -o Acquire::Retries=3)
           echo "Checking installed tools..."
           
-          sudo apt-get update
-          sudo apt-get install -y build-essential llvm-dev llvm-18-dev cmake libboost-all-dev libzstd-dev pkg-config ninja-build
+          sudo -E apt-get "${APT_OPTS[@]}" update
+          sudo -E apt-get "${APT_OPTS[@]}" install -y build-essential llvm-dev llvm-18-dev cmake libboost-all-dev libzstd-dev pkg-config ninja-build
 
           # Check CUDA
           nvcc --version || echo "nvcc not found (CUDA compiler)"

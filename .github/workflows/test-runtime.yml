@@ -71,8 +71,20 @@ jobs:
         run: |
           set -e
           if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi
-          $PM -y update
-          $PM -y install git ca-certificates
+          # openEuler mirrors intermittently reset HTTP/2 streams mid
+          # download; retry the transaction instead of losing the leg.
+          pm_retry() {
+            local attempt=1 rc=0
+            until "$@"; do
+              rc=$?
+              [ "$attempt" -ge 3 ] && return "$rc"
+              echo "package command failed (attempt $attempt/3); retrying" >&2
+              attempt=$((attempt + 1))
+              sleep 5
+            done
+          }
+          pm_retry "$PM" -y update
+          pm_retry "$PM" -y install git ca-certificates
       - uses: actions/checkout@v2
         with:
           submodules: "recursive"
@@ -85,7 +97,19 @@ jobs:
         run: |
           set -e
           if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi
-          $PM -y install \
+          # openEuler mirrors intermittently reset HTTP/2 streams mid
+          # download; retry the transaction instead of losing the leg.
+          pm_retry() {
+            local attempt=1 rc=0
+            until "$@"; do
+              rc=$?
+              [ "$attempt" -ge 3 ] && return "$rc"
+              echo "package command failed (attempt $attempt/3); retrying" >&2
+              attempt=$((attempt + 1))
+              sleep 5
+            done
+          }
+          pm_retry "$PM" -y install \
             cmake make gcc gcc-c++ \
             clang llvm llvm-devel \
             zlib-devel elfutils-libelf-devel pkgconf-pkg-config libasan \
