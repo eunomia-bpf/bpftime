@@ -8,7 +8,6 @@
 #if __linux__
 #include <sched.h>
 #elif __APPLE__
-#include <sys/sysctl.h>
 #include <pthread.h>
     typedef int cpu_set_t;
 

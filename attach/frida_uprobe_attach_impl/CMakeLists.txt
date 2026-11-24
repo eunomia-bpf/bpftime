@@ -16,6 +16,15 @@ target_include_directories(bpftime_frida_uprobe_attach_impl PRIVATE ${SPDLOG_INC
 
 target_link_libraries(bpftime_frida_uprobe_attach_impl PRIVATE ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a PUBLIC bpftime_base_attach_impl spdlog::spdlog dl)
 
+if(APPLE)
+  # Frida's documented Darwin link set for the static gum library:
+  # Foundation/CoreFoundation frameworks plus libbsm and libresolv. The
+  # 16.1.2 devkit only hard-requires libresolv, but propagate the full set
+  # publicly so every consumer links standalone across gum versions.
+  target_link_libraries(bpftime_frida_uprobe_attach_impl PUBLIC
+    "-framework Foundation" "-framework CoreFoundation" bsm resolv)
+endif()
+
 set(TEST_SOURCES
     test/test_uprobe_uretprobe.cpp
     test/test_function_address_resolve.cpp
