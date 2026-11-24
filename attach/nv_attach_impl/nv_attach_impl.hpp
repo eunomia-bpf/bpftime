@@ -248,7 +248,6 @@ class nv_attach_impl final : public base_attach_impl {
 			std::atomic<bool> late_bootstrap_done{ false };
 			std::mutex late_bootstrap_mutex;
 			std::once_flag host_symbol_cache_once;
-			mutable std::mutex host_symbol_cache_mutex;
 	// Absolute address sorted list of host function symbols across loaded
 	// modules (best-effort).
 	struct host_symbol_range {

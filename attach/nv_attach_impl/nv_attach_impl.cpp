@@ -74,7 +74,6 @@ namespace
 {
 struct nv_attach_hook_state_holder {
 	std::once_flag init_once;
-	std::mutex mutex;
 	std::optional<nv_attach_hook_state> state;
 };
 
@@ -84,8 +83,6 @@ static nv_attach_hook_state_holder g_nv_attach_hook_state_holder{};
 nv_attach_hook_state &nv_attach_get_hook_state()
 {
 	std::call_once(g_nv_attach_hook_state_holder.init_once, []() {
-		std::lock_guard<std::mutex> guard(
-			g_nv_attach_hook_state_holder.mutex);
 		g_nv_attach_hook_state_holder.state.emplace();
 	});
 	return *g_nv_attach_hook_state_holder.state;
@@ -1625,7 +1622,6 @@ collect_ptx_entry_functions(const std::map<std::string, std::string> &all_ptx)
 void nv_attach_impl::build_host_symbol_cache_once()
 {
 	std::call_once(host_symbol_cache_once, [&]() {
-		std::lock_guard<std::mutex> guard(host_symbol_cache_mutex);
 		host_symbol_ranges.clear();
 
 		auto modules = elf_introspect::list_loaded_modules();
@@ -1676,7 +1672,6 @@ nv_attach_impl::resolve_host_function_symbol(void *addr)
 	}
 
 	build_host_symbol_cache_once();
-	std::lock_guard<std::mutex> guard(host_symbol_cache_mutex);
 	if (host_symbol_ranges.empty())
 		return std::nullopt;
 
