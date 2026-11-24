@@ -20,6 +20,7 @@
 #include <linux/bpf.h>
 #include <linux/perf_event.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
