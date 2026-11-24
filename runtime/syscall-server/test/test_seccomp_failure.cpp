@@ -20,6 +20,7 @@
 #include <new>
 #include <spdlog/sinks/callback_sink.h>
 #include <string>
+#include <vector>
 
 #include "../seccomp_notifier.cpp"
 
@@ -36,6 +37,11 @@ std::atomic<int> worker_allocations_before_failure{ -1 };
 // Long enough to defeat std::string SSO, forcing a heap allocation in
 // rootless::resolve_map_files_path() when building the /proc/<pid>/maps path.
 const char *mapped_openat_path = "/proc/999999/map_files/7f0000-7f1000";
+
+// Copy of the classic-BPF program handed to the seccomp() syscall, captured
+// in __wrap_syscall so test cases can assert on the installed filter itself.
+std::vector<sock_filter> captured_filter;
+bool filter_captured = false;
 } // namespace
 
 long
@@ -196,8 +202,24 @@ TEST_CASE("Worker construction failure cancels partially started seccomp setup")
 extern "C" long
 __wrap_syscall(long number, ...)
 {
-	if (allow_install.load() && number == SYS_seccomp)
+	va_list args;
+	va_start(args, number);
+	int operation = va_arg(args, int);
+	(void)va_arg(args, unsigned long); // seccomp flags
+	void *filter_arg = va_arg(args, void *);
+	va_end(args);
+	if (allow_install.load() && number == SYS_seccomp) {
+		if (operation == SECCOMP_SET_MODE_FILTER &&
+		    filter_arg != nullptr) {
+			const auto *program =
+				static_cast<const sock_fprog *>(filter_arg);
+			captured_filter.assign(
+				program->filter,
+				program->filter + program->len);
+			filter_captured = true;
+		}
 		return 42;
+	}
 	errno = ENOSYS;
 	return -1;
 }
@@ -222,4 +244,39 @@ TEST_CASE("Post-install logging failure preserves the live seccomp listener")
 	unsetenv("BPFTIME_GO_SECCOMP");
 	REQUIRE(installed);
 	REQUIRE(bpftime::seccomp::go_seccomp_listener.load() == 42);
+}
+
+TEST_CASE("Foreign-ABI syscalls fail open instead of killing the process")
+{
+	REQUIRE(setenv("BPFTIME_GO_SECCOMP", "1", 1) == 0);
+	bpftime::seccomp::go_seccomp_listener.store(-1);
+	captured_filter.clear();
+	filter_captured = false;
+	allow_install = true;
+	const bool installed = bpftime::seccomp::install_seccomp_tracer();
+	allow_install = false;
+	unsetenv("BPFTIME_GO_SECCOMP");
+	REQUIRE(installed);
+	REQUIRE(filter_captured);
+	REQUIRE(captured_filter.size() >= 4);
+
+	// The program loads seccomp_data.arch and skips the mismatch rule only
+	// when the process's native ABI matches.
+	REQUIRE(captured_filter[0].code == (BPF_LD | BPF_W | BPF_ABS));
+	REQUIRE(captured_filter[1].code == (BPF_JMP | BPF_JEQ | BPF_K));
+	REQUIRE(captured_filter[1].k == BPFTIME_SECCOMP_AUDIT_ARCH);
+	REQUIRE(captured_filter[1].jt == 1);
+
+	// Regression: a foreign-ABI syscall (e.g. a 32-bit compat syscall) must
+	// be handed to the kernel instead of terminating the process with SIGSYS.
+	REQUIRE(captured_filter[2].code == (BPF_RET | BPF_K));
+	REQUIRE(captured_filter[2].k == SECCOMP_RET_ALLOW);
+
+	// The trailing default rule still allows every unlisted native syscall.
+	REQUIRE(captured_filter.back().code == (BPF_RET | BPF_K));
+	REQUIRE(captured_filter.back().k == SECCOMP_RET_ALLOW);
+
+	// No installed rule may kill the process.
+	for (const struct sock_filter &insn : captured_filter)
+		REQUIRE(insn.k != SECCOMP_RET_KILL_PROCESS);
 }
