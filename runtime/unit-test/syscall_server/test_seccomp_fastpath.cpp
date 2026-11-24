@@ -132,6 +132,14 @@ TEST_CASE("Rootless seccomp cBPF argument fast-path", "[seccomp]")
 	const helper_outcome outcome = run_helper();
 
 	REQUIRE(outcome.summary_failures == 0);
+	if (outcome.checks.count("helper_signal") == 1) {
+		// Name the killing signal before anything else: with the
+		// REQUIRE on exit_status alone, a helper death by signal
+		// reports as an opaque -1 == 0 and the recorded signal
+		// never surfaces.
+		FAIL("helper died by signal " +
+		     std::to_string(outcome.checks.at("helper_signal")));
+	}
 	REQUIRE(outcome.exit_status == 0);
 
 	// The filter must actually be installed (SECCOMP_MODE_FILTER == 2).
