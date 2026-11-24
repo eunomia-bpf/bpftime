@@ -47,6 +47,9 @@ jobs:
     # containers on a VM runner run --privileged against that VM's own kernel.
     runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-latest"') }}
     strategy:
+      # Keep every matrix leg independent: one flaky leg must not cancel
+      # the others and hide their real results (GitHub defaults to true).
+      fail-fast: false
       matrix:
         container:
           - ubuntu-2204

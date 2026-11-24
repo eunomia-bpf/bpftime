@@ -74,6 +74,9 @@ jobs:
   build-runtime:
     needs: pick-runner
     strategy:
+      # Keep every matrix leg independent: one flaky leg must not cancel
+      # the others and hide their real results (GitHub defaults to true).
+      fail-fast: false
       matrix:
         enable_jit:
           - true
