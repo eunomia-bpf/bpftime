@@ -46,8 +46,8 @@ jobs:
           variant: arm64
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+          sudo apt-get -o DPkg::Lock::Timeout=120 -o Acquire::Retries=3 update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 -o Acquire::Retries=3 install -y \
             build-essential cmake ninja-build pkg-config git python3 \
             llvm-18-dev clang-18 libelf-dev zlib1g-dev libzstd-dev \
             libboost-all-dev libssl-dev

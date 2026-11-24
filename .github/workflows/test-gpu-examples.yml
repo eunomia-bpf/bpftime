@@ -109,8 +109,11 @@ jobs:
               exit 1
             fi
           fi
-          $SUDO apt-get update
-          $SUDO apt-get install -y --no-install-recommends \
+          # Shared GPU host: wait for a concurrent dpkg run and retry
+          # transient mirror errors instead of failing the job.
+          APT_OPTS=(-o DPkg::Lock::Timeout=120 -o Acquire::Retries=3)
+          $SUDO apt-get "${APT_OPTS[@]}" update
+          $SUDO apt-get "${APT_OPTS[@]}" install -y --no-install-recommends \
             build-essential ca-certificates curl git pkg-config xz-utils \
             cmake ninja-build \
             libboost-all-dev libdw-dev libedit-dev libelf-dev libffi-dev libssl-dev libzstd-dev zlib1g-dev \
@@ -127,7 +130,7 @@ jobs:
             set +e
             SELECTED=""
             for v in 19 18 17 16 15; do
-              $SUDO apt-get install -y --no-install-recommends "llvm-$v" "llvm-$v-dev" "clang-$v" "lld-$v"
+              $SUDO apt-get "${APT_OPTS[@]}" install -y --no-install-recommends "llvm-$v" "llvm-$v-dev" "clang-$v" "lld-$v"
               if [ $? -eq 0 ] && command -v "llvm-config-$v" >/dev/null 2>&1; then
                 SELECTED="$v"
                 break
@@ -152,7 +155,7 @@ jobs:
           # Some environments ship llvm-config but not clang. Ensure clang is available.
           if ! command -v clang >/dev/null 2>&1; then
             echo "clang not found; attempting to install it..."
-            if [ "${LLVM_MAJOR}" -ge 15 ] && $SUDO apt-get install -y --no-install-recommends "clang-${LLVM_MAJOR}" "lld-${LLVM_MAJOR}"; then
+            if [ "${LLVM_MAJOR}" -ge 15 ] && $SUDO apt-get "${APT_OPTS[@]}" install -y --no-install-recommends "clang-${LLVM_MAJOR}" "lld-${LLVM_MAJOR}"; then
               TOOLCHAIN_BIN_DIR="${RUNNER_TEMP:-/tmp}/bpftime-toolchain-bin"
               mkdir -p "$TOOLCHAIN_BIN_DIR"
               ln -sf "$(command -v "clang-${LLVM_MAJOR}")" "$TOOLCHAIN_BIN_DIR/clang"
@@ -162,7 +165,7 @@ jobs:
               export PATH="$TOOLCHAIN_BIN_DIR:$PATH"
               echo "$TOOLCHAIN_BIN_DIR" >> "$GITHUB_PATH"
             else
-              $SUDO apt-get install -y --no-install-recommends clang lld
+              $SUDO apt-get "${APT_OPTS[@]}" install -y --no-install-recommends clang lld
             fi
           fi
 
