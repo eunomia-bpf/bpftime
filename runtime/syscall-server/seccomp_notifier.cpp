@@ -32,6 +32,7 @@
 #include <spdlog/spdlog.h>
 #include <string>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -49,6 +50,9 @@
 #error "rootless seccomp USER_NOTIF supports only x86_64 and aarch64"
 #endif
 
+#ifndef F_DUPFD_CLOEXEC
+#define F_DUPFD_CLOEXEC 1030
+#endif
 
 namespace bpftime
 {
@@ -280,12 +284,55 @@ static bool setup_go_seccomp_tracer()
 		BPFTIME_NOTIFY_SYSCALL(__NR_faccessat2),
 #endif
 		BPFTIME_NOTIFY_SYSCALL(__NR_close),
-		BPFTIME_NOTIFY_SYSCALL(__NR_ioctl),
-		BPFTIME_NOTIFY_SYSCALL(__NR_mmap),
+		/*
+		 * ioctl: handle_ioctl() emulates only the four perf-event
+		 * requests PERF_EVENT_IOC_{ENABLE,DISABLE,SET_BPF,ID}, whose
+		 * _IOC_TYPE is '$' (0x24). Trap the whole '$' request family
+		 * (its other members simply pass through the emulated
+		 * handler); run every other ioctl directly in-kernel. The
+		 * low 32 bits of each seccomp_data argument are at
+		 * offsetof(args[i]).
+		 */
+		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_ioctl, 0, 5),
+		BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+			 offsetof(struct seccomp_data, args[1])),
+		BPF_STMT(BPF_ALU | BPF_AND | BPF_K, 0xff00U),
+		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x2400U, 0, 1),
+		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF),
+		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+		/*
+		 * mmap: only file-backed, non-anonymous mappings need the
+		 * fake-kernel fd machinery (ringbuf/array maps and software
+		 * perf events). Anonymous mappings and fd == -1 run directly
+		 * in the kernel. args[3] is the flags word, args[4] the fd.
+		 * BPF_JSET tests the MAP_ANONYMOUS bit directly so the filter
+		 * uses only jump opcodes the long-term seccomp validator
+		 * accepts (no BPF_JNE dependency).
+		 */
+		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_mmap, 0, 6),
+		BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+			 offsetof(struct seccomp_data, args[3])),
+		BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, MAP_ANONYMOUS, 3, 0),
+		BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+			 offsetof(struct seccomp_data, args[4])),
+		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0xffffffffU, 1, 0),
+		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF),
+		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 		BPFTIME_NOTIFY_SYSCALL(__NR_munmap),
-		BPFTIME_NOTIFY_SYSCALL(__NR_mremap),
-		BPFTIME_NOTIFY_SYSCALL(__NR_brk),
-		BPFTIME_NOTIFY_SYSCALL(__NR_fcntl),
+		/*
+		 * fcntl: only F_DUPFD (0) and F_DUPFD_CLOEXEC (1030) have
+		 * fake-kernel semantics (bpftime map fd duplication, see
+		 * syscall_context::handle_fcntl). All other commands are
+		 * passed through by that handler and run directly in-kernel.
+		 * args[1] holds the command.
+		 */
+		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_fcntl, 0, 5),
+		BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+			 offsetof(struct seccomp_data, args[1])),
+		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, F_DUPFD, 2, 0),
+		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, F_DUPFD_CLOEXEC, 1, 0),
+		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF),
 		BPFTIME_NOTIFY_SYSCALL(__NR_dup3),
 		BPFTIME_NOTIFY_SYSCALL(__NR_epoll_create1),
 		BPFTIME_NOTIFY_SYSCALL(__NR_epoll_ctl),
