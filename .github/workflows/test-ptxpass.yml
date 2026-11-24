@@ -1,90 +1,49 @@
 name: Build and test PTX pass executables
 
+# DIAGNOSTIC BRANCH ONLY — fix/ci-gpu-runner-preflight.
+# Read-only hardware/toolchain preflight against the existing static
+# self-hosted runner pool (labels: self-hosted, linux, x64, nvidia, teslam40).
+# This ref is never merged, has no pull request, and does not replace any
+# required check on master or feature branches. The filename is reused so the
+# already-registered workflow can be workflow_dispatch-selected on this ref.
 on:
   workflow_dispatch:
-  push:
-    branches: ["master"]
-    paths:
-      - ".github/workflows/test-ptxpass.yml"
-      - "attach/nv_attach_impl/**"
-      - "runtime/**"
-      - "vm/**"
-      - "cmake/**"
-      - "third_party/**"
-      - "CMakeLists.txt"
-      - ".gitmodules"
-  pull_request:
-    branches: ["master"]
-    paths:
-      - ".github/workflows/test-ptxpass.yml"
-      - "attach/nv_attach_impl/**"
-      - "runtime/**"
-      - "vm/**"
-      - "cmake/**"
-      - "third_party/**"
-      - "CMakeLists.txt"
-      - ".gitmodules"
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  group: gpu-runner-preflight-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  test-ptxpass:
-    # GPU runners in eunomia-bpf carry self-hosted, linux, x64, gpu, nvidia and
-    # a label naming the card model (rtx5090 on the lab runners).
-    runs-on: [self-hosted, linux, x64, gpu]
+  hardware-preflight:
+    runs-on: [self-hosted, linux, x64, nvidia, teslam40]
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-          fetch-depth: 0
-
-      - name: Initialize bpftool submodules (libbpf)
-        run: |
-          rm -rf third_party/bpftool/libbpf
-          git submodule update --init --recursive third_party/bpftool
-
-      - name: Initialize ubpf submodules (bpf_conformance)
-        run: |
-          rm -rf third_party/ubpf/external/bpf_conformance
-          git submodule update --init --recursive third_party/ubpf
-      - name: Enable ccache
-        uses: ./.github/actions/ccache
-        with:
-          variant: gpu
-
-      - name: Check and install required tools
-        run: |
-          echo "Checking installed tools..."
-          
-          sudo apt-get update
-          sudo apt-get install -y build-essential llvm-dev llvm-18-dev cmake libboost-all-dev libzstd-dev pkg-config ninja-build
-
-          # Check CUDA
-          nvcc --version || echo "nvcc not found (CUDA compiler)"
-          echo $(which nvcc)
-      - name: Detect LLVM and configure CMake
+      - name: Read-only GPU hardware and toolchain preflight
         shell: bash
         run: |
-            cmake -B build -S . \
-              -DCMAKE_BUILD_TYPE=Debug \
-              -DBPFTIME_LLVM_JIT=YES \
-              -DBPFTIME_ENABLE_UNIT_TESTING=YES \
-              -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
-              -DBPFTIME_CUDA_ROOT="${BPFTIME_CUDA_ROOT:-/usr/local/cuda}" \
-              -DLLVM_DIR="/usr/lib/llvm-18/lib/cmake/llvm/" \
-              -G Ninja
-          
-      - name: Build PTX pass targets
-        run: |
-          cmake --build build --config Debug --target \
-            ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture bpftime_nv_attach_tests -j$(nproc)
-
-      - name: Run PTX pass unit tests with Catch2
-        shell: bash
-        run: |
-          ./build/attach/nv_attach_impl/test/bpftime_nv_attach_tests
+          set -u -o pipefail
+          echo "== kernel and architecture =="
+          uname -srm
+          echo "== GPU query (name, driver version, total memory only) =="
+          nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv
+          echo "== CUDA compiler =="
+          if command -v nvcc >/dev/null 2>&1; then
+            nvcc --version
+          else
+            echo "nvcc: not found on PATH"
+          fi
+          echo "== CUDA installation directories =="
+          ls -d /usr/local/cuda* 2>/dev/null || echo "no /usr/local/cuda* entries"
+          echo "== compiler and tool versions =="
+          for tool in gcc g++ clang clang-18 cmake ninja python3 llvm-config-18; do
+            if command -v "$tool" >/dev/null 2>&1; then
+              printf '%s path: %s\n' "$tool" "$(command -v "$tool")"
+              "$tool" --version 2>&1 | head -n 1
+            else
+              echo "$tool: not found"
+            fi
+          done
+          echo "preflight-ok"
