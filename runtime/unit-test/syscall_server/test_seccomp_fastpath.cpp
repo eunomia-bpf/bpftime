@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: MIT
  *
  * End-to-end coverage for the rootless seccomp cBPF argument fast-path.
- *
  * The helper process runs bpftime-syscall-server via LD_PRELOAD with
  * BPFTIME_GO_SECCOMP=1 and issues raw x86_64 syscalls (the Go workload
  * path), so each syscall really crosses the installed seccomp filter.
@@ -9,6 +8,12 @@
  * non-perf ioctls run in-kernel while BPF/RINGBUF mmap, F_DUPFD(_CLOEXEC)
  * on map fds and perf-event ioctls are still delivered to the emulation
  * workers.
+ *
+ * The child sets BPFTIME_SHM_MEMORY_MB=2: the syscall server otherwise
+ * creates its default 50 MiB global shared memory segment, which a small
+ * /dev/shm (64 MiB in the CI containers, largely used by earlier tests in
+ * the same binary) cannot always fit; the SIGBUS would then be charged to
+ * this test instead of the /dev/shm pressure that caused it.
  */
 #include "catch2/catch_test_macros.hpp"
 
@@ -51,6 +56,7 @@ run_helper()
 		if (setenv("BPFTIME_GO_SECCOMP", "1", 1) != 0 ||
 		    setenv("BPFTIME_GLOBAL_SHM_NAME", shm_name.c_str(), 1) !=
 			    0 ||
+		    setenv("BPFTIME_SHM_MEMORY_MB", "2", 1) != 0 ||
 		    setenv("LD_PRELOAD", BPFTIME_SYSCALL_SERVER_LIBRARY, 1) !=
 			    0)
 			_exit(126);
