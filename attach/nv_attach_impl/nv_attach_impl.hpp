@@ -242,10 +242,8 @@ class nv_attach_impl final : public base_attach_impl {
 	std::unordered_map<CUfunction, std::string> kernel_name_by_cufunction;
 
 			std::atomic<bool> enabled{ true };
-			// Late bootstrap needs to be repeatable across trace sessions.
-			// Using a heap-allocated once_flag allows resetting it after detach.
-			std::unique_ptr<std::once_flag> late_bootstrap_once =
-				std::make_unique<std::once_flag>();
+			// Late bootstrap is repeatable across trace sessions:
+			// late_bootstrap_mutex and late_bootstrap_done guard re-runs.
 			std::atomic<bool> late_bootstrap_started{ false };
 			std::atomic<bool> late_bootstrap_done{ false };
 			std::mutex late_bootstrap_mutex;
