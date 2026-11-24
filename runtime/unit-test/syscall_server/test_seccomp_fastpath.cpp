@@ -34,6 +34,10 @@ namespace
 struct helper_outcome {
 	int exit_status = -1;
 	std::map<std::string, int> checks;
+	// RIP and library base captured by the helper's crash handler, as
+	// decimal or hex strings; empty when the helper exited normally.
+	std::string crash_rip;
+	std::string crash_base;
 	int summary_failures = -1;
 };
 
@@ -112,6 +116,16 @@ run_helper()
 		if (sscanf(line.c_str(), "SUMMARY failures=%d", &failures) ==
 		    1)
 			result.summary_failures = failures;
+		// The crash handler's line:
+		// crash_sig=<n> crash_rip=0x.. crash_base=0x..
+		char crash_rip[32] = {};
+		char crash_base[32] = {};
+		if (sscanf(line.c_str(),
+			   "crash_sig=%*d crash_rip=%31s crash_base=%31s",
+			   crash_rip, crash_base) == 2) {
+			result.crash_rip = crash_rip;
+			result.crash_base = crash_base;
+		}
 	}
 	return result;
 }
@@ -140,6 +154,11 @@ TEST_CASE("Rootless seccomp cBPF argument fast-path", "[seccomp]")
 				     std::to_string(
 					     outcome.checks.at(
 						     "helper_signal"));
+		if (!outcome.crash_rip.empty()) {
+			detail += "; faulting RIP " + outcome.crash_rip +
+				  " (syscall-server base " +
+				  outcome.crash_base + ")";
+		}
 		for (const auto &[name, value] : outcome.checks) {
 			if (name == "helper_signal")
 				continue;

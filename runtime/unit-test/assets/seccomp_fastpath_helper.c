@@ -14,6 +14,8 @@
  * driver parses them. Exit status is non-zero when any check fails.
  */
 #define _GNU_SOURCE
+#include <signal.h>
+#include <sys/ucontext.h>
 #if defined(__linux__) && defined(__x86_64__)
 #include <errno.h>
 #include <fcntl.h>
@@ -27,6 +29,54 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+
+/* A death by signal loses the stack, so the killing frame has to be
+ * captured from inside the signal handler. The handler prints the faulting
+ * RIP and the load base of the preloaded syscall server, so the Catch2
+ * driver can turn them into a source line with addr2line; every write is
+ * a raw write(2), safe inside a signal handler. */
+static void
+crash_handler(int sig, siginfo_t *info __attribute__((unused)), void *uctx)
+{
+	ucontext_t *uc = (ucontext_t *)uctx;
+	unsigned long rip = uc->uc_mcontext.gregs[REG_RIP];
+	unsigned long server_base = 0;
+	FILE *maps = fopen("/proc/self/maps", "re");
+	if (maps) {
+		char line[512];
+		while (fgets(line, sizeof(line), maps) != NULL) {
+			if (strstr(line, "libbpftime-syscall-server") == NULL)
+				continue;
+			unsigned long from = 0;
+			if (sscanf(line, "%lx-", &from) == 1)
+				server_base = from;
+			break;
+		}
+		fclose(maps);
+	}
+	char buf[128];
+	int n = snprintf(buf, sizeof(buf),
+			 "crash_sig=%d crash_rip=0x%lx crash_base=0x%lx\n", sig,
+			 rip, server_base);
+	if (n > 0)
+		write(STDOUT_FILENO, buf, (size_t)n);
+	_exit(128 + sig);
+}
+
+static void
+install_crash_handler(void)
+{
+	struct sigaction sa;
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_sigaction = crash_handler;
+	sa.sa_flags = SA_SIGINFO;
+	sigemptyset(&sa.sa_mask);
+	sigaction(SIGSEGV, &sa, NULL);
+	sigaction(SIGBUS, &sa, NULL);
+	sigaction(SIGABRT, &sa, NULL);
+	sigaction(SIGFPE, &sa, NULL);
+	sigaction(SIGILL, &sa, NULL);
+}
 
 static long
 raw_syscall(long nr, long a1, long a2, long a3, long a4, long a5, long a6)
@@ -120,6 +170,7 @@ main(void)
 	/* Output goes into a pipe, which makes stdout fully buffered; a
 	 * death by signal would lose every printed check. Line-buffering
 	 * keeps each check visible up to the point of death. */
+	install_crash_handler();
 	setvbuf(stdout, NULL, _IOLBF, 0);
 	report_seccomp_mode();
 
