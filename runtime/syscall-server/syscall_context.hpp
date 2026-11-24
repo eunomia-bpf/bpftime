@@ -190,6 +190,16 @@ class syscall_context {
 	long handle_fcntl(int fd, int cmd, unsigned long arg);
 	int handle_memfd_create(const char *name, int flags);
 
+	// Run the real libc open/fopen and, when an unprivileged map_files
+	// open is denied with EPERM/EACCES, retry the validated backing-file
+	// resolution without requiring CAP_SYS_ADMIN or CAP_SYS_PTRACE.
+	int openat_with_map_files_fallback(int fd, const char *file, int oflag,
+					   unsigned short mode);
+	int open_with_map_files_fallback(const char *file, int oflag,
+					 unsigned short mode);
+	FILE *fopen_with_map_files_fallback(const char *pathname,
+					    const char *flags);
+
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	void initialize_cuda();
 	int poll_gpu_ringbuf_map(int mapfd, void *ctx,

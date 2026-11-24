@@ -32,6 +32,7 @@
 #endif
 #include <linux/perf_event.h>
 #include <linux/filter.h>
+#include <limits.h>
 #elif __APPLE__
 #include "bpftime_epoll.h"
 #endif
@@ -44,6 +45,8 @@
 #include <iterator>
 #include <vector>
 #include "syscall_server_utils.hpp"
+#include "rootless_map_files.hpp"
+#include "seccomp_raw_syscall.hpp"
 #include "synthetic_kallsyms.hpp"
 #include <optional>
 #include <sys/mman.h>
@@ -82,23 +85,38 @@ thread_local unsigned int mock_disable_depth = 0;
 
 std::string resolve_uprobe_map_file(const char *name)
 {
-	std::string path(name);
-	unsigned pid = 0;
+	pid_t pid = 0;
 	unsigned long long start = 0, end = 0;
-	int consumed = 0;
-	if (sscanf(path.c_str(), "/proc/%u/map_files/%llx-%llx%n", &pid,
-		   &start, &end, &consumed) != 3 ||
-	    consumed != static_cast<int>(path.size()) || start >= end)
-		return path;
-
+	if (!rootless::parse_map_files_path(name, pid, start, end))
+		return std::string(name);
+#if defined(__linux__)
+	// Raw readlinkat bypasses the interposed syscall/open symbols and keeps
+	// the exact kernel errno so a permission denial can be retried below.
+	char buffer[PATH_MAX];
+	int64_t rc = seccomp::raw_syscall(
+		__NR_readlinkat, AT_FDCWD, (intptr_t)name, (intptr_t)buffer,
+		sizeof(buffer) - 1, 0, 0);
+	if (rc > 0) {
+		buffer[rc] = '\0';
+		if (buffer[0] == '/')
+			return std::string(buffer, (size_t)rc);
+	} else if (rc == -EPERM || rc == -EACCES) {
+		if (auto resolution = rootless::resolve_map_files_path(name))
+			return resolution->accessible_path;
+	}
+	SPDLOG_WARN("Unable to resolve uprobe map file {}", name);
+	return std::string(name);
+#else
 	std::error_code error;
-	auto mapped_path = std::filesystem::read_symlink(path, error);
+	auto mapped_path =
+		std::filesystem::read_symlink(std::string(name), error);
 	if (error || !mapped_path.is_absolute()) {
-		SPDLOG_WARN("Unable to resolve uprobe map file {}: {}", path,
+		SPDLOG_WARN("Unable to resolve uprobe map file {}: {}", name,
 			    error.message());
-		return path;
+		return std::string(name);
 	}
 	return mapped_path.string();
+#endif
 }
 
 void set_mock_fd_cloexec(int fd)
@@ -592,16 +610,46 @@ void syscall_context::release_unreferenced_deferred_maps()
 	}
 }
 
+int syscall_context::openat_with_map_files_fallback(
+	int fd, const char *file, int oflag, unsigned short mode)
+{
+	int ret = orig_openat_fn(fd, file, oflag, mode);
+	if (ret < 0 && (errno == EPERM || errno == EACCES) &&
+	    rootless::is_map_files_path(file))
+		return rootless::open_map_files(file, oflag, (mode_t)mode);
+	return ret;
+}
+
+int syscall_context::open_with_map_files_fallback(
+	const char *file, int oflag, unsigned short mode)
+{
+	int ret = orig_open_fn(file, oflag, mode);
+	if (ret < 0 && (errno == EPERM || errno == EACCES) &&
+	    rootless::is_map_files_path(file))
+		return rootless::open_map_files(file, oflag, (mode_t)mode);
+	return ret;
+}
+
+FILE *syscall_context::fopen_with_map_files_fallback(const char *pathname,
+						      const char *flags)
+{
+	FILE *ret = orig_fopen_fn(pathname, flags);
+	if (ret == nullptr && (errno == EPERM || errno == EACCES) &&
+	    rootless::is_map_files_path(pathname))
+		return rootless::fopen_map_files(pathname, flags);
+	return ret;
+}
+
 int syscall_context::handle_openat(int fd, const char *file, int oflag,
 				   unsigned short mode)
 {
 	if (!mock_active_for_current_thread())
-		return orig_openat_fn(fd, file, oflag, mode);
+		return openat_with_map_files_fallback(fd, file, oflag, mode);
 	try_startup();
 	auto path = resolve_filename_and_fd_to_full_path(fd, file);
 	if (!path) {
 		SPDLOG_WARN("Failed to resolve fd={}/file=`{}`", fd, file);
-		return orig_openat_fn(fd, file, oflag, mode);
+		return openat_with_map_files_fallback(fd, file, oflag, mode);
 	}
 	// Synthetic files are cached real files on disk: open the materialized
 	// host path directly, so every later read/pread/mmap/stat uses the
@@ -612,14 +660,14 @@ int syscall_context::handle_openat(int fd, const char *file, int oflag,
 		return orig_openat_fn(AT_FDCWD, real_path->c_str(), oflag,
 				      mode);
 	}
-	return orig_openat_fn(fd, file, oflag, mode);
+	return openat_with_map_files_fallback(fd, file, oflag, mode);
 }
 
 int syscall_context::handle_open(const char *file, int oflag,
 				 unsigned short mode)
 {
 	if (!mock_active_for_current_thread())
-		return orig_open_fn(file, oflag, mode);
+		return open_with_map_files_fallback(file, oflag, mode);
 	SPDLOG_DEBUG("Calling mocked open");
 	try_startup();
 	if (auto real_path = resolve_redirected_path(std::filesystem::path(file));
@@ -627,7 +675,7 @@ int syscall_context::handle_open(const char *file, int oflag,
 		SPDLOG_DEBUG("Redirecting open {} -> {}", file, *real_path);
 		return orig_open_fn(real_path->c_str(), oflag, mode);
 	}
-	return orig_open_fn(file, oflag, mode);
+	return open_with_map_files_fallback(file, oflag, mode);
 }
 int syscall_context::create_kernel_bpf_map(int map_fd, int bpftime_map_type)
 {
@@ -1576,7 +1624,7 @@ int syscall_context::handle_munmap(void *addr, size_t size)
 FILE *syscall_context::handle_fopen(const char *pathname, const char *flags)
 {
 	if (!mock_active_for_current_thread())
-		return orig_fopen_fn(pathname, flags);
+		return fopen_with_map_files_fallback(pathname, flags);
 	SPDLOG_DEBUG("Calling mocked fopen");
 	try_startup();
 	if (auto real_path =
@@ -1588,7 +1636,7 @@ FILE *syscall_context::handle_fopen(const char *pathname, const char *flags)
 		// natively, including caller-supplied flags such as "re".
 		return orig_fopen_fn(real_path->c_str(), flags);
 	}
-	return orig_fopen_fn(pathname, flags);
+	return fopen_with_map_files_fallback(pathname, flags);
 }
 
 int syscall_context::handle_dup3(int oldfd, int newfd, int flags)

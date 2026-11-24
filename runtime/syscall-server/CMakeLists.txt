@@ -14,6 +14,7 @@ add_library(bpftime-syscall-server SHARED
     syscall_server_utils.cpp
     seccomp_notifier.cpp
     seccomp_raw_syscall.cpp
+    rootless_map_files.cpp
     rootless_agent_entry.cpp
 )
 
@@ -72,7 +73,8 @@ endif()
 # links neither the full syscall-server shared object nor any attach/ library.
 if(BPFTIME_ENABLE_UNIT_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
    AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|aarch64|ARM64)$")
-  add_executable(bpftime_seccomp_failure_tests test/test_seccomp_failure.cpp)
+  add_executable(bpftime_seccomp_failure_tests
+      test/test_seccomp_failure.cpp rootless_map_files.cpp)
   target_include_directories(bpftime_seccomp_failure_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     "../include"
@@ -83,6 +85,25 @@ if(BPFTIME_ENABLE_UNIT_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
   target_link_options(bpftime_seccomp_failure_tests PRIVATE
     -Wl,--wrap=ioctl -Wl,--wrap=prctl -Wl,--wrap=syscall)
   add_test(NAME bpftime_seccomp_failure_tests COMMAND bpftime_seccomp_failure_tests)
+endif()
+
+# Rootless map_files resolution: pure fallback/validation logic plus a live
+# /proc/<pid>/map_files range exercised without CAP_SYS_ADMIN. Links the real
+# raw-syscall implementation instead of the --wrap seams used above.
+if(BPFTIME_ENABLE_UNIT_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  add_executable(bpftime_rootless_map_files_tests
+      test/test_rootless_map_files.cpp
+      rootless_map_files.cpp
+      seccomp_raw_syscall.cpp)
+  target_include_directories(bpftime_rootless_map_files_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    "../include"
+    ${SPDLOG_INCLUDE}
+  )
+  target_link_libraries(bpftime_rootless_map_files_tests PRIVATE
+      Catch2::Catch2WithMain spdlog::spdlog)
+  add_test(NAME bpftime_rootless_map_files_tests
+           COMMAND bpftime_rootless_map_files_tests)
 endif()
 
 set_target_properties(bpftime-syscall-server PROPERTIES CXX_STANDARD 20 LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/syscall-server.version)

@@ -34,7 +34,7 @@ thread_local bool fail_worker_next_alloc = false;
 std::atomic<int> worker_allocations_before_failure{ -1 };
 
 // Long enough to defeat std::string SSO, forcing a heap allocation in
-// resolve_mapped_file_path() when building the /proc/<pid>/maps path.
+// rootless::resolve_map_files_path() when building the /proc/<pid>/maps path.
 const char *mapped_openat_path = "/proc/999999/map_files/7f0000-7f1000";
 } // namespace
 
