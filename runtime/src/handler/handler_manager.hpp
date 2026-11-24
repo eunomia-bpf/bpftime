@@ -22,9 +22,6 @@
 #include <boost/interprocess/smart_ptr/unique_ptr.hpp>
 #include <boost/interprocess/containers/string.hpp>
 #include <bpftime_shm.hpp>
-#include <boost/interprocess/sync/interprocess_sharable_mutex.hpp>
-#include <boost/interprocess/sync/sharable_lock.hpp>
-#include <boost/interprocess/sync/scoped_lock.hpp>
 #include <boost/interprocess/containers/set.hpp>
 #include <handler/link_handler.hpp>
 #include <handler/prog_handler.hpp>

@@ -23,7 +23,6 @@
 #include <stdexcept>
 #include <string>
 #include "spdlog/fmt/bin_to_hex.h"
-#include <boost/interprocess/sync/interprocess_mutex.hpp>
 #include <bpf_map/shared/perf_event_array_kernel_user.hpp>
 #include <cerrno>
 #include <cstring>

@@ -3,18 +3,15 @@
 #include "spdlog/sinks/stdout_sinks.h"
 #include "spdlog/spdlog.h"
 #include <algorithm>
-#include <atomic>
 #include <cstdlib>
 #include <cstring>
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <frida-gum.h>
-#include <mutex>
 #include <optional>
 #include "text_segment_transformer.hpp"
 
 #include <string>
-#include <thread>
 
 using main_func_t = int (*)(int, char **, char **);
 

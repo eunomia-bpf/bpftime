@@ -21,7 +21,6 @@
 #define BPFTIME_BLOOM_FILTER_MAP_HPP
 
 #include <boost/interprocess/managed_shared_memory.hpp>
-#include <boost/interprocess/sync/interprocess_mutex.hpp>
 #include <boost/interprocess/containers/vector.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <cstdint>
