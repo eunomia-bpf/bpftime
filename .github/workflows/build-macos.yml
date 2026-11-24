@@ -3,9 +3,10 @@ name: Build on macOS
 # Rootless syscall tracing / seccomp / libbpf-backed features are Linux-only
 # and are guarded by __linux__. This workflow builds and actually runs the
 # cross-platform core on Darwin (Apple Silicon): the runtime, the
-# runtime_library example in interpreter and uBPF-JIT modes, bpftimetool and
-# the Frida-gum uprobe attach test suite. A compile-only gate cannot catch
-# Darwin runtime defects such as the non-existent hw.cpulocation sysctl.
+# runtime_library and macos uprobe examples in interpreter and uBPF-JIT
+# modes, bpftimetool and the Frida-gum uprobe attach test suite. A
+# compile-only gate cannot catch Darwin runtime defects such as the
+# non-existent hw.cpulocation sysctl.
 
 on:
   workflow_dispatch:
@@ -68,19 +69,19 @@ jobs:
             -DBPFTIME_ENABLE_FRIDA=ON \
             -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
             -DBPFTIME_BUILD_RUNTIME_LIBRARY_EXAMPLE=ON \
-            -DBPFTIME_ENABLE_UNIT_TESTING=ON \
-            -DENABLE_EBPF_VERIFIER=OFF
+            -DBPFTIME_BUILD_MACOS_EXAMPLE=ON \
+            -DBPFTIME_ENABLE_UNIT_TESTING=ON
 
       # agent/syscall-server pull in Linux-only headers (asm/unistd.h,
       # sys/epoll.h, GNU --whole-archive) and stay out of the Darwin gate.
-      - name: Build runtime, runtime_library, bpftimetool and Frida tests
+      - name: Build runtime, examples, bpftimetool and Frida tests
         run: |
           cmake --build build --target \
-            runtime runtime_library bpftimetool \
+            runtime runtime_library macos_uprobe_demo bpftimetool \
             bpftime_frida_uprobe_attach_tests
 
-      - name: Run runtime_library and Frida uprobe tests
+      - name: Run examples and Frida uprobe tests
         run: |
           ctest --test-dir build \
-            -R '^(runtime_library_|bpftime_frida_uprobe_attach_tests$)' \
+            -R '^(runtime_library_|macos_uprobe_demo_|bpftime_frida_uprobe_attach_tests$)' \
             --output-on-failure

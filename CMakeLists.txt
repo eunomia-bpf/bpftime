@@ -193,6 +193,11 @@ if(BPFTIME_BUILD_RUNTIME_LIBRARY_EXAMPLE)
   add_subdirectory(example/runtime_library)
 endif()
 
+option(BPFTIME_BUILD_MACOS_EXAMPLE "Build the macOS userspace uprobe + eBPF map example" OFF)
+if(BPFTIME_BUILD_MACOS_EXAMPLE)
+  add_subdirectory(example/macos)
+endif()
+
 # option to use probe read/write checks
 if(ENABLE_PROBE_READ_CHECK)
   target_compile_definitions(runtime PRIVATE ENABLE_PROBE_READ_CHECK=1)
