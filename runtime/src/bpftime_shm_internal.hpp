@@ -311,6 +311,7 @@ public:
 	bool is_exist_fake_fd(int fd) const;
 
 	int add_memfd_handler(const char *name, int flags);
+	int add_memfd_handler_at_fd(int fd, const char *name, int flags);
 
 	int translate_shared_map_type_to_kernel_map_type(int type);
 

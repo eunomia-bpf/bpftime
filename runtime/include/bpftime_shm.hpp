@@ -456,6 +456,7 @@ int bpftime_poll_gpu_ringbuf_map(int mapfd, void *ctx,
 				 void (*)(const void *, uint64_t, void *));
 #endif
 int bpftime_add_memfd_handler(const char *name, int flags);
+int bpftime_add_memfd_handler_at_fd(int fd, const char *name, int flags);
 int bpftime_translate_shared_map_type_to_kernel_map_type(int ty);
 
 }

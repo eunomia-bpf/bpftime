@@ -785,3 +785,9 @@ int bpftime_add_memfd_handler(const char *name, int flags)
 	auto &shm = shm_holder.global_shared_memory;
 	return shm.add_memfd_handler(name, flags);
 }
+
+int bpftime_add_memfd_handler_at_fd(int fd, const char *name, int flags)
+{
+	auto &shm = shm_holder.global_shared_memory;
+	return shm.add_memfd_handler_at_fd(fd, name, flags);
+}
