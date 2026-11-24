@@ -38,6 +38,7 @@ struct helper_outcome {
 	// decimal or hex strings; empty when the helper exited normally.
 	std::string crash_rip;
 	std::string crash_base;
+	std::string raw_output_tail;
 	int summary_failures = -1;
 };
 
@@ -127,6 +128,18 @@ run_helper()
 			result.crash_base = crash_base;
 		}
 	}
+	// Keep the tail of the helper's own output: the last lines before a
+	// crash name the stage that died even when the crash line itself was
+	// lost (an exit-path fault after stdio teardown, a swallowed write,
+	// or a partial trailing log line glued onto the crash line).
+	if (!output.empty()) {
+		size_t tail = output.size() > 2048 ? output.size() - 2048 : 0;
+		if (tail > 0 && output[tail - 1] != '\n') {
+			size_t nl = output.find('\n', tail);
+			tail = nl == std::string::npos ? 0 : nl + 1;
+		}
+		result.raw_output_tail = output.substr(tail);
+	}
 	return result;
 }
 } // namespace
@@ -165,6 +178,15 @@ TEST_CASE("Rootless seccomp cBPF argument fast-path", "[seccomp]")
 			detail += "; " + name + "=" + std::to_string(value);
 		}
 		FAIL(detail);
+	}
+	// Whatever the death, show what the helper got to: the parsed
+	// counters first, then the raw output tail, so a red run carries its
+	// own evidence instead of needing another push to read it.
+	INFO("helper checks parsed=" << outcome.checks.size()
+				     << " summary_failures="
+				     << outcome.summary_failures);
+	if (!outcome.raw_output_tail.empty()) {
+		INFO("helper output tail:\n" << outcome.raw_output_tail);
 	}
 	// An exit code of 128+N means the crash handler ran and turned the
 	// death into a normal exit; surface the captured RIP either way, so a
