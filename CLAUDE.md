@@ -328,8 +328,16 @@ Cross-layer coupling is allowed only through the existing function-pointer
 seam (`get_call_hook`/`set_call_hook`). No new link dependency or `#include`
 may cross the syscall-server / attach boundary.
 
-## Minimal Change, Anti-Over-Engineering & Anti-Over-Testing
+## Single-Purpose PRs, Minimal Change, Anti-Over-Engineering & Anti-Over-Testing
 
+- **One PR, one thing (strictly no `and` bundling).** Every pull request must
+  solve one independent root cause or deliver one cohesive capability. Never
+  bundle two independently buildable, testable, mergeable, or revertible
+  changes into a single PR (for example, combining a dependency update with
+  runtime behavior changes, mixing two distinct bug fixes or refactors, or
+  coupling a runtime/attach fix with unrelated CI workflow expansion). If a PR
+  title needs `and` to join separate topics or its diff spans independent
+  subsystems, split it immediately into separate atomic PRs against `master`.
 - Make the smallest change that satisfies the task. Prefer deleting dead or
   duplicated code over adding new code.
 - Do not modify files unrelated to the change. A refactor that moves a module
@@ -353,8 +361,10 @@ may cross the syscall-server / attach boundary.
 
 Before opening or updating a pull request, self-review against this checklist:
 
-1. Is there any over-engineering (speculative abstractions, unused config knobs,
+1. Does this PR do strictly one thing (no independent changes bundled with
+   `and` across unrelated files or subsystems)?
+2. Is there any over-engineering (speculative abstractions, unused config knobs,
    unrelated refactors)?
-2. Is there any over-testing (boilerplate, mocks, or duplicated coverage)?
-3. Can more than half of the diff be cut while still fixing the root cause?
-4. Are any new shared libraries or cross-process state strictly necessary?
+3. Is there any over-testing (boilerplate, mocks, or duplicated coverage)?
+4. Can more than half of the diff be cut while still fixing the root cause?
+5. Are any new shared libraries or cross-process state strictly necessary?

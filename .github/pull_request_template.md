@@ -45,6 +45,7 @@ Fixes # (issue)
 ## Checklist
 
 - [ ] My code follows the style guidelines and `AGENTS.md` / `CLAUDE.md` of this project
+- [ ] Single responsibility (one PR, one thing): addresses one independent root cause or cohesive capability without bundling orthogonal changes ("A and B")
 - [ ] I have performed a self-review of my own code and my changes generate no new warnings
 - [ ] No over-engineering: smallest necessary diff (~50-100 prod lines target where feasible), no speculative abstractions, unused config knobs, or unnecessary new `.so` libraries
 - [ ] No over-testing: concise, high-signal regression tests covering the real failure mode without mock/scaffolding bloat

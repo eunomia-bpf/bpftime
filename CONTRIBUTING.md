@@ -73,7 +73,7 @@ Describe any manual testing you performed to validate your change.
 
 ### DO NOTs
 
-* **DO NOT** merge multiple changes into one PR unless they have the same root cause.
+* **DO NOT** bundle multiple independent changes into one PR (**one PR, one thing**). Never combine separately buildable, testable, or revertible changes with `and` (such as unrelated bug fixes, refactors, dependency updates, or CI changes); split orthogonal work into separate atomic PRs against `master`.
 
 > Submitting a pull request for an approved Issue is not a guarantee it will be approved.
 > The change must meet our high bar for code quality, architecture and performance.
