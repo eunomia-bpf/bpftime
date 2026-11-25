@@ -160,12 +160,10 @@ the tracking entry and the regression coverage in the same pull request.
    boundary; catch at the boundary and fail open. Tracked residual sites are
    collected under issue #605. The text-segment transformer's `exit(1)`
    sites were removed in #761, which now returns the failure and leaves the
-   untransformed segment running. A reinitialized global shm can still leave
-   the agent-local `local_runtime_config` empty until `set_runtime_config`
-   runs again; `get_runtime_config()` then dereferences an empty
-   `std::optional` and can SIGSEGV the host
-   (`runtime/src/bpftime_shm_internal.cpp`), a residual host-crash path
-   tracked under #605.
+   untransformed segment running. Every `bpftime_shm` construction seeds
+   the process-local `local_runtime_config` from the environment, so
+   `get_runtime_config()` never dereferences an empty `std::optional` when
+   no shared config exists.
 2. **Fail open to the host operation.** When an interposed call, shim, or
    attach cannot be serviced, fall back to the original libc/syscall
    behavior (or skip the affected probe) instead of failing the host call.
