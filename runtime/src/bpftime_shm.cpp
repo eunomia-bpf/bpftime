@@ -336,20 +336,6 @@ int bpftime_is_ringbuf_map(int fd)
 	return shm_holder.global_shared_memory.is_ringbuf_map_fd(fd);
 }
 
-void bpftime_protect_enable()
-{
-#if BPFTIME_ENABLE_MPK
-	return shm_holder.global_shared_memory.enable_mpk();
-#endif
-}
-
-void bpftime_protect_disable()
-{
-#if BPFTIME_ENABLE_MPK
-	return shm_holder.global_shared_memory.disable_mpk();
-#endif
-}
-
 int bpftime_is_map_fd(int fd)
 {
 	return shm_holder.global_shared_memory.is_map_fd(fd);
@@ -765,6 +751,7 @@ void *bpftime_get_software_perf_event_raw_buffer(int fd, size_t expected_size)
 
 int bpftime_perf_event_output(int fd, const void *buf, size_t sz)
 {
+	shm_write_window_guard shm_window;
 	auto &shm = shm_holder.global_shared_memory;
 	if (!shm.is_perf_event_handler_fd(fd)) {
 		SPDLOG_ERROR("Expected fd {} to be a perf event handler", fd);
@@ -789,6 +776,7 @@ int bpftime_perf_event_output(int fd, const void *buf, size_t sz)
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz)
 {
+	shm_write_window_guard shm_window;
 	SPDLOG_DEBUG("Output data into shared perf event array fd {}", map_fd);
 	auto &shm = shm_holder.global_shared_memory;
 	if (!shm.is_shared_perf_event_array_map_fd(map_fd)) {

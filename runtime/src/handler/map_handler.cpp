@@ -108,6 +108,7 @@ bpf_map_handler::try_get_nv_gpu_ringbuf_map_impl() const
 const void *bpf_map_handler::map_lookup_elem(const void *key,
 					     bool from_syscall) const
 {
+	shm_write_window_guard shm_window;
 	const auto do_lookup = [&](auto *impl) -> const void * {
 		if (impl->should_lock) {
 			bpftime_lock_guard guard(map_lock);
@@ -301,6 +302,7 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 long bpf_map_handler::map_update_elem(const void *key, const void *value,
 				      uint64_t flags, bool from_syscall) const
 {
+	shm_write_window_guard shm_window;
 	const auto do_update = [&](auto *impl) -> long {
 		if (impl->should_lock) {
 			bpftime_lock_guard guard(map_lock);
@@ -487,6 +489,7 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 					  bool from_syscall) const
 {
+	shm_write_window_guard shm_window;
 	const auto do_get_next_key = [&](auto *impl) -> int {
 		if (impl->should_lock) {
 			bpftime_lock_guard guard(map_lock);
@@ -654,6 +657,7 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 
 long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 {
+	shm_write_window_guard shm_window;
 	const auto do_delete = [&](auto *impl) -> long {
 		if (impl->should_lock) {
 			bpftime_lock_guard guard(map_lock);
@@ -1485,6 +1489,7 @@ int bpftime_register_map_ops(int map_type, bpftime_map_ops *ops)
 long bpf_map_handler::map_push_elem(const void *value, uint64_t flags,
 				    bool from_syscall) const
 {
+	shm_write_window_guard shm_window;
 	const auto do_push = [&](auto *impl) -> long {
 		if (impl->should_lock) {
 			bpftime_lock_guard guard(map_lock);
@@ -1517,6 +1522,7 @@ long bpf_map_handler::map_push_elem(const void *value, uint64_t flags,
 
 long bpf_map_handler::map_pop_elem(void *value, bool from_syscall) const
 {
+	shm_write_window_guard shm_window;
 	const auto do_pop = [&](auto *impl) -> long {
 		if (impl->should_lock) {
 			bpftime_lock_guard guard(map_lock);
@@ -1545,6 +1551,7 @@ long bpf_map_handler::map_pop_elem(void *value, bool from_syscall) const
 long bpf_map_handler::map_lookup_and_delete_elem(const void *key, void *value,
 						 bool from_syscall) const
 {
+	shm_write_window_guard shm_window;
 	// The kernel dispatches by map type: queue/stack take the keyless pop
 	// path, the hash variants (HASH, PERCPU_HASH, LRU_HASH,
 	// LRU_PERCPU_HASH, STACK_TRACE) take a keyed lookup-then-delete. See

@@ -223,6 +223,7 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 int bpftime::bpftime_import_shm_handler_from_json(bpftime_shm &shm, int fd,
 						  const char *json_string)
 {
+	shm_write_window_guard shm_window(shm);
 	json j = json::parse(json_string);
 	return import_shm_handler_from_json(shm, j, fd);
 }
@@ -237,6 +238,7 @@ extern "C" int bpftime_import_shm_handler_from_json(int fd,
 int bpftime::bpftime_import_shm_from_json(bpftime_shm &shm,
 					  const char *filename)
 {
+	shm_write_window_guard shm_window(shm);
 	ifstream file(filename);
 	json j;
 	file >> j;
