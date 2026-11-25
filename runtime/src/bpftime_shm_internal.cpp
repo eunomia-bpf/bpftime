@@ -916,6 +916,9 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 	auto config = construct_runtime_config_from_env();
 	size_t memory_size = config.shm_memory_size;
 	size_t max_fd_count = config.max_fd_count;
+	// Seed the process-local fallback so get_runtime_config() never
+	// dereferences an empty optional when no shared config exists.
+	local_runtime_config.emplace(config);
 	if (type == shm_open_type::SHM_OPEN_ONLY) {
 		SPDLOG_DEBUG("start: bpftime_shm for client setup");
 		// open the shm
@@ -1083,7 +1086,6 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		}
 	}
 #endif
-	// local_runtime_config.emplace(segment);
 
 #if BPFTIME_ENABLE_MPK
 	// init mpk key
