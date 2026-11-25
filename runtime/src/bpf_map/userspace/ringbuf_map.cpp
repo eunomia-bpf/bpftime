@@ -6,12 +6,13 @@
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
 #include <bpf_map/userspace/ringbuf_map.hpp>
-#include <pthread.h>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
+#include <cerrno>
+#include <cstdint>
+#include <unistd.h>
 #if defined(__linux__)
 #include <sys/eventfd.h>
-#include <unistd.h>
 #ifndef BPF_RB_NO_WAKEUP
 #define BPF_RB_NO_WAKEUP 1U
 #endif
@@ -197,7 +198,32 @@ ringbuf::ringbuf(uint32_t max_ent,
 	producer_pos =
 		(unsigned long *)(uintptr_t)(&((*raw_buffer)[page_size]));
 	data = (uint8_t *)(uintptr_t)(&((*raw_buffer)[page_size * 2]));
-	pthread_spin_init(&this->reserve_spin_lock, 1);
+	pthread_mutexattr_t attr;
+	if (pthread_mutexattr_init(&attr) != 0)
+		throw std::runtime_error(
+			"Failed to initialize ringbuf reserve lock attributes");
+	// The mutex lives in shared memory and is taken by every producer
+	// process, so it is process-shared and, on Linux, robust: a killed
+	// holder (SIGKILL included, zombie included) makes the next lock
+	// return EOWNERDEAD instead of wedging producers. Darwin has no
+	// robust mutexes; there it blocks until released, as before.
+	int attr_rc = pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+#if defined(__linux__)
+	if (attr_rc == 0)
+		attr_rc = pthread_mutexattr_setrobust(&attr, PTHREAD_MUTEX_ROBUST);
+#endif
+	if (attr_rc != 0) {
+		pthread_mutexattr_destroy(&attr);
+		throw std::runtime_error(
+			"Failed to configure ringbuf reserve lock attributes: " +
+			std::to_string(attr_rc));
+	}
+	int lock_rc = pthread_mutex_init(&reserve_lock, &attr);
+	pthread_mutexattr_destroy(&attr);
+	if (lock_rc != 0)
+		throw std::runtime_error(
+			"Failed to initialize ringbuf reserve lock: pthread_mutex_init returned " +
+			std::to_string(lock_rc));
 #if defined(__linux__)
 	// A non-blocking eventfd needs no capabilities: it is a plain kernel
 	// object shared with consumers through SCM_RIGHTS, never through
@@ -278,23 +304,6 @@ struct ringbuf_hdr {
 	int32_t fd;
 };
 
-struct spin_lock_guard {
-	pthread_spinlock_t &lock;
-	spin_lock_guard(pthread_spinlock_t &lock) : lock(lock)
-	{
-		int ret = pthread_spin_lock(&lock);
-		if (ret != 0) {
-			throw std::runtime_error(
-				"Failed to acquire spin lock: pthread_spin_lock returned " +
-				std::to_string(ret));
-		}
-	}
-	~spin_lock_guard()
-	{
-		pthread_spin_unlock(&lock);
-	}
-};
-
 void *ringbuf::reserve(size_t size, int self_fd)
 {
 	if (size & (BPF_RINGBUF_BUSY_BIT | BPF_RINGBUF_DISCARD_BIT)) {
@@ -304,45 +313,86 @@ void *ringbuf::reserve(size_t size, int self_fd)
 			size, self_fd);
 		return nullptr;
 	}
-	spin_lock_guard guard(reserve_spin_lock);
-	auto cons_pos = smp_load_acquire_ul(consumer_pos.get());
-	auto prod_pos = smp_load_acquire_ul(producer_pos.get());
-	auto avail_size = max_ent - (prod_pos - cons_pos);
-	auto total_size = (size + BPF_RINGBUF_HDR_SZ + 7) / 8 * 8;
+	const unsigned long total_size =
+		(size + BPF_RINGBUF_HDR_SZ + 7) / 8 * 8;
 	if (total_size > max_ent) {
 		errno = E2BIG;
 		return nullptr;
 	}
-	if (avail_size < total_size) {
+
+	/*
+	 * Kernel/libbpf ABI ordering is preserved: every header (padding
+	 * and record alike) carries BUSY_BIT and is published before
+	 * producer_pos moves. If the holder is killed before that,
+	 * producer_pos is untouched and the next owner overwrites the same
+	 * slots; if killed afterwards, the headers were already visible.
+	 */
+	int rc = pthread_mutex_lock(&reserve_lock);
+	// EOWNERDEAD means the holder died; reservation state stays valid
+	// because BUSY headers are published before producer_pos moves, so
+	// mark the mutex consistent. Robust mutexes and these symbols exist
+	// on Linux only in this runtime.
+#if defined(__linux__)
+	if (rc == EOWNERDEAD)
+		rc = pthread_mutex_consistent(&reserve_lock);
+#endif
+	if (rc != 0)
+		throw std::runtime_error(
+			"Failed to acquire ringbuf reserve lock: pthread_mutex_lock returned " +
+			std::to_string(rc));
+	// Unlocks on every reserve() exit, including the ENOSPC return.
+	struct unlock_guard {
+		const ringbuf &rb;
+		~unlock_guard()
+		{
+			pthread_mutex_unlock(&rb.reserve_lock);
+		}
+	} guard{ *this };
+
+	const unsigned long cons_pos =
+		smp_load_acquire_ul(consumer_pos.get());
+	const unsigned long prod_pos =
+		smp_load_acquire_ul(producer_pos.get());
+	const unsigned long off = prod_pos & mask();
+	const bool need_padding = off + total_size > max_ent;
+	const unsigned long record_pos =
+		need_padding ? (prod_pos - off + max_ent) : prod_pos;
+	// Unconsumed bytes plus this reservation (padding already accounted
+	// for in record_pos) must fit the ring. Compute the sum before the
+	// comparison so the check cannot wrap unsigned and admit a record
+	// overlapping data the consumer has not drained.
+	if ((record_pos - cons_pos) + total_size > max_ent) {
 		errno = ENOSPC;
 		return nullptr;
 	}
-	auto off = prod_pos & mask();
-	if (off + total_size > max_ent) {
-		// A record must be contiguous: header and payload cannot
-		// wrap around the end of the data area independently.
-		// Skip to the beginning of the next lap and mark the
-		// skipped bytes as one zero-length discard record, so the
-		// consumer walks over the padding with its existing
-		// roundup_len stepping.
-		prod_pos = prod_pos - off + max_ent;
-		if (max_ent - (prod_pos - cons_pos) < total_size) {
-			errno = ENOSPC;
-			return nullptr;
-		}
+
+	uint32_t header_off = (uint32_t)off;
+	if (need_padding) {
+		// A record must stay contiguous, so the tail that does not
+		// fit is closed with one discard record spanning to the end
+		// of the lap. The consumer steps over it with roundup_len().
 		auto pad = (ringbuf_hdr *)(uintptr_t)(data.get() + off);
-		auto pad_len = (uint32_t)(max_ent - off - BPF_RINGBUF_HDR_SZ);
-		pad->len = pad_len | BPF_RINGBUF_DISCARD_BIT;
+		const uint32_t pad_len =
+			(uint32_t)(max_ent - off - BPF_RINGBUF_HDR_SZ);
 		pad->fd = self_fd;
-		off = 0;
+		__atomic_store_n(&pad->len,
+				 pad_len | BPF_RINGBUF_DISCARD_BIT,
+				 __ATOMIC_RELEASE);
+		header_off = 0;
 	}
-	auto header = (ringbuf_hdr *)(uintptr_t)(data.get() + off);
-	header->len = size | BPF_RINGBUF_BUSY_BIT;
+	auto header =
+		(ringbuf_hdr *)(uintptr_t)(data.get() + header_off);
 	header->fd = self_fd;
-	smp_store_release_ul(producer_pos.get(), prod_pos + total_size);
-	// `off` is the header slot after any end-of-lap padding, so the sample
-	// always follows its header and never wraps on its own.
-	auto ptr = data.get() + off + BPF_RINGBUF_HDR_SZ;
+	// BUSY_BIT is visible in the header BEFORE producer_pos is published.
+	__atomic_store_n(&header->len, (uint32_t)size | BPF_RINGBUF_BUSY_BIT,
+			 __ATOMIC_RELEASE);
+	// Linearizing publish: advance producer_pos last.
+	smp_store_release_ul(producer_pos.get(), record_pos + total_size);
+
+	// The mutex is released by the local guard when reserve() returns.
+	// `header_off` is the header slot after any end-of-lap padding, so the
+	// sample always follows its header and never wraps on its own.
+	auto ptr = data.get() + header_off + BPF_RINGBUF_HDR_SZ;
 	SPDLOG_TRACE("ringbuf: reserved {} bytes at {}, fd {}", size,
 		     (void *)ptr, self_fd);
 	return ptr;
@@ -368,7 +418,7 @@ ringbuf::~ringbuf()
 	if (kernel_eventfd >= 0 && eventfd_owner_pid == getpid())
 		close(kernel_eventfd);
 #endif
-	pthread_spin_destroy(&this->reserve_spin_lock);
+	pthread_mutex_destroy(&reserve_lock);
 }
 
 bool ringbuf::should_wakeup(const void *sample, uint64_t flags) const

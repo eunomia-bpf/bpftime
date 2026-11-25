@@ -15,12 +15,10 @@
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
 #include <boost/interprocess/smart_ptr/weak_ptr.hpp>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <pthread.h>
-// Darwin libpthread has no pthread_spinlock_t; the wrapper supplies a
-// cross-platform Spinlock-backed type with the same interface.
-#include "spinlock_wrapper.hpp"
 #include <vector>
 
 namespace bpftime
@@ -47,8 +45,10 @@ class ringbuf {
 	int kernel_eventfd = -1;
 	int32_t eventfd_owner_pid = 0;
 #endif
-	// Guard for reserving memory
-	mutable pthread_spinlock_t reserve_spin_lock;
+	// Process-shared reserve lock (PTHREAD_PROCESS_SHARED). On Linux
+	// it is also robust: a killed holder hands the lock to the next
+	// locker via EOWNERDEAD instead of wedging all producers.
+	mutable pthread_mutex_t reserve_lock;
 	// raw buffer
 	buf_vec_unique_ptr raw_buffer;
 
@@ -76,6 +76,17 @@ class ringbuf {
 		boost::interprocess::managed_shared_memory &memory);
 	friend class ringbuf_map_impl;
 	~ringbuf();
+
+	// Test-only seam: hold the lock across a fork+SIGKILL so robust
+	// mutex recovery is exercised deterministically.
+	void lock_for_testing() const
+	{
+		pthread_mutex_lock(&reserve_lock);
+	}
+	void unlock_for_testing() const
+	{
+		pthread_mutex_unlock(&reserve_lock);
+	}
 };
 
 using ringbuf_shared_ptr = boost::interprocess::managed_shared_ptr<
