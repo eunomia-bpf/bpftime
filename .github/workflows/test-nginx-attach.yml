@@ -6,6 +6,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-nginx-attach.yml"
+      - ".github/actions/ccache/**"
       - ".github/script/run_nginx_attach_example.py"
       - "attach/**"
       - "example/attach_implementation/**"
@@ -19,6 +20,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-nginx-attach.yml"
+      - ".github/actions/ccache/**"
       - ".github/script/run_nginx_attach_example.py"
       - "attach/**"
       - "example/attach_implementation/**"

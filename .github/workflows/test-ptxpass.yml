@@ -6,6 +6,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-ptxpass.yml"
+      - ".github/actions/ccache/**"
       - "attach/nv_attach_impl/**"
       - "runtime/**"
       - "vm/**"
@@ -17,6 +18,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-ptxpass.yml"
+      - ".github/actions/ccache/**"
       - "attach/nv_attach_impl/**"
       - "runtime/**"
       - "vm/**"
