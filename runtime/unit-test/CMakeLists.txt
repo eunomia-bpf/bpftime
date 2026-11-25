@@ -42,12 +42,14 @@ set(TEST_SOURCES
 
     test_bpftime_shm_json.cpp
     test_probe.cpp
+    test_process_filter.cpp
     test_cpu_execution.cpp
     test_get_current_pid_tgid.cpp
     test_get_stack.cpp
     test_tracepoint_id.cpp
     test_config.cpp
     test_shm_allocation_failure.cpp
+    test_atomic_pid_set.cpp
     test_software_perf_event.cpp
     test_software_perf_event_cache.cpp
     test_ringbuf_tail_wrap.cpp
@@ -61,6 +63,7 @@ set(TEST_SOURCES
     test_handle_fd_reservation.cpp
     test_attach_failures.cpp
     test_memfd_create.cpp
+    test_robust_shm_mutex.cpp
 
     attach_with_ebpf/test_attach_uprobe_with_ebpf_trap.cpp
     attach_with_ebpf/test_helpers.cpp

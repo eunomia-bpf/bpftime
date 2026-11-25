@@ -81,19 +81,6 @@ namespace bpftime
 {
 namespace
 {
-struct spin_lock_guard {
-	pthread_spinlock_t &lock;
-	explicit spin_lock_guard(pthread_spinlock_t &lock) : lock(lock)
-	{
-		pthread_spin_lock(&lock);
-	}
-	~spin_lock_guard()
-	{
-		pthread_spin_unlock(&lock);
-	}
-	spin_lock_guard(const spin_lock_guard &) = delete;
-	spin_lock_guard &operator=(const spin_lock_guard &) = delete;
-};
 
 #if __linux__
 // gettid() has not been cached by glibc since 2.25, so every software perf
@@ -584,15 +571,13 @@ software_perf_event_data::software_perf_event_data(
 	  consumer_buffer(pagesize, memory.get_segment_manager()),
 	  producer_shards(memory.get_segment_manager())
 {
-	pthread_spin_init(&shard_lock, PTHREAD_PROCESS_SHARED);
 }
 
 software_perf_event_data::~software_perf_event_data()
 {
-	pthread_spin_destroy(&shard_lock);
 }
 
-software_perf_event_shard &software_perf_event_data::get_current_thread_shard()
+software_perf_event_shard *software_perf_event_data::get_current_thread_shard()
 {
 	const int pid = getpid();
 	const int64_t tid = current_thread_id();
@@ -608,14 +593,21 @@ software_perf_event_shard &software_perf_event_data::get_current_thread_shard()
 			   entry.shard->generation == entry.shard_generation &&
 			   entry.shard->buffer_generation ==
 				   current_buffer_generation) {
-			return *entry.shard;
+			return entry.shard;
 		} else {
 			entry.owner = nullptr;
 		}
 		break;
 	}
 
-	spin_lock_guard guard(shard_lock);
+	// Taint, never recover: emplace_back may reallocate the SHM vector and
+	// reclaim erases shift elements, so a dead holder can leave producer_shards
+	// half-mutated. A failed lock fails open: this thread simply drops the
+	// sample (output_data returns -EBUSY) instead of touching corrupt state.
+	robust_shm_lock_guard guard(
+		shard_lock, "perf-event producer shards");
+	if (!guard.owns_lock())
+		return nullptr;
 	current_buffer_generation = READ_ONCE_U64(producer_buffer_generation);
 	if (producer_shards.size() >=
 	    software_perf_event_reclaim_shard_threshold) {
@@ -628,7 +620,7 @@ software_perf_event_shard &software_perf_event_data::get_current_thread_shard()
 				event_generation, current_buffer_generation,
 				shard.generation, &shard, this
 			});
-			return shard;
+			return &shard;
 		}
 	}
 
@@ -637,21 +629,29 @@ software_perf_event_shard &software_perf_event_data::get_current_thread_shard()
 				     current_buffer_generation, pagesize,
 				     manager,
 				     consumer_buffer.mmap_buffer.size());
-	auto &shard = producer_shards.back();
+	auto &new_shard = producer_shards.back();
 	cache_software_perf_event_shard({ event_generation,
 						  current_buffer_generation,
-						  shard.generation, &shard, this });
-	return shard;
+						  new_shard.generation, &new_shard, this });
+	return &new_shard;
 }
 
-void software_perf_event_data::drain_producer_shards()
+bool software_perf_event_data::drain_producer_shards()
 {
-	spin_lock_guard guard(shard_lock);
+	// Taint policy: a failed lock skips this drain round and reports
+	// failure. The caller must not touch consumer_buffer either: a dead
+	// holder may have died inside ensure_mmap_buffer() while reallocating
+	// it, leaving the buffer/header half-published.
+	robust_shm_lock_guard guard(
+		shard_lock, "perf-event producer shards");
+	if (!guard.owns_lock())
+		return false;
 	for (auto &shard : producer_shards) {
 		while (shard.buffer.copy_next_record_to(consumer_buffer)) {
 		}
 	}
 	maybe_reclaim_inactive_producer_shards_locked();
+	return true;
 }
 
 void software_perf_event_data::maybe_reclaim_inactive_producer_shards_locked()
@@ -685,7 +685,12 @@ void software_perf_event_data::reclaim_inactive_producer_shards_locked()
 
 bool software_perf_event_data::has_data()
 {
-	drain_producer_shards();
+	// Fail closed when the shard lock is tainted: report no data instead
+	// of dereferencing a consumer_buffer that a dead resizer may have
+	// torn, so the epoll poll skips this event rather than reading an
+	// incomplete perf header.
+	if (!drain_producer_shards())
+		return false;
 	return consumer_buffer.has_data();
 }
 
@@ -697,7 +702,12 @@ software_perf_event_data::get_header_ref_const() const
 
 int software_perf_event_data::output_data(const void *buf, size_t size)
 {
-	return get_current_thread_shard().buffer.output_data(buf, size);
+	software_perf_event_shard *shard = get_current_thread_shard();
+	if (shard == nullptr) {
+		errno = EBUSY;
+		return -1;
+	}
+	return shard->buffer.output_data(buf, size);
 }
 
 perf_event_mmap_page &software_perf_event_data::get_header_ref()
@@ -707,7 +717,14 @@ perf_event_mmap_page &software_perf_event_data::get_header_ref()
 
 void *software_perf_event_data::ensure_mmap_buffer(size_t buffer_size)
 {
-	spin_lock_guard guard(shard_lock);
+	// Taint policy: refuse the mmap resize with -EBUSY rather than resuming a
+	// half-mutated producer vector after a dead holder.
+	robust_shm_lock_guard guard(
+		shard_lock, "perf-event producer shards");
+	if (!guard.owns_lock()) {
+		errno = EBUSY;
+		return nullptr;
+	}
 	const size_t old_buffer_size = consumer_buffer.mmap_buffer.size();
 	void *result = consumer_buffer.ensure_mmap_buffer(buffer_size);
 	if (result == nullptr) {

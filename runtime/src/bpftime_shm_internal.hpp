@@ -10,9 +10,13 @@
 #include "bpf_map/userspace/stack_trace_map.hpp"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
+#include <atomic>
+#include <cerrno>
 #include <cstddef>
 #include <functional>
-#include <boost/interprocess/containers/set.hpp>
+#if defined(__unix__) || defined(__APPLE__)
+#include <signal.h>
+#endif
 #include "bpftime_shm.hpp"
 #include <handler/handler_manager.hpp>
 #include <optional>
@@ -60,20 +64,108 @@ struct bpftime_cpu_exec_locks {
 	boost::interprocess::interprocess_mutex locks[BPFTIME_MAX_CPU_COUNT];
 };
 
-using alive_agent_pid_set_allocator = boost::interprocess::allocator<
-	int, boost::interprocess::managed_shared_memory::segment_manager>;
+// Fixed-capacity, lock-free PID table stored directly in shared memory.
+// Slot value 0 means empty. Every operation is atomic: no heap/SHM
+// allocation and no interprocess lock, so a process killed mid-operation
+// can never block the other processes attached to the same segment.
+template <std::size_t Capacity> struct atomic_pid_set {
+	static_assert(std::atomic<std::int32_t>::is_always_lock_free,
+		      "PID slots need lock-free atomics in shared memory");
+	std::atomic<std::int32_t> slots[Capacity]{};
 
-using alive_agent_pids =
-	boost::interprocess::set<int, std::less<int>,
-				 alive_agent_pid_set_allocator>;
+	// Idempotent: returns true when pid is present after the call.
+	// A concurrent insert racing a remove of the same pid can occupy two
+	// slots transiently; remove() reclaims all matching slots, and the
+	// bookkeeping callers treat repeated iteration of one pid as harmless.
+	bool insert(int pid) noexcept
+	{
+		if (pid <= 0)
+			return false;
+		const auto value = static_cast<std::int32_t>(pid);
+		for (;;) {
+			std::size_t empty = Capacity;
+			for (std::size_t i = 0; i < Capacity; ++i) {
+				auto current = slots[i].load(
+					std::memory_order_acquire);
+				if (current == value)
+					return true;
+				if (empty == Capacity && current == 0)
+					empty = i;
+			}
+			if (empty == Capacity && !reclaim_dead_slots())
+				return false;
+			if (empty == Capacity)
+				continue; // rescan for a reclaimed slot
+			auto expected = std::int32_t(0);
+			if (slots[empty].compare_exchange_strong(
+				    expected, value, std::memory_order_acq_rel,
+				    std::memory_order_acquire))
+				return true;
+			// Lost the race for this slot; rescan for the
+			// duplicate and another empty slot.
+		}
+	}
 
-using alive_syscall_server_pid_set_allocator =
-	boost::interprocess::allocator<
-		int, boost::interprocess::managed_shared_memory::segment_manager>;
+	// Runs only when no empty slot remains. Clears slots whose processes
+	// have exited, so admission cannot fail on stale entries left by
+	// processes that never ran their deregistration (e.g. SIGKILL).
+	// Mirrors the runtime pid_is_alive() convention: kill(pid, 0)
+	// succeeds or fails EPERM for live processes, ESRCH means gone.
+	// Zombies stay visible until reaped, as their parent can still
+	// observe them.
+	bool reclaim_dead_slots() noexcept
+	{
+		bool reclaimed = false;
+		for (auto &slot : slots) {
+			auto current = slot.load(std::memory_order_acquire);
+			if (current == 0)
+				continue;
+#if defined(__unix__) || defined(__APPLE__)
+			if (::kill(current, 0) == 0 || errno == EPERM)
+				continue;
+			if (slot.compare_exchange_strong(
+				    current, 0, std::memory_order_acq_rel,
+				    std::memory_order_acquire))
+				reclaimed = true;
+#endif
+		}
+		return reclaimed;
+	}
 
-using alive_syscall_server_pid_set =
-	boost::interprocess::set<int, std::less<int>,
-				 alive_syscall_server_pid_set_allocator>;
+	// Clears every slot holding pid; returns true if one was cleared.
+	bool remove(int pid) noexcept
+	{
+		if (pid <= 0)
+			return false;
+		const auto value = static_cast<std::int32_t>(pid);
+		bool removed = false;
+		for (auto &slot : slots) {
+			auto current = slot.load(std::memory_order_acquire);
+			while (current == value) {
+				if (slot.compare_exchange_weak(
+					    current, 0,
+					    std::memory_order_acq_rel,
+					    std::memory_order_acquire)) {
+					removed = true;
+					break;
+				}
+			}
+		}
+		return removed;
+	}
+
+	template <typename Callback> void iterate(Callback &&callback) const
+	{
+		for (auto &slot : slots) {
+			auto pid = slot.load(std::memory_order_acquire);
+			if (pid != 0)
+				callback(static_cast<int>(pid));
+		}
+	}
+};
+
+using alive_agent_pids = atomic_pid_set<4096>;
+using alive_syscall_server_pid_set = atomic_pid_set<64>;
 
 // global bpftime share memory
 class bpftime_shm {
@@ -94,9 +186,6 @@ class bpftime_shm {
 
 	// Record which pids own or use the syscall-server side of this shm.
 	alive_syscall_server_pid_set *alive_syscall_server_pids = nullptr;
-
-	// Guards pid bookkeeping sets stored in shared memory.
-	boost::interprocess::interprocess_mutex *pid_set_lock = nullptr;
 
 	bpftime_global_epoch_state *epoch_state = nullptr;
 	bpftime_cpu_exec_locks *cpu_exec_locks = nullptr;
@@ -320,8 +409,8 @@ public:
 	int translate_shared_map_type_to_kernel_map_type(int type);
 
 #if BPFTIME_ENABLE_MPK
-	void enable_mpk();
-	void disable_mpk();
+	int open_mpk_write_window();
+	void restore_mpk_rights(int saved);
 #endif
 
 	// initialize the shared memory globally

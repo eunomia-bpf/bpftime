@@ -74,6 +74,7 @@ TEST_CASE("ringbuf keeps tail-straddling records contiguous and consumable",
 	// record is written exactly at the current producer offset and the
 	// wrap position is exercised deterministically.
 	for (uint64_t seq = 0; seq < 200; ++seq) {
+		bpftime::shm_write_window_guard shm_window;
 		auto *payload = bpftime_ringbuf_reserve(rb_fd, sizeof(rec));
 		REQUIRE(payload != nullptr);
 		auto *r = static_cast<rec *>(payload);

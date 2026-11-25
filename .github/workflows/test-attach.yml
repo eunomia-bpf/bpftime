@@ -6,6 +6,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-attach.yml"
+      - ".github/actions/ccache/**"
       - "attach/**"
       - "runtime/**"
       - "vm/**"
@@ -17,6 +18,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-attach.yml"
+      - ".github/actions/ccache/**"
       - "attach/**"
       - "runtime/**"
       - "vm/**"

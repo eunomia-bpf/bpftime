@@ -20,9 +20,7 @@
 #include "linux/perf_event.h"
 #endif
 #include "bpftime_shm.hpp"
-#include <pthread.h>
-// Darwin libpthread lacks pthread_spinlock_t; use the cross-platform wrapper.
-#include "spinlock_wrapper.hpp"
+#include "robust_shm_mutex.hpp"
 #include <variant>
 
 namespace bpftime
@@ -131,7 +129,7 @@ struct software_perf_event_data {
 	uint64_t event_generation;
 	uint64_t producer_buffer_generation = 1;
 	software_perf_event_buffer consumer_buffer;
-	mutable pthread_spinlock_t shard_lock;
+	mutable robust_shm_mutex shard_lock;
 	uint64_t next_shard_generation = 1;
 	uint64_t drains_since_reclaim = 0;
 	software_perf_event_shard_list producer_shards;
@@ -147,8 +145,8 @@ struct software_perf_event_data {
 	bool has_data();
 
     private:
-	software_perf_event_shard &get_current_thread_shard();
-	void drain_producer_shards();
+	software_perf_event_shard *get_current_thread_shard();
+	bool drain_producer_shards();
 	void maybe_reclaim_inactive_producer_shards_locked();
 	void reclaim_inactive_producer_shards_locked();
 };

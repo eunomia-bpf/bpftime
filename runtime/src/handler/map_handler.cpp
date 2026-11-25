@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <string>
+#include <type_traits>
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 #include "cuda.h"
 #include "bpf_map/gpu/nv_gpu_per_thread_array_map.hpp"
@@ -50,10 +51,123 @@ namespace bpftime
 using hash_map_impl = fix_size_hash_map_impl;
 
 namespace {
+#if defined(__GNUC__) || defined(__clang__)
+#define BPFTIME_ALWAYS_INLINE __attribute__((always_inline))
+#else
+#define BPFTIME_ALWAYS_INLINE
+#endif
+
 // Stable per-thread slot for the syscall map-in-map inner fd. The 4-byte value
 // is copied here while map_lock is held, so the caller's subsequent memcpy
 // cannot read a hash node freed by a concurrent delete.
 thread_local int tl_map_in_map_fd_snapshot;
+
+// Per-cpu impls expose separate *_userspace entry points for fd-based
+// syscall access; map-in-map impls carry the inner-fd snapshot semantics.
+template <typename T>
+constexpr bool is_percpu_map_v =
+	std::is_same_v<T, per_cpu_array_map_impl> ||
+	std::is_same_v<T, per_cpu_hash_map_impl>;
+
+template <typename T>
+constexpr bool is_lru_hash_v =
+	std::is_same_v<T, lru_var_hash_map_impl>;
+
+template <typename T>
+constexpr bool is_map_in_map_v =
+	std::is_same_v<T, array_map_of_maps_impl> ||
+	std::is_same_v<T, hash_map_of_maps_impl>;
+
+// Run fn while holding map_lock when the map impl requests locking; run it
+// directly otherwise. Every map impl declares should_lock, so this preserves
+// the exact locking of the previous per-operation dispatch.
+template <typename Fn>
+BPFTIME_ALWAYS_INLINE inline decltype(auto)
+with_optional_lock(bool should_lock, volatile pthread_spinlock_t &lock,
+		   Fn &&fn)
+{
+	if (should_lock) {
+		bpftime_lock_guard guard(lock);
+		return fn();
+	}
+	return fn();
+}
+
+// Compile-time dispatch over the builtin map implementations. Each known
+// type resolves the shared-memory pointer inside its case and invokes fn
+// with it. The preprocessor guards match map_init exactly, so types absent
+// from the current configuration take on_default; unknown types and types
+// registered through global_map_ops_table use the same fallback.
+template <typename GetPtr, typename Fn, typename Fallback>
+BPFTIME_ALWAYS_INLINE inline decltype(auto)
+visit_map_impl(bpf_map_type type, GetPtr &&get_ptr, Fn &&fn,
+	       Fallback &&on_default)
+{
+	switch (type) {
+	case bpf_map_type::BPF_MAP_TYPE_HASH:
+		return fn(static_cast<hash_map_impl *>(get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_ARRAY: [[likely]]
+		return fn(static_cast<array_map_impl *>(get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_RINGBUF:
+		return fn(static_cast<ringbuf_map_impl *>(get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY:
+		return fn(static_cast<perf_event_array_map_impl *>(get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY:
+		return fn(static_cast<per_cpu_array_map_impl *>(get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH:
+		return fn(static_cast<per_cpu_hash_map_impl *>(get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_STACK_TRACE:
+		return fn(static_cast<stack_trace_map_impl *>(get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_QUEUE:
+		return fn(static_cast<queue_map_impl *>(get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_STACK:
+		return fn(static_cast<stack_map_impl *>(get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER:
+		return fn(static_cast<bloom_filter_map_impl *>(get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH:
+		return fn(static_cast<lru_var_hash_map_impl *>(get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_LPM_TRIE:
+		return fn(static_cast<lpm_trie_map_impl *>(get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS:
+		return fn(static_cast<array_map_of_maps_impl *>(get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS:
+		return fn(static_cast<hash_map_of_maps_impl *>(get_ptr()));
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY:
+		return fn(static_cast<array_map_kernel_user_impl *>(get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH:
+		return fn(static_cast<hash_map_kernel_user_impl *>(get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERCPU_ARRAY:
+		return fn(static_cast<percpu_array_map_kernel_user_impl *>(
+			get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY:
+		return fn(static_cast<perf_event_array_kernel_user_impl *>(
+			get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY:
+		return fn(static_cast<prog_array_map_impl *>(get_ptr()));
+#endif
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+	case bpf_map_type::BPF_MAP_TYPE_GPU_HASH_MAP:
+		return fn(static_cast<nv_gpu_shared_hash_map_impl *>(get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP:
+		return fn(static_cast<nv_gpu_per_thread_array_map_impl *>(
+			get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_MAP:
+		return fn(static_cast<nv_gpu_shared_array_map_impl *>(get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_GPU_RINGBUF_MAP:
+		return fn(static_cast<nv_gpu_ringbuf_map_impl *>(get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP:
+		return fn(static_cast<array_map_kernel_gpu_impl *>(get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP:
+		return fn(static_cast<nv_gpu_array_host_map_impl *>(get_ptr()));
+	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP:
+		return fn(static_cast<nv_gpu_shared_array_host_map_impl *>(
+			get_ptr()));
+#endif
+	default:
+		return on_default();
+	}
+}
 } // namespace
 
 bpftime_map_ops global_map_ops_table[(int)bpf_map_type::BPF_MAP_TYPE_MAX] = {
@@ -108,731 +222,211 @@ bpf_map_handler::try_get_nv_gpu_ringbuf_map_impl() const
 const void *bpf_map_handler::map_lookup_elem(const void *key,
 					     bool from_syscall) const
 {
-	const auto do_lookup = [&](auto *impl) -> const void * {
-		if (impl->should_lock) {
-			bpftime_lock_guard guard(map_lock);
-			return impl->elem_lookup(key);
-		} else {
-			return impl->elem_lookup(key);
-		}
-	};
-	const auto do_lookup_userspace = [&](auto *impl) -> const void * {
-		if (impl->should_lock) {
-			bpftime_lock_guard guard(map_lock);
-			return impl->elem_lookup_userspace(key);
-		} else {
-			return impl->elem_lookup_userspace(key);
-		}
-	};
-	// Var-size/LRU hash backends enforce BPF_F_RDONLY/BPF_F_WRONLY only
-	// for fd-based syscall access; BPF helpers call with from_syscall=false.
-	const auto do_lookup_with_origin = [&](auto *impl) -> const void * {
-		if (impl->should_lock) {
-			bpftime_lock_guard guard(map_lock);
-			return impl->elem_lookup(key, from_syscall);
-		} else {
-			return impl->elem_lookup(key, from_syscall);
-		}
-	};
-	switch (type) {
-	case bpf_map_type::BPF_MAP_TYPE_HASH: {
-		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
-		auto impl = static_cast<array_map_impl *>(map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_RINGBUF: {
-		auto impl = static_cast<ringbuf_map_impl *>(map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
-		auto impl = static_cast<perf_event_array_map_impl *>(
-			map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY: {
-		auto impl = static_cast<per_cpu_array_map_impl *>(
-			map_impl_ptr.get());
-		return from_syscall ? do_lookup_userspace(impl) :
-				      do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
-		auto impl = static_cast<per_cpu_hash_map_impl *>(
-			map_impl_ptr.get());
-		return from_syscall ? do_lookup_userspace(impl) :
-				      do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_STACK_TRACE: {
-		auto impl =
-			static_cast<stack_trace_map_impl *>(map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
-		auto impl = static_cast<queue_map_impl *>(map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_STACK: {
-		auto impl = static_cast<stack_map_impl *>(map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER: {
-		auto impl = static_cast<bloom_filter_map_impl *>(
-			map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
-		auto impl = static_cast<lru_var_hash_map_impl *>(
-			map_impl_ptr.get());
-		return do_lookup_with_origin(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_LPM_TRIE: {
-		auto impl =
-			static_cast<lpm_trie_map_impl *>(map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-#ifdef BPFTIME_BUILD_WITH_LIBBPF
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
-		auto impl = static_cast<array_map_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH: {
-		auto impl = static_cast<hash_map_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERCPU_ARRAY: {
-		auto impl = static_cast<percpu_array_map_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY: {
-		auto impl = static_cast<perf_event_array_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY: {
-		auto impl =
-			static_cast<prog_array_map_impl *>(map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-#endif
-	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
-		auto impl = static_cast<array_map_of_maps_impl *>(
-			map_impl_ptr.get());
-		if (!from_syscall)
-			return do_lookup(impl);
-		bpftime_lock_guard guard(map_lock);
-		const int *stored =
-			static_cast<const int *>(impl->elem_lookup_userspace(key));
-		if (stored == nullptr)
-			return nullptr;
-		// Copy inside the lock; return thread-local stable storage so the
-		// caller's memcpy cannot touch a concurrently freed map node.
-		tl_map_in_map_fd_snapshot = *stored;
-		return &tl_map_in_map_fd_snapshot;
-	}
-	case bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS: {
-		auto impl = static_cast<hash_map_of_maps_impl *>(
-			map_impl_ptr.get());
-		if (!from_syscall)
-			return do_lookup(impl);
-		bpftime_lock_guard guard(map_lock);
-		const int *stored =
-			static_cast<const int *>(impl->elem_lookup_userspace(key));
-		if (stored == nullptr)
-			return nullptr;
-		tl_map_in_map_fd_snapshot = *stored;
-		return &tl_map_in_map_fd_snapshot;
-	}
-#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
-	case bpf_map_type::BPF_MAP_TYPE_GPU_HASH_MAP: {
-		auto impl = static_cast<nv_gpu_shared_hash_map_impl *>(
-			map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP: {
-		auto impl = static_cast<nv_gpu_per_thread_array_map_impl *>(
-			map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_MAP: {
-		auto impl = static_cast<nv_gpu_shared_array_map_impl *>(
-			map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_GPU_RINGBUF_MAP: {
-		auto impl = static_cast<nv_gpu_ringbuf_map_impl *>(
-			map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP: {
-		auto impl = static_cast<array_map_kernel_gpu_impl *>(
-			map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-
-	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP: {
-		auto impl = static_cast<nv_gpu_array_host_map_impl *>(
-			map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP: {
-		auto impl = static_cast<nv_gpu_shared_array_host_map_impl *>(
-			map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-#endif
-	default:
-		auto func_ptr = global_map_ops_table[(int)type].elem_lookup;
-		if (func_ptr) {
-			return func_ptr(id, key, from_syscall);
-		} else {
+	shm_write_window_guard shm_window;
+	return visit_map_impl(
+		type, [&]() BPFTIME_ALWAYS_INLINE { return map_impl_ptr.get(); },
+		[&](auto *impl) -> const void * {
+			using impl_t = std::remove_cvref_t<decltype(*impl)>;
+			if constexpr (is_lru_hash_v<impl_t>) {
+				// LRU enforces BPF_F_RDONLY/WRONLY only on
+				// syscall access; helpers pass false.
+				return with_optional_lock(
+					impl->should_lock, map_lock,
+					[&]() -> const void * {
+						return impl->elem_lookup(
+							key, from_syscall);
+					});
+			} else if constexpr (is_percpu_map_v<impl_t>) {
+				return with_optional_lock(
+					impl->should_lock, map_lock,
+					[&]() -> const void * {
+						if (from_syscall)
+							return impl->elem_lookup_userspace(
+								key);
+						return impl->elem_lookup(key);
+					});
+			} else if constexpr (is_map_in_map_v<impl_t>) {
+				if (!from_syscall)
+					return with_optional_lock(
+						impl->should_lock, map_lock,
+						[&]() -> const void * {
+							return impl->elem_lookup(
+								key);
+						});
+				// Syscall path locks unconditionally (ignoring
+				// should_lock) and copies the 4-byte inner fd
+				// to thread-local storage while map_lock is
+				// held, so the caller's memcpy cannot touch a
+				// concurrently freed hash node.
+				bpftime_lock_guard guard(map_lock);
+				const int *stored = static_cast<const int *>(
+					impl->elem_lookup_userspace(key));
+				if (stored == nullptr)
+					return nullptr;
+				tl_map_in_map_fd_snapshot = *stored;
+				return &tl_map_in_map_fd_snapshot;
+			}
+			return with_optional_lock(
+				impl->should_lock, map_lock,
+				[&]() -> const void * {
+					return impl->elem_lookup(key);
+				});
+		},
+		[&]() -> const void * {
+			auto func_ptr =
+				global_map_ops_table[(int)type].elem_lookup;
+			if (func_ptr)
+				return func_ptr(id, key, from_syscall);
 			SPDLOG_ERROR("[elem_lookup] Unsupported map type: {}",
 				     (int)type);
 			return nullptr;
-		}
-	}
-	return 0;
+		});
 }
 
 long bpf_map_handler::map_update_elem(const void *key, const void *value,
 				      uint64_t flags, bool from_syscall) const
 {
-	const auto do_update = [&](auto *impl) -> long {
-		if (impl->should_lock) {
-			bpftime_lock_guard guard(map_lock);
-			return impl->elem_update(key, value, flags);
-		} else {
-			return impl->elem_update(key, value, flags);
-		}
-	};
-
-	const auto do_update_userspace = [&](auto *impl) -> long {
-		if (impl->should_lock) {
-			bpftime_lock_guard guard(map_lock);
-			return impl->elem_update_userspace(key, value, flags);
-		} else {
-			return impl->elem_update_userspace(key, value, flags);
-		}
-	};
-	// Var-size/LRU hash backends enforce BPF_F_RDONLY only for fd-based
-	// syscall access; BPF helpers call with from_syscall=false.
-	const auto do_update_with_origin = [&](auto *impl) -> long {
-		if (impl->should_lock) {
-			bpftime_lock_guard guard(map_lock);
-			return impl->elem_update(key, value, flags,
-						 from_syscall);
-		} else {
-			return impl->elem_update(key, value, flags,
-						 from_syscall);
-		}
-	};
-	switch (type) {
-	case bpf_map_type::BPF_MAP_TYPE_HASH: {
-		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
-		auto impl = static_cast<array_map_impl *>(map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_RINGBUF: {
-		auto impl = static_cast<ringbuf_map_impl *>(map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
-		auto impl = static_cast<perf_event_array_map_impl *>(
-			map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY: {
-		auto impl = static_cast<per_cpu_array_map_impl *>(
-			map_impl_ptr.get());
-		return from_syscall ? do_update_userspace(impl) :
-				      do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
-		auto impl = static_cast<per_cpu_hash_map_impl *>(
-			map_impl_ptr.get());
-		return from_syscall ? do_update_userspace(impl) :
-				      do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_STACK_TRACE: {
-		auto impl =
-			static_cast<stack_trace_map_impl *>(map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
-		auto impl = static_cast<queue_map_impl *>(map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_STACK: {
-		auto impl = static_cast<stack_map_impl *>(map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER: {
-		auto impl = static_cast<bloom_filter_map_impl *>(
-			map_impl_ptr.get());
-		return do_update(impl);
-	}
-#ifdef BPFTIME_BUILD_WITH_LIBBPF
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
-		auto impl = static_cast<array_map_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH: {
-		auto impl = static_cast<hash_map_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERCPU_ARRAY: {
-		auto impl = static_cast<percpu_array_map_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY: {
-		auto impl = static_cast<perf_event_array_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY: {
-		auto impl =
-			static_cast<prog_array_map_impl *>(map_impl_ptr.get());
-		return do_update(impl);
-	}
-#endif
-	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
-		if (!from_syscall) {
-			// Map in maps only support update from syscall
-			return -EINVAL;
-		}
-		auto impl = static_cast<array_map_of_maps_impl *>(
-			map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS: {
-		if (!from_syscall) {
-			// Map in maps only support update from syscall
-			return -EINVAL;
-		}
-		auto impl = static_cast<hash_map_of_maps_impl *>(
-			map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
-		auto impl = static_cast<lru_var_hash_map_impl *>(
-			map_impl_ptr.get());
-		return do_update_with_origin(impl);
-	}
-#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
-	case bpf_map_type::BPF_MAP_TYPE_GPU_HASH_MAP: {
-		auto impl = static_cast<nv_gpu_shared_hash_map_impl *>(
-			map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP: {
-		auto impl = static_cast<nv_gpu_per_thread_array_map_impl *>(
-			map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_MAP: {
-		auto impl = static_cast<nv_gpu_shared_array_map_impl *>(
-			map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_GPU_RINGBUF_MAP: {
-		auto impl = static_cast<nv_gpu_ringbuf_map_impl *>(
-			map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP: {
-		auto impl = static_cast<array_map_kernel_gpu_impl *>(
-			map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP: {
-		auto impl = static_cast<nv_gpu_array_host_map_impl *>(
-			map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP: {
-		auto impl = static_cast<nv_gpu_shared_array_host_map_impl *>(
-			map_impl_ptr.get());
-		return do_update(impl);
-	}
-#endif
-	case bpf_map_type::BPF_MAP_TYPE_LPM_TRIE: {
-		auto impl =
-			static_cast<lpm_trie_map_impl *>(map_impl_ptr.get());
-		return do_update(impl);
-	}
-	default:
-		auto func_ptr = global_map_ops_table[(int)type].elem_update;
-		if (func_ptr) {
-			return func_ptr(id, key, value, flags, from_syscall);
-		} else {
+	shm_write_window_guard shm_window;
+	return visit_map_impl(
+		type, [&]() BPFTIME_ALWAYS_INLINE { return map_impl_ptr.get(); },
+		[&](auto *impl) -> long {
+			using impl_t = std::remove_cvref_t<decltype(*impl)>;
+			if constexpr (is_map_in_map_v<impl_t>) {
+				// Map in maps only support update from syscall
+				if (!from_syscall)
+					return -EINVAL;
+			}
+			return with_optional_lock(
+				impl->should_lock, map_lock,
+				[&]() -> long {
+					// LRU enforces BPF_F_RDONLY only on
+					// syscall access; helpers pass false.
+					if constexpr (is_lru_hash_v<impl_t>)
+						return impl->elem_update(
+							key, value, flags,
+							from_syscall);
+					else if constexpr (
+						is_percpu_map_v<impl_t>) {
+						if (from_syscall)
+							return impl->elem_update_userspace(
+								key, value,
+								flags);
+						return impl->elem_update(
+							key, value, flags);
+					}
+					return impl->elem_update(
+						key, value, flags);
+				});
+		},
+		[&]() -> long {
+			auto func_ptr =
+				global_map_ops_table[(int)type].elem_update;
+			if (func_ptr)
+				return func_ptr(id, key, value, flags,
+						from_syscall);
 			SPDLOG_ERROR(
 				"[map_update_elem] Unsupported map type: {}",
 				(int)type);
 			return -1;
-		}
-	}
-	return 0;
+		});
 }
 
 int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 					  bool from_syscall) const
 {
-	const auto do_get_next_key = [&](auto *impl) -> int {
-		if (impl->should_lock) {
-			bpftime_lock_guard guard(map_lock);
-			return impl->map_get_next_key(key, next_key);
-		} else {
-			return impl->map_get_next_key(key, next_key);
-		}
-	};
-	// Var-size/LRU hash backends enforce BPF_F_WRONLY only for fd-based
-	// syscall access; BPF helpers call with from_syscall=false.
-	const auto do_get_next_key_with_origin = [&](auto *impl) -> int {
-		if (impl->should_lock) {
-			bpftime_lock_guard guard(map_lock);
-			return impl->map_get_next_key(key, next_key,
-						      from_syscall);
-		} else {
-			return impl->map_get_next_key(key, next_key,
-						      from_syscall);
-		}
-	};
-	switch (type) {
-	case bpf_map_type::BPF_MAP_TYPE_HASH: {
-		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
-		auto impl = static_cast<array_map_impl *>(map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_RINGBUF: {
-		auto impl = static_cast<ringbuf_map_impl *>(map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
-		auto impl = static_cast<perf_event_array_map_impl *>(
-			map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY: {
-		auto impl = static_cast<per_cpu_array_map_impl *>(
-			map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
-		auto impl = static_cast<per_cpu_hash_map_impl *>(
-			map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_STACK_TRACE: {
-		auto impl =
-			static_cast<stack_trace_map_impl *>(map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
-		auto impl = static_cast<queue_map_impl *>(map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_STACK: {
-		auto impl = static_cast<stack_map_impl *>(map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER: {
-		auto impl = static_cast<bloom_filter_map_impl *>(
-			map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-#if __linux__ && defined(BPFTIME_BUILD_WITH_LIBBPF)
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
-		auto impl = static_cast<array_map_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH: {
-		auto impl = static_cast<hash_map_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERCPU_ARRAY: {
-		auto impl = static_cast<percpu_array_map_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY: {
-		auto impl = static_cast<perf_event_array_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY: {
-		auto impl =
-			static_cast<prog_array_map_impl *>(map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-#endif
-	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
-		auto impl = static_cast<array_map_of_maps_impl *>(
-			map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS: {
-		auto impl = static_cast<hash_map_of_maps_impl *>(
-			map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
-		auto impl = static_cast<lru_var_hash_map_impl *>(
-			map_impl_ptr.get());
-		return do_get_next_key_with_origin(impl);
-	}
-#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
-	case bpf_map_type::BPF_MAP_TYPE_GPU_HASH_MAP: {
-		auto impl = static_cast<nv_gpu_shared_hash_map_impl *>(
-			map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP: {
-		auto impl = static_cast<nv_gpu_per_thread_array_map_impl *>(
-			map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_MAP: {
-		auto impl = static_cast<nv_gpu_shared_array_map_impl *>(
-			map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_GPU_RINGBUF_MAP: {
-		auto impl = static_cast<nv_gpu_ringbuf_map_impl *>(
-			map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP: {
-		auto impl = static_cast<array_map_kernel_gpu_impl *>(
-			map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP: {
-		auto impl = static_cast<nv_gpu_array_host_map_impl *>(
-			map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP: {
-		auto impl = static_cast<nv_gpu_shared_array_host_map_impl *>(
-			map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-#endif
-	case bpf_map_type::BPF_MAP_TYPE_LPM_TRIE: {
-		auto impl =
-			static_cast<lpm_trie_map_impl *>(map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	default:
+	shm_write_window_guard shm_window;
+#if !__linux__ && defined(BPFTIME_BUILD_WITH_LIBBPF)
+	// This operation historically guarded the kernel-user and prog-array
+	// cases with __linux__, unlike the other map operations. On non-Linux
+	// builds keep that eligibility: these types take the extension-table/
+	// default path instead of dispatching to their impl.
+	if (type == bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY ||
+	    type == bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH ||
+	    type == bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERCPU_ARRAY ||
+	    type == bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY ||
+	    type == bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY) {
 		auto func_ptr =
 			global_map_ops_table[(int)type].map_get_next_key;
-		if (func_ptr) {
+		if (func_ptr)
 			return func_ptr(id, key, next_key, from_syscall);
-		} else {
+		SPDLOG_ERROR(
+			"[bpf_map_get_next_key] Unsupported map type: {}",
+			(int)type);
+		return -1;
+	}
+#endif
+	return visit_map_impl(
+		type, [&]() BPFTIME_ALWAYS_INLINE { return map_impl_ptr.get(); },
+		[&](auto *impl) -> int {
+			using impl_t = std::remove_cvref_t<decltype(*impl)>;
+			return with_optional_lock(
+				impl->should_lock, map_lock,
+				[&]() -> int {
+					// LRU enforces BPF_F_WRONLY only on
+					// syscall access; helpers pass false.
+					if constexpr (is_lru_hash_v<impl_t>)
+						return impl->map_get_next_key(
+							key, next_key,
+							from_syscall);
+					return impl->map_get_next_key(
+						key, next_key);
+				});
+		},
+		[&]() -> int {
+			auto func_ptr =
+				global_map_ops_table[(int)type]
+					.map_get_next_key;
+			if (func_ptr)
+				return func_ptr(id, key, next_key,
+						from_syscall);
 			SPDLOG_ERROR(
 				"[bpf_map_get_next_key] Unsupported map type: {}",
 				(int)type);
 			return -1;
-		}
-	}
-	return 0;
+		});
 }
 
 long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 {
-	const auto do_delete = [&](auto *impl) -> long {
-		if (impl->should_lock) {
-			bpftime_lock_guard guard(map_lock);
-			return impl->elem_delete(key);
-		} else {
-			return impl->elem_delete(key);
-		}
-	};
-	const auto do_delete_userspace = [&](auto *impl) -> long {
-		if (impl->should_lock) {
-			bpftime_lock_guard guard(map_lock);
-			return impl->elem_delete_userspace(key);
-		} else {
-			return impl->elem_delete_userspace(key);
-		}
-	};
-	// Var-size/LRU hash backends enforce BPF_F_RDONLY only for fd-based
-	// syscall access; BPF helpers call with from_syscall=false.
-	const auto do_delete_with_origin = [&](auto *impl) -> long {
-		if (impl->should_lock) {
-			bpftime_lock_guard guard(map_lock);
-			return impl->elem_delete(key, from_syscall);
-		} else {
-			return impl->elem_delete(key, from_syscall);
-		}
-	};
-
-	switch (type) {
-	case bpf_map_type::BPF_MAP_TYPE_HASH: {
-		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
-		auto impl = static_cast<array_map_impl *>(map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_RINGBUF: {
-		auto impl = static_cast<ringbuf_map_impl *>(map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
-		auto impl = static_cast<perf_event_array_map_impl *>(
-			map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY: {
-		auto impl = static_cast<per_cpu_array_map_impl *>(
-			map_impl_ptr.get());
-		return from_syscall ? do_delete_userspace(impl) :
-				      do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
-		auto impl = static_cast<per_cpu_hash_map_impl *>(
-			map_impl_ptr.get());
-		return from_syscall ? do_delete_userspace(impl) :
-				      do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_STACK_TRACE: {
-		auto impl =
-			static_cast<stack_trace_map_impl *>(map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
-		auto impl = static_cast<queue_map_impl *>(map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_STACK: {
-		auto impl = static_cast<stack_map_impl *>(map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER: {
-		auto impl = static_cast<bloom_filter_map_impl *>(
-			map_impl_ptr.get());
-		return do_delete(impl);
-	}
-#ifdef BPFTIME_BUILD_WITH_LIBBPF
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
-		auto impl = static_cast<array_map_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH: {
-		auto impl = static_cast<hash_map_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERCPU_ARRAY: {
-		auto impl = static_cast<percpu_array_map_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY: {
-		auto impl = static_cast<perf_event_array_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY: {
-		auto impl =
-			static_cast<prog_array_map_impl *>(map_impl_ptr.get());
-		return do_delete(impl);
-	}
-#endif
-	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
-		if (!from_syscall) {
-			// Map in maps only support update from syscall
-			return -EINVAL;
-		}
-		auto impl = static_cast<array_map_of_maps_impl *>(
-			map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS: {
-		if (!from_syscall) {
-			// Map in maps only support update from syscall
-			return -EINVAL;
-		}
-		auto impl = static_cast<hash_map_of_maps_impl *>(
-			map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
-		auto impl = static_cast<lru_var_hash_map_impl *>(
-			map_impl_ptr.get());
-		return do_delete_with_origin(impl);
-	}
-#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
-	case bpf_map_type::BPF_MAP_TYPE_GPU_HASH_MAP: {
-		auto impl = static_cast<nv_gpu_shared_hash_map_impl *>(
-			map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP: {
-		auto impl = static_cast<nv_gpu_per_thread_array_map_impl *>(
-			map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_MAP: {
-		auto impl = static_cast<nv_gpu_shared_array_map_impl *>(
-			map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_GPU_RINGBUF_MAP: {
-		auto impl = static_cast<nv_gpu_ringbuf_map_impl *>(
-			map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP: {
-		auto impl = static_cast<array_map_kernel_gpu_impl *>(
-			map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP: {
-		auto impl = static_cast<nv_gpu_array_host_map_impl *>(
-			map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP: {
-		auto impl = static_cast<nv_gpu_shared_array_host_map_impl *>(
-			map_impl_ptr.get());
-		return do_delete(impl);
-	}
-#endif
-	case bpf_map_type::BPF_MAP_TYPE_LPM_TRIE: {
-		auto impl =
-			static_cast<lpm_trie_map_impl *>(map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	default:
-		auto func_ptr = global_map_ops_table[(int)type].elem_delete;
-		if (func_ptr) {
-			return func_ptr(id, key, from_syscall);
-		} else {
+	shm_write_window_guard shm_window;
+	return visit_map_impl(
+		type, [&]() BPFTIME_ALWAYS_INLINE { return map_impl_ptr.get(); },
+		[&](auto *impl) -> long {
+			using impl_t = std::remove_cvref_t<decltype(*impl)>;
+			if constexpr (is_map_in_map_v<impl_t>) {
+				// Map in maps only support mutation from
+				// syscall
+				if (!from_syscall)
+					return -EINVAL;
+			}
+			return with_optional_lock(
+				impl->should_lock, map_lock,
+				[&]() -> long {
+					// LRU enforces BPF_F_RDONLY only on
+					// syscall access; helpers pass false.
+					if constexpr (is_lru_hash_v<impl_t>) {
+						return impl->elem_delete(
+							key, from_syscall);
+					} else if constexpr (
+						is_percpu_map_v<impl_t>) {
+						if (from_syscall)
+							return impl->elem_delete_userspace(
+								key);
+						return impl->elem_delete(key);
+					}
+					return impl->elem_delete(key);
+				});
+		},
+		[&]() -> long {
+			auto func_ptr =
+				global_map_ops_table[(int)type].elem_delete;
+			if (func_ptr)
+				return func_ptr(id, key, from_syscall);
 			SPDLOG_ERROR(
 				"[bpf_map_delete_elem] Unsupported map type: {}",
 				(int)type);
 			return -1;
-		}
-	}
-	return 0;
+		});
 }
 
 static uint64_t get_thread_count(const bpf_map_attr &attr)
@@ -1258,114 +852,31 @@ void bpf_map_handler::map_free(managed_shared_memory &memory) const
 		map_refcnt_ptr = nullptr;
 	}
 
-	switch (type) {
-	case bpf_map_type::BPF_MAP_TYPE_HASH:
-		memory.destroy_ptr(static_cast<hash_map_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_ARRAY:
-		memory.destroy_ptr(static_cast<array_map_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_RINGBUF:
-		memory.destroy_ptr(static_cast<ringbuf_map_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY:
-		memory.destroy_ptr(
-			static_cast<perf_event_array_map_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY:
-		memory.destroy_ptr(static_cast<per_cpu_array_map_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH:
-		memory.destroy_ptr(static_cast<per_cpu_hash_map_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_QUEUE:
-		memory.destroy_ptr(static_cast<queue_map_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_STACK:
-		memory.destroy_ptr(static_cast<stack_map_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER:
-		memory.destroy_ptr(static_cast<bloom_filter_map_impl *>(impl));
-		break;
-#ifdef BPFTIME_BUILD_WITH_LIBBPF
-	case bpf_map_type::BPF_MAP_TYPE_STACK_TRACE:
-		memory.destroy_ptr(static_cast<stack_trace_map_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY:
-		memory.destroy_ptr(
-			static_cast<array_map_kernel_user_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH:
-		memory.destroy_ptr(
-			static_cast<hash_map_kernel_user_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERCPU_ARRAY:
-		memory.destroy_ptr(
-			static_cast<percpu_array_map_kernel_user_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY:
-		memory.destroy_ptr(
-			static_cast<perf_event_array_kernel_user_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY:
-		memory.destroy_ptr(static_cast<prog_array_map_impl *>(impl));
-		break;
-#endif
-	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS:
-		memory.destroy_ptr(static_cast<array_map_of_maps_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS:
-		memory.destroy_ptr(static_cast<hash_map_of_maps_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH:
-		memory.destroy_ptr(static_cast<lru_var_hash_map_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_LPM_TRIE:
-		memory.destroy_ptr(static_cast<lpm_trie_map_impl *>(impl));
-		break;
-#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
-	case bpf_map_type::BPF_MAP_TYPE_GPU_HASH_MAP:
-		memory.destroy_ptr(
-			static_cast<nv_gpu_shared_hash_map_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP:
-		memory.destroy_ptr(
-			static_cast<nv_gpu_per_thread_array_map_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_MAP:
-		memory.destroy_ptr(
-			static_cast<nv_gpu_shared_array_map_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_GPU_RINGBUF_MAP:
-		memory.destroy_ptr(
-			static_cast<nv_gpu_ringbuf_map_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP: {
-		memory.destroy_ptr(
-			static_cast<array_map_kernel_gpu_impl *>(impl));
-		break;
-	}
-	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP:
-		memory.destroy_ptr(
-			static_cast<nv_gpu_array_host_map_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP:
-		memory.destroy_ptr(
-			static_cast<nv_gpu_shared_array_host_map_impl *>(impl));
-		break;
-#endif
-	default:
+	auto run_default_free = [&]() {
 		auto func_ptr = global_map_ops_table[(int)type].map_free;
-		if (func_ptr) {
+		if (func_ptr)
 			func_ptr(id);
-		} else {
+		else
 			SPDLOG_ERROR("[map_free] Unsupported map type: {}",
 				     (int)type);
-		}
+	};
+#if !defined(BPFTIME_BUILD_WITH_LIBBPF)
+	// The STACK_TRACE destroy case was historically compiled only with
+	// libbpf support. Without it, keep that eligibility and run the
+	// extension-table/default path instead of destroying the impl here.
+	if (type == bpf_map_type::BPF_MAP_TYPE_STACK_TRACE) {
+		run_default_free();
+		map_impl_ptr = nullptr;
+		map_refcnt_ptr = nullptr;
+		return;
 	}
+#endif
+	visit_map_impl(
+		type, [&]() BPFTIME_ALWAYS_INLINE { return impl; },
+		[&](auto *map_impl) { memory.destroy_ptr(map_impl); },
+		run_default_free);
 	map_impl_ptr = nullptr;
 	map_refcnt_ptr = nullptr;
-	return;
 }
 std::optional<stack_trace_map_impl *>
 bpf_map_handler::try_get_stack_trace_map_impl() const
@@ -1485,28 +996,28 @@ int bpftime_register_map_ops(int map_type, bpftime_map_ops *ops)
 long bpf_map_handler::map_push_elem(const void *value, uint64_t flags,
 				    bool from_syscall) const
 {
-	const auto do_push = [&](auto *impl) -> long {
-		if (impl->should_lock) {
-			bpftime_lock_guard guard(map_lock);
-			return impl->map_push_elem(value, flags);
-		} else {
-			return impl->map_push_elem(value, flags);
-		}
-	};
-
+	shm_write_window_guard shm_window;
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
-		auto impl = static_cast<queue_map_impl *>(map_impl_ptr.get());
-		return do_push(impl);
+		auto impl =
+			static_cast<queue_map_impl *>(map_impl_ptr.get());
+		return with_optional_lock(
+			impl->should_lock, map_lock,
+			[&] { return impl->map_push_elem(value, flags); });
 	}
 	case bpf_map_type::BPF_MAP_TYPE_STACK: {
-		auto impl = static_cast<stack_map_impl *>(map_impl_ptr.get());
-		return do_push(impl);
+		auto impl =
+			static_cast<stack_map_impl *>(map_impl_ptr.get());
+		return with_optional_lock(
+			impl->should_lock, map_lock,
+			[&] { return impl->map_push_elem(value, flags); });
 	}
 	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER: {
 		auto impl = static_cast<bloom_filter_map_impl *>(
 			map_impl_ptr.get());
-		return do_push(impl);
+		return with_optional_lock(
+			impl->should_lock, map_lock,
+			[&] { return impl->map_push_elem(value, flags); });
 	}
 	default:
 		SPDLOG_ERROR("map_push_elem not supported for map type: {}",
@@ -1517,23 +1028,21 @@ long bpf_map_handler::map_push_elem(const void *value, uint64_t flags,
 
 long bpf_map_handler::map_pop_elem(void *value, bool from_syscall) const
 {
-	const auto do_pop = [&](auto *impl) -> long {
-		if (impl->should_lock) {
-			bpftime_lock_guard guard(map_lock);
-			return impl->map_pop_elem(value);
-		} else {
-			return impl->map_pop_elem(value);
-		}
-	};
-
+	shm_write_window_guard shm_window;
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
-		auto impl = static_cast<queue_map_impl *>(map_impl_ptr.get());
-		return do_pop(impl);
+		auto impl =
+			static_cast<queue_map_impl *>(map_impl_ptr.get());
+		return with_optional_lock(
+			impl->should_lock, map_lock,
+			[&] { return impl->map_pop_elem(value); });
 	}
 	case bpf_map_type::BPF_MAP_TYPE_STACK: {
-		auto impl = static_cast<stack_map_impl *>(map_impl_ptr.get());
-		return do_pop(impl);
+		auto impl =
+			static_cast<stack_map_impl *>(map_impl_ptr.get());
+		return with_optional_lock(
+			impl->should_lock, map_lock,
+			[&] { return impl->map_pop_elem(value); });
 	}
 	default:
 		SPDLOG_ERROR("map_pop_elem not supported for map type: {}",
@@ -1545,65 +1054,63 @@ long bpf_map_handler::map_pop_elem(void *value, bool from_syscall) const
 long bpf_map_handler::map_lookup_and_delete_elem(const void *key, void *value,
 						 bool from_syscall) const
 {
+	shm_write_window_guard shm_window;
 	// The kernel dispatches by map type: queue/stack take the keyless pop
 	// path, the hash variants (HASH, PERCPU_HASH, LRU_HASH,
 	// LRU_PERCPU_HASH, STACK_TRACE) take a keyed lookup-then-delete. See
 	// map_lookup_and_delete_elem() in kernel/bpf/syscall.c.
-	const auto do_lookup_and_delete = [&](auto *impl) -> long {
-		if (impl->should_lock) {
-			bpftime_lock_guard guard(map_lock);
-			return impl->lookup_and_delete(key, value, from_syscall);
-		} else {
-			return impl->lookup_and_delete(key, value, from_syscall);
-		}
-	};
-	const auto do_lookup_and_delete_userspace = [&](auto *impl)
-		-> long {
-		if (impl->should_lock) {
-			bpftime_lock_guard guard(map_lock);
-			return impl->lookup_and_delete_userspace(key, value);
-		} else {
-			return impl->lookup_and_delete_userspace(key, value);
-		}
-	};
-	// Queue and stack take the keyless pop, and both declare
-	// should_lock = true: the handler owns their lock.
-	const auto do_pop = [&](auto *impl) -> long {
-		if (impl->should_lock) {
-			bpftime_lock_guard guard(map_lock);
-			return impl->map_pop_elem(value);
-		} else {
-			return impl->map_pop_elem(value);
-		}
-	};
-
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
-		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
-		return do_lookup_and_delete(impl);
+		auto impl =
+			static_cast<hash_map_impl *>(map_impl_ptr.get());
+		return with_optional_lock(
+			impl->should_lock, map_lock, [&] {
+				return impl->lookup_and_delete(
+					key, value, from_syscall);
+			});
 	}
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
 		auto impl = static_cast<per_cpu_hash_map_impl *>(
 			map_impl_ptr.get());
-		return do_lookup_and_delete_userspace(impl);
+		return with_optional_lock(
+			impl->should_lock, map_lock, [&] {
+				return impl->lookup_and_delete_userspace(
+					key, value);
+			});
 	}
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
 		auto impl = static_cast<lru_var_hash_map_impl *>(
 			map_impl_ptr.get());
-		return do_lookup_and_delete(impl);
+		return with_optional_lock(
+			impl->should_lock, map_lock, [&] {
+				return impl->lookup_and_delete(
+					key, value, from_syscall);
+			});
 	}
 	case bpf_map_type::BPF_MAP_TYPE_STACK_TRACE: {
-		auto impl =
-			static_cast<stack_trace_map_impl *>(map_impl_ptr.get());
-		return do_lookup_and_delete(impl);
+		auto impl = static_cast<stack_trace_map_impl *>(
+			map_impl_ptr.get());
+		return with_optional_lock(
+			impl->should_lock, map_lock, [&] {
+				return impl->lookup_and_delete(
+					key, value, from_syscall);
+			});
 	}
 	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
-		auto impl = static_cast<queue_map_impl *>(map_impl_ptr.get());
-		return do_pop(impl);
+		auto impl =
+			static_cast<queue_map_impl *>(map_impl_ptr.get());
+		// Queue and stack take the keyless pop, and both declare
+		// should_lock = true: the handler owns their lock.
+		return with_optional_lock(
+			impl->should_lock, map_lock,
+			[&] { return impl->map_pop_elem(value); });
 	}
 	case bpf_map_type::BPF_MAP_TYPE_STACK: {
-		auto impl = static_cast<stack_map_impl *>(map_impl_ptr.get());
-		return do_pop(impl);
+		auto impl =
+			static_cast<stack_map_impl *>(map_impl_ptr.get());
+		return with_optional_lock(
+			impl->should_lock, map_lock,
+			[&] { return impl->map_pop_elem(value); });
 	}
 	default:
 		SPDLOG_ERROR(
@@ -1616,28 +1123,27 @@ long bpf_map_handler::map_lookup_and_delete_elem(const void *key, void *value,
 
 long bpf_map_handler::map_peek_elem(void *value, bool from_syscall) const
 {
-	const auto do_peek = [&](auto *impl) -> long {
-		if (impl->should_lock) {
-			bpftime_lock_guard guard(map_lock);
-			return impl->map_peek_elem(value);
-		} else {
-			return impl->map_peek_elem(value);
-		}
-	};
-
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
-		auto impl = static_cast<queue_map_impl *>(map_impl_ptr.get());
-		return do_peek(impl);
+		auto impl =
+			static_cast<queue_map_impl *>(map_impl_ptr.get());
+		return with_optional_lock(
+			impl->should_lock, map_lock,
+			[&] { return impl->map_peek_elem(value); });
 	}
 	case bpf_map_type::BPF_MAP_TYPE_STACK: {
-		auto impl = static_cast<stack_map_impl *>(map_impl_ptr.get());
-		return do_peek(impl);
+		auto impl =
+			static_cast<stack_map_impl *>(map_impl_ptr.get());
+		return with_optional_lock(
+			impl->should_lock, map_lock,
+			[&] { return impl->map_peek_elem(value); });
 	}
 	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER: {
 		auto impl = static_cast<bloom_filter_map_impl *>(
 			map_impl_ptr.get());
-		return do_peek(impl);
+		return with_optional_lock(
+			impl->should_lock, map_lock,
+			[&] { return impl->map_peek_elem(value); });
 	}
 	default:
 		SPDLOG_ERROR("map_peek_elem not supported for map type: {}",
@@ -1647,3 +1153,5 @@ long bpf_map_handler::map_peek_elem(void *value, bool from_syscall) const
 }
 
 } // namespace bpftime
+
+#undef BPFTIME_ALWAYS_INLINE

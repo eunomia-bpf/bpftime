@@ -238,10 +238,10 @@ bool bpftime_global_shm_is_initialized();
 // task_struct; fixed fallback when kernel BTF is unusable, -1 elsewhere.
 long bpftime_get_current_task_tpbase_offset() noexcept;
 
-// enable memory protect, e.g. mpk
-void bpftime_protect_enable();
-// disable memory protect
-void bpftime_protect_disable();
+// Open the per-thread MPK write window; nested windows keep the outer open.
+// No-ops without MPK or before the global shm exists.
+int bpftime_protect_open_write_window();
+void bpftime_protect_restore(int saved);
 
 // import the global shared memory from json file
 int bpftime_import_global_shm_from_json(const char *filename);
@@ -491,5 +491,19 @@ int bpftime_add_memfd_handler_at_fd(int fd, const char *name, int flags);
 int bpftime_translate_shared_map_type_to_kernel_map_type(int ty);
 
 }
+
+namespace bpftime {
+class bpftime_shm;
+class shm_write_window_guard {
+	int saved_rights = -1;
+	bpftime_shm *instance = nullptr;
+    public:
+	shm_write_window_guard();
+	explicit shm_write_window_guard(bpftime_shm &shm);
+	~shm_write_window_guard();
+	shm_write_window_guard(const shm_write_window_guard &) = delete;
+	shm_write_window_guard &operator=(const shm_write_window_guard &) = delete;
+};
+} // namespace bpftime
 
 #endif // BPFTIME_SHM_CPP_H

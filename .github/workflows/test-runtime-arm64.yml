@@ -6,6 +6,7 @@ on:
     branches: ["master"]
     paths: &runtime_paths
       - ".github/workflows/test-runtime-arm64.yml"
+      - ".github/actions/ccache/**"
       - "attach/**"
       - "runtime/**"
       - "vm/**"
