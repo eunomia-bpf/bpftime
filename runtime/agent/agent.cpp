@@ -9,6 +9,7 @@
 #include "trap_attach_private_data.hpp"
 #include "trap_uprobe_attach_impl.hpp"
 #endif
+#include "process_filter.hpp"
 
 #include "spdlog/common.h"
 #include "bpftime_config.hpp"
@@ -587,7 +588,14 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 	orig_main_func = main;
 	using this_func_t = decltype(&__libc_start_main);
 	this_func_t orig = (this_func_t)dlsym(RTLD_NEXT, "__libc_start_main");
-
+	// musl sets its program-name symbol only in the libc entry below; use argv[0].
+	const char *argv0 = (argc > 0 && argv != nullptr) ? argv[0] : nullptr;
+	if (argv0 != nullptr) {
+		const char *slash = strrchr(argv0, '/');
+		argv0 = slash != nullptr ? slash + 1 : argv0;
+	}
+	if (agent::should_skip_agent_process(argv0))
+		return orig(main, argc, argv, init, fini, rtld_fini, stack_end);
 	return orig(bpftime_hooked_main, argc, argv, init, fini, rtld_fini,
 		    stack_end);
 }
@@ -878,6 +886,10 @@ extern "C" void **__cudaRegisterFatBinary(void *fatbin)
 static void bpftime_agent_main_impl(const gchar *data,
 				    gboolean *stay_resident)
 {
+	if (agent::should_skip_agent_process()) {
+		*stay_resident = FALSE;
+		return;
+	}
 	install_agent_bootstrap_logger();
 	bool force_reinit = false;
 	bool recorded_alive_pid = false;
@@ -1275,6 +1287,10 @@ extern "C" void
 _bpftime__setup_syscall_trace_callback(syscall_hooker_func_t *hooker)
 {
 	if (hooker == nullptr)
+		return;
+	// Text-transformer entrypoint: a rejected process keeps its original
+	// hook and must not log either, since the bootstrap logger never ran.
+	if (agent::should_skip_agent_process())
 		return;
 	orig_hooker = *hooker;
 	*hooker = &syscall_callback;
