@@ -19,3 +19,6 @@ Safety Redlines and Host-process safety invariants are binding here.
 - Fail open: unavailable shared memory, a full ringbuf, or an
   `ENOTRECOVERABLE` mutex skips tracing without blocking, aborting, or
   changing the host exit status.
+- Init and IPC paths never sleep/poll or take unbounded `flock(LOCK_EX)` or
+  untimed socket waits (`SO_SNDTIMEO`/`SO_RCVTIMEO` + `MSG_NOSIGNAL` required):
+  use non-blocking acquisition and leave startup ordering to the CLI.

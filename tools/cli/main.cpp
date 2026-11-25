@@ -1157,6 +1157,18 @@ int main(int argc, const char **argv)
 		int rc = 0;
 		bool agent_attached = false;
 #if __linux__
+		// Wait for loader SHM; the preload agent itself never blocks.
+		const auto shm_file =
+			std::string("/dev/shm/") + bpftime::get_global_shm_name();
+		for (int i = 0, ws = 0;
+		     i < 60 && waitpid(child_pid, &ws, WNOHANG) == 0; i++) {
+			if (access(shm_file.c_str(), F_OK) == 0 &&
+			    bpftime::shm_lifecycle_lock(
+				    bpftime::get_global_shm_name(), true)
+				    .owns_lock())
+				break;
+			usleep(50000);
+		}
 		// Prefer IPC refresh if an agent is already present in the target
 		// process; fall back to Frida injection otherwise.
 		std::string req = "refresh " + agent_arg;

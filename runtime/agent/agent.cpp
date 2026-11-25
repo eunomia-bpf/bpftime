@@ -737,34 +737,18 @@ static void bpftime_agent_main_impl(const gchar *data,
 
 			SPDLOG_DEBUG("Entered bpftime_agent_main");
 
-			// SHM can race with the loader process; retry a bit to avoid
-			// flakiness in "spawn loader then inject agent" workflows.
-			std::string last_err;
-			bool shm_ok = false;
-			std::unique_ptr<shm_lifecycle_lock> shm_lock;
-			for (int attempt = 0; attempt < 60; attempt++) {
-				try {
-					shm_lock =
-						std::make_unique<shm_lifecycle_lock>(
-							get_global_shm_name());
-					bpftime_initialize_global_shm(
-						shm_open_type::SHM_OPEN_ONLY);
-					shm_ok = true;
-					break;
-				} catch (const std::exception &ex) {
-					last_err = ex.what();
-					shm_lock.reset();
-					std::this_thread::sleep_for(
-						std::chrono::milliseconds(
-							50));
-				}
-			}
-			if (!shm_ok) {
-				SPDLOG_ERROR(
-					"Unable to initialize shared memory: {}",
-					last_err);
-				init_fail();
-				return;
+			// Never block in preload init: fail open on unavailable SHM.
+			std::optional<shm_lifecycle_lock> shm_lock(
+				std::in_place, get_global_shm_name(), true);
+			if (!shm_lock->owns_lock())
+				return init_fail();
+			try {
+				bpftime_initialize_global_shm(
+					shm_open_type::SHM_OPEN_ONLY);
+			} catch (const std::exception &ex) {
+				SPDLOG_ERROR("Unable to initialize shared memory: {}",
+					     ex.what());
+				return init_fail();
 			}
 			auto &runtime_config = bpftime_get_runtime_config();
 			bpftime_set_logger(std::string(

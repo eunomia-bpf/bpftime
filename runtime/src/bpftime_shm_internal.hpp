@@ -37,8 +37,10 @@ namespace bpftime
 
 class shm_lifecycle_lock {
     public:
-	explicit shm_lifecycle_lock(const char *shm_name) noexcept;
+	explicit shm_lifecycle_lock(const char *shm_name,
+				    bool shared_non_blocking = false) noexcept;
 	~shm_lifecycle_lock();
+	bool owns_lock() const noexcept { return lock_fd >= 0; }
 
 	shm_lifecycle_lock(const shm_lifecycle_lock &) = delete;
 	shm_lifecycle_lock &operator=(const shm_lifecycle_lock &) = delete;
@@ -267,7 +269,6 @@ class bpftime_shm {
 	// Returns 0 if the epoch object isn't available.
 	// Returns UINT64_MAX if the epoch couldn't be stabilized within max_tries.
 	std::uint64_t read_stable_epoch_seq(int max_tries = 200) const;
-	void lock_bpf_cpu(int cpu);
 	void unlock_bpf_cpu(int cpu);
 	// Blocking, exception-safe per-CPU lock used on the BPF hot path. It
 	// preserves the serialization semantics of lock() (waits through normal
