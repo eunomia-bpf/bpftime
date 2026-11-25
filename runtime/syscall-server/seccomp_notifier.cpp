@@ -266,7 +266,21 @@ static bool setup_go_seccomp_tracer()
 		BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
 			 offsetof(struct seccomp_data, arch)),
 		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, BPFTIME_SECCOMP_AUDIT_ARCH, 1, 0),
-		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
+		// Fail open for foreign-ABI syscalls (e.g. a 32-bit compat
+		// syscall on a 64-bit host). This is an interception filter,
+		// not a sandbox: it only diverts a fixed set of native-ABI
+		// syscalls to user notification and lets every other syscall
+		// run natively through the trailing ALLOW rule. A foreign
+		// arch uses a different syscall numbering and is outside
+		// that set, so it must be allowed as well. KILL_PROCESS would
+		// terminate otherwise valid compat workloads with an
+		// uncatchable SIGSYS and break the fail-open contract, while
+		// returning an errno would wrongly deny syscalls this filter
+		// never intends to police. A separately installed sandbox
+		// filter still takes effect, because stacked seccomp
+		// filters combine by the strictest action and an ALLOW here
+		// cannot override a deny from another filter.
+		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 		BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
 			 offsetof(struct seccomp_data, nr)),
 #define BPFTIME_NOTIFY_SYSCALL(nr)                                            \
