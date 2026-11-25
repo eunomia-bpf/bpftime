@@ -82,7 +82,7 @@ bpftime attach -s 1234
 ```
 
 #### `detach` - Detach all attached agents
-Sends SIGUSR1 signal to all processes with attached bpftime agents to trigger detachment.
+Requests synchronous detachment over the Linux agent IPC socket. `bpftime start` and Frida injection enable IPC automatically. Bare `LD_PRELOAD` starts without control threads; set `BPFTIME_ENABLE_AGENT_IPC=1` to enable IPC, or `0` to keep it disabled for `bpftime start`. Host signal dispositions are preserved.
 
 ```bash
 bpftime detach

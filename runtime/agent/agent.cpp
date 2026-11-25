@@ -92,8 +92,6 @@ static int agent_ipc_fd = -1;
 static std::thread agent_ipc_thread;
 #endif
 
-static int detach_pipe_fds[2] = { -1, -1 };
-static std::atomic<bool> detach_thread_started{ false };
 static std::mutex detach_mutex;
 static std::atomic<bool> global_ctx_constructed{ false };
 
@@ -153,6 +151,7 @@ static void reset_syscall_trace_global() noexcept
 extern "C" __attribute__((visibility("default"))) void
 bpftime_agent_control(const gchar *data)
 {
+	injected_with_frida = true;
 	// External control entrypoint used to avoid loading multiple agent copies
 	// into the same target process (Frida typically loads via /proc/self/fd/*).
 	install_agent_bootstrap_logger();
@@ -276,6 +275,11 @@ static bool try_forward_to_existing_agent(const gchar *data)
 static void start_agent_ipc_server_once()
 {
 #ifdef __linux__
+	const char *enable_ipc = getenv("BPFTIME_ENABLE_AGENT_IPC");
+	if (!injected_with_frida &&
+	    (enable_ipc == nullptr || enable_ipc[0] == '\0' ||
+	     strcmp(enable_ipc, "0") == 0))
+		return;
 	std::call_once(agent_ipc_once, []() {
 		sockaddr_un addr {};
 		socklen_t len = 0;
@@ -485,73 +489,6 @@ static void stop_syscall_dispatch_at_exit() noexcept
 	reset_syscall_trace_global();
 }
 
-static bool ensure_detach_worker_started() noexcept
-{
-	bool expected = false;
-	if (!detach_thread_started.compare_exchange_strong(
-		    expected, true, std::memory_order_acq_rel,
-		    std::memory_order_acquire)) {
-		return true;
-	}
-	int fds[2] = { -1, -1 };
-	auto clear_fds = [&]() {
-		for (int &fd : fds) {
-			if (fd >= 0) {
-				::close(fd);
-				fd = -1;
-			}
-		}
-		for (int &fd : detach_pipe_fds) {
-			if (fd >= 0) {
-				::close(fd);
-				fd = -1;
-			}
-		}
-		detach_thread_started.store(false, std::memory_order_release);
-	};
-	try {
-#ifdef __linux__
-		if (pipe2(fds, O_CLOEXEC) != 0) {
-			SPDLOG_WARN(
-				"pipe2 failed, detach by SIGUSR1 will be disabled");
-			clear_fds();
-			return false;
-		}
-#else
-		if (pipe(fds) != 0) {
-			SPDLOG_WARN(
-				"pipe failed, detach by SIGUSR1 will be disabled");
-			clear_fds();
-			return false;
-		}
-#endif
-		detach_pipe_fds[0] = fds[0];
-		detach_pipe_fds[1] = fds[1];
-		fds[0] = -1;
-		fds[1] = -1;
-		std::thread([]() {
-			for (;;) {
-				uint8_t buf[16];
-				ssize_t n =
-					read(detach_pipe_fds[0], buf, sizeof(buf));
-				if (n <= 0) {
-					return;
-				}
-				if (__atomic_load_n(&initialized,
-						    __ATOMIC_SEQ_CST) !=
-				    AGENT_READY) {
-					continue;
-				}
-				perform_detach();
-			}
-		}).detach();
-		return true;
-	} catch (...) {
-		clear_fds();
-		return false;
-	}
-}
-
 syscall_hooker_func_t orig_hooker;
 
 static void bpftime_agent_main_impl(const gchar *data,
@@ -591,19 +528,6 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 	return orig(bpftime_hooked_main, argc, argv, init, fini, rtld_fini,
 		    stack_end);
 }
-static void sig_handler_sigusr1_detach(int sig)
-{
-	(void)sig;
-	// Async-signal-safe: do not call spdlog / malloc / locks here.
-	auto_refresh_epoch.fetch_add(1, std::memory_order_acq_rel);
-	int fd = detach_pipe_fds[1];
-	if (fd >= 0) {
-		uint8_t one = 1;
-		ssize_t ignored = write(fd, &one, 1);
-		(void)ignored;
-	}
-}
-
 static int parse_auto_refresh_ms(const gchar *data)
 {
 	if (data == nullptr || data[0] == '\0')
@@ -898,13 +822,6 @@ static void bpftime_agent_main_impl(const gchar *data,
 				auto_refresh_thread.join();
 		} catch (...) {
 		}
-		for (int &fd : detach_pipe_fds) {
-			if (fd >= 0) {
-				::close(fd);
-				fd = -1;
-			}
-		}
-		detach_thread_started.store(false, std::memory_order_release);
 		if (ctx_constructed) {
 			try {
 				ctx_holder.destroy();
@@ -1201,20 +1118,8 @@ static void bpftime_agent_main_impl(const gchar *data,
 			}
 			recorded_alive_pid = true;
 			shm_lock.reset();
-			try {
-				SPDLOG_DEBUG("Registering signal handler");
-			} catch (...) {
-			}
-			// We use SIGUSR1 to indicate the detaching.
-			if (!ensure_detach_worker_started()) {
-				init_fail();
-				return;
-			}
-			// Start IPC control plane for repeat attach/refresh (used by
-			// `bpftime trace`).
 			start_agent_ipc_server_once();
 			std::atexit(stop_syscall_dispatch_at_exit);
-			signal(SIGUSR1, sig_handler_sigusr1_detach);
 			/* We don't want our library to be unloaded after we return. */
 			*stay_resident = TRUE;
 			setenv("BPFTIME_USED", "1", 0);
@@ -1243,6 +1148,7 @@ static void bpftime_agent_main_impl(const gchar *data,
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
+	injected_with_frida = true;
 	bpftime_agent_main_impl(data, stay_resident);
 }
 

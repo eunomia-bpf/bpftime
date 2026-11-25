@@ -536,4 +536,39 @@ TEST_CASE("Syscall server synthetic files use a cached private temp "
 	for (const auto &name : after)
 		REQUIRE(before.count(name) == 1);
 }
+TEST_CASE("Agent preload preserves host signals and gates IPC", "[agent][ipc]")
+{
+	env_var_guard name_guard("BPFTIME_GLOBAL_SHM_NAME");
+	const auto name = "bpftime-agent-policy-" + std::to_string(getpid());
+	REQUIRE(setenv("BPFTIME_GLOBAL_SHM_NAME", name.c_str(), 1) == 0);
+	parent_shm_guard memory;
+	bpftime_destroy_global_shm();
+	bpftime_initialize_global_shm(bpftime::shm_open_type::SHM_REMOVE_AND_CREATE);
+	memory.initialized = true;
+	for (const char *option : { "unset", "", "0", "1", "frida" }) {
+		for (bool host_handler : { false, true }) {
+			INFO("IPC=" << option << " host_handler=" << host_handler);
+			pid_t pid = fork();
+			REQUIRE(pid >= 0);
+			if (pid == 0) {
+				alarm(10);
+				setenv("LD_PRELOAD", BPFTIME_AGENT_LIBRARY, 1);
+				unsetenv("BPFTIME_USED");
+				unsetenv("BPFTIME_TEST_HOST_SIGNAL");
+				if (host_handler) setenv("BPFTIME_TEST_HOST_SIGNAL", "1", 1);
+				unsetenv("BPFTIME_ENABLE_AGENT_IPC");
+				unsetenv("BPFTIME_TEST_FRIDA");
+				if (std::string(option) == "frida") setenv("BPFTIME_TEST_FRIDA", "1", 1);
+				else if (std::string(option) != "unset") setenv("BPFTIME_ENABLE_AGENT_IPC", option, 1);
+				execl(BPFTIME_SHM_ALLOCATION_TEST_HELPER,
+				      BPFTIME_SHM_ALLOCATION_TEST_HELPER, "agent-policy", nullptr);
+				_exit(127);
+			}
+			int status = 0;
+			REQUIRE(waitpid(pid, &status, 0) == pid);
+			REQUIRE(WIFEXITED(status));
+			REQUIRE(WEXITSTATUS(status) == 0);
+		}
+	}
+}
 #endif

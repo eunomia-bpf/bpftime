@@ -106,7 +106,8 @@ static bool str_starts_with(const char *main, const char *pat)
 
 static int run_command(const char *path, const std::vector<std::string> &argv,
 		       const char *ld_preload, const char *agent_so,
-		       const std::vector<std::string> &env_args)
+		       const std::vector<std::string> &env_args,
+		       bool enable_agent_ipc = false)
 {
 	int pid = fork();
 	if (pid < 0) {
@@ -114,6 +115,10 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 		return 1;
 	}
 	if (pid == 0) {
+#ifdef __linux__
+		if (enable_agent_ipc && setenv("BPFTIME_ENABLE_AGENT_IPC", "1", 0) != 0)
+			_exit(1);
+#endif
 		std::string ld_preload_str("LD_PRELOAD=");
 		std::string agent_so_str("AGENT_SO=");
 		ld_preload_str += ld_preload;
@@ -1013,12 +1018,12 @@ int main(int argc, const char **argv)
 			// transformer_path += ":/usr/lib/libclient.so";
 			return run_command(executable_path.c_str(), extra_args,
 					   transformer_path.c_str(),
-					   agent_path.c_str(), env_args);
+					   agent_path.c_str(), env_args, true);
 		} else {
 			// agent_path += ":/usr/lib/libclient.so";
 			return run_command(executable_path.c_str(), extra_args,
 					   agent_path.c_str(), nullptr,
-					   env_args);
+					   env_args, true);
 		}
 	} else if (program.is_subcommand_used("attach")) {
 		auto agent_path = resolve_library_path_or_exit(
@@ -1202,19 +1207,11 @@ int main(int argc, const char **argv)
 									&detach_resp) &&
 								ipc_response_is_ok(
 									detach_resp);
-							if (!detached &&
-							    !detach_resp
-								     .empty()) {
+							if (!detached) {
+								rc = 1;
 								spdlog::warn(
 									"trace: agent IPC detach failed: {}",
 									detach_resp);
-							}
-							if (!detached) {
-								(void)kill(
-									pid,
-									SIGUSR1);
-								usleep(200 *
-								       1000);
 							}
 						}
 						(void)kill(child_pid, SIGINT);
@@ -1233,16 +1230,11 @@ int main(int argc, const char **argv)
 			bool detached =
 				try_send_agent_ipc(pid, "detach", &detach_resp) &&
 				ipc_response_is_ok(detach_resp);
-			if (!detached && !detach_resp.empty()) {
+			if (!detached) {
+				rc = 1;
 				spdlog::warn(
 					"trace: agent IPC detach failed: {}",
 					detach_resp);
-			}
-			if (!detached) {
-				(void)kill(pid, SIGUSR1);
-				// Give detach a moment to run before we drop the
-				// loader.
-				usleep(200 * 1000);
 			}
 		}
 		(void)sigaction(SIGINT, &old_int, nullptr);
@@ -1261,24 +1253,29 @@ int main(int argc, const char **argv)
 				"Shared memory not created, seems syscall server is not running");
 			return 0;
 		}
-		bool sent = false;
-		bpftime::shm_holder.global_shared_memory
-			.iterate_all_pids_in_alive_agent_set([&](int pid) {
-#if __linux__
-				(void)try_send_agent_ipc(pid, "detach");
-#endif
-				SPDLOG_INFO("Delivering SIGUSR1 to {}", pid);
-				int err = kill(pid, SIGUSR1);
-				if (err < 0) {
-					SPDLOG_WARN(
-						"Unable to signal process {}: {}",
-						pid, strerror(errno));
-				}
-				sent = true;
-			});
-		if (!sent) {
-			SPDLOG_INFO("No process was signaled.");
+#ifdef __linux__
+		std::vector<int> pids;
+		if (!bpftime::shm_holder.global_shared_memory
+			     .iterate_all_pids_in_alive_agent_set(
+				     [&](int pid) { pids.push_back(pid); }))
+			return 1;
+		bool failed = false;
+		for (int pid : pids) {
+			std::string response;
+			if (!try_send_agent_ipc(pid, "detach", &response) ||
+			    !ipc_response_is_ok(response)) {
+				SPDLOG_WARN("Unable to detach process {} via IPC: {}",
+					    pid, response);
+				failed = true;
+			}
 		}
+		if (pids.empty())
+			SPDLOG_INFO("No attached process found.");
+		return failed ? 1 : 0;
+#else
+		SPDLOG_WARN("Agent IPC detach is supported on Linux only.");
+		return 1;
+#endif
 	}
 	return 0;
 }
