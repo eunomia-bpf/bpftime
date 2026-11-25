@@ -8,10 +8,12 @@
 #include <boost/interprocess/shared_memory_object.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
+#include <csignal>
 #include <iterator>
 #include <linux/filter.h>
 #include <sched.h>
 #include <string>
+#include <sys/wait.h>
 #include <thread>
 #include <unistd.h>
 
@@ -104,7 +106,7 @@ TEST_CASE("BPF executions on one CPU are serialized", "[percpu][execution]")
 	// normally after release rather than running outside the lock.
 	maximum_active_helpers = 0;
 	auto &shm = bpftime::shm_holder.global_shared_memory;
-	shm.lock_bpf_cpu(cpu);
+	REQUIRE(shm.acquire_bpf_cpu(cpu));
 	int blocked_result = 0;
 	std::atomic<bool> contender_ready{ false }, contender_done{ false };
 	std::thread blocked([&] {
@@ -162,7 +164,7 @@ TEST_CASE("Per-CPU lock blocks through contention and releases cleanly",
 	// Under contention the lock must preserve per-CPU serialization: the
 	// contender blocks until the holder releases, then acquires it instead
 	// of spuriously skipping BPF execution on normal contention.
-	shm.lock_bpf_cpu(cpu);
+	REQUIRE(shm.acquire_bpf_cpu(cpu));
 	std::atomic<bool> contender_started{ false };
 	std::atomic<bool> contender_holds_lock{ false };
 	std::thread contender([&] {
@@ -185,6 +187,59 @@ TEST_CASE("Per-CPU lock blocks through contention and releases cleanly",
 	// After handoff the slot is obtainable again.
 	REQUIRE(shm.acquire_bpf_cpu(cpu));
 	shm.unlock_bpf_cpu(cpu);
+
+#ifdef __linux__
+	// A holder killed by SIGKILL while holding cpu recovers via
+	// EOWNERDEAD + pthread_mutex_consistent() so subsequent acquisitions
+	// and BPF program runs on that CPU continue normally.
+	cpu_set_t allowed, orig_affinity;
+	CPU_ZERO(&allowed);
+	CPU_ZERO(&orig_affinity);
+	REQUIRE(sched_getaffinity(0, sizeof(allowed), &allowed) == 0);
+	orig_affinity = allowed;
+	int run_cpu = 0;
+	while (run_cpu < CPU_SETSIZE && !CPU_ISSET(run_cpu, &allowed))
+		++run_cpu;
+	REQUIRE(run_cpu < CPU_SETSIZE);
+	cpu_set_t single;
+	CPU_ZERO(&single);
+	CPU_SET(run_cpu, &single);
+	REQUIRE(sched_setaffinity(0, sizeof(single), &single) == 0);
+
+	int pipefd[2]{ -1, -1 };
+	REQUIRE(pipe(pipefd) == 0);
+	pid_t child = fork();
+	REQUIRE(child >= 0);
+	if (child == 0) {
+		close(pipefd[0]);
+		bool ok = shm.acquire_bpf_cpu(run_cpu);
+		char b = ok ? '1' : '0';
+		(void)write(pipefd[1], &b, 1);
+		for (;;)
+			pause();
+	}
+	close(pipefd[1]);
+	char ack = 0;
+	REQUIRE(read(pipefd[0], &ack, 1) == 1);
+	close(pipefd[0]);
+	REQUIRE(ack == '1');
+	REQUIRE(kill(child, SIGKILL) == 0);
+	int status = 0;
+	REQUIRE(waitpid(child, &status, 0) == child);
+	REQUIRE(shm.acquire_bpf_cpu(run_cpu));
+	shm.unlock_bpf_cpu(run_cpu);
+
+	struct bpf_insn insns[] = { BPF_MOV64_IMM(BPF_REG_0, 7),
+				    BPF_EXIT_INSN() };
+	bpftime_prog prog(reinterpret_cast<const ebpf_inst *>(insns),
+			  std::size(insns), "after_dead_holder");
+	REQUIRE(prog.bpftime_prog_load(true) == 0);
+	uint64_t ret = 0;
+	uint64_t ctx = 0;
+	REQUIRE(prog.bpftime_prog_exec(&ctx, sizeof(ctx), &ret) == 0);
+	REQUIRE(ret == 7);
+	(void)sched_setaffinity(0, sizeof(orig_affinity), &orig_affinity);
+#endif
 }
 
 TEST_CASE("Map-free local programs do not need shared-memory CPU locks",

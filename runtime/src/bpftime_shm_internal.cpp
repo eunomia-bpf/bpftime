@@ -1014,31 +1014,34 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		SPDLOG_ERROR("pkey_mprotect failed");
 		return;
 	}
+	if (cpu_exec_locks != nullptr) {
+		const auto page_sz =
+			static_cast<std::uintptr_t>(sysconf(_SC_PAGESIZE));
+		const auto start = reinterpret_cast<std::uintptr_t>(
+					   cpu_exec_locks->locks) &
+				   ~(page_sz - 1);
+		const auto end =
+			(reinterpret_cast<std::uintptr_t>(
+				 cpu_exec_locks->locks + BPFTIME_MAX_CPU_COUNT) +
+			 page_sz - 1) &
+			~(page_sz - 1);
+		if (pkey_mprotect(reinterpret_cast<void *>(start), end - start,
+				  PROT_READ | PROT_WRITE, 0) == -1) {
+			SPDLOG_ERROR(
+				"pkey_mprotect reset for cpu_exec_locks failed");
+			return;
+		}
+	}
 	is_mpk_init = true;
 #endif
-}
-
-void bpftime_shm::lock_bpf_cpu(int cpu)
-{
-	shm_write_window_guard shm_window;
-	if (cpu_exec_locks != nullptr && cpu >= 0 && cpu < BPFTIME_MAX_CPU_COUNT)
-		cpu_exec_locks->locks[cpu].lock();
 }
 
 void bpftime_shm::unlock_bpf_cpu(int cpu)
 {
 	shm_write_window_guard shm_window;
-	if (cpu_exec_locks == nullptr || cpu < 0 ||
-	    cpu >= BPFTIME_MAX_CPU_COUNT)
-		return;
-	try {
+	if (cpu_exec_locks != nullptr && cpu >= 0 &&
+	    cpu < BPFTIME_MAX_CPU_COUNT)
 		cpu_exec_locks->locks[cpu].unlock();
-	} catch (const std::exception &ex) {
-		SPDLOG_WARN("Unable to unlock bpftime cpu {} lock: {}", cpu,
-			    ex.what());
-	} catch (...) {
-		SPDLOG_WARN("Unable to unlock bpftime cpu {} lock", cpu);
-	}
 }
 
 bool bpftime_shm::acquire_bpf_cpu(int cpu)
@@ -1047,25 +1050,7 @@ bool bpftime_shm::acquire_bpf_cpu(int cpu)
 	if (cpu_exec_locks == nullptr || cpu < 0 ||
 	    cpu >= BPFTIME_MAX_CPU_COUNT)
 		return false;
-	// Preserve the blocking serialization semantics of lock(): per-CPU
-	// correctness requires waiting for a normally-held lock even under
-	// contention, so a fixed timeout would spuriously skip valid BPF
-	// execution. The host-safety fix here is to contain locking
-	// exceptions, which otherwise propagate through the Frida C trampoline
-	// into std::terminate. A non-robust mutex whose owner died while
-	// holding it is a separate robustness concern that needs a robust
-	// mutex, not a timeout that also breaks ordinary contention.
-	try {
-		cpu_exec_locks->locks[cpu].lock();
-		return true;
-	} catch (const std::exception &ex) {
-		SPDLOG_WARN("Unable to lock bpftime cpu {}: {}", cpu,
-			    ex.what());
-		return false;
-	} catch (...) {
-		SPDLOG_WARN("Unable to lock bpftime cpu {}", cpu);
-		return false;
-	}
+	return cpu_exec_locks->locks[cpu].lock_and_recover();
 }
 
 std::uint64_t bpftime_shm::read_stable_epoch_seq(int max_tries) const
