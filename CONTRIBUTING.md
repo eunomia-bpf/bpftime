@@ -55,10 +55,6 @@ for this.
 * **DO** follow our [Coding and Style](#style-guidelines) guidelines, and keep code
 changes as small as possible.
 
-* **DO** keep the diff minimal and work through the anti-over-engineering and
-anti-over-testing checklist in the
-[Pull Request Template](.github/pull_request_template.md).
-
 * **DO** include corresponding tests whenever possible.
 
 * **DO** check for additional occurrences of the same problem in other parts of the
