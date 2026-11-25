@@ -4,6 +4,11 @@
  * All rights reserved.
  */
 #define _GNU_SOURCE
+#include <dirent.h>
+#include <stddef.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <sys/time.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/perf_event.h>
@@ -210,11 +215,67 @@ static int check_sigusr1_default(void)
 	return action.sa_handler == SIG_DFL ? 100 : 106;
 }
 
+static volatile sig_atomic_t host_signal_seen;
+static void host_signal(int sig) { host_signal_seen = sig; }
+__attribute__((constructor)) static void install_host_signal(void)
+{
+	if (getenv("BPFTIME_TEST_HOST_SIGNAL"))
+		signal(SIGUSR1, host_signal);
+}
+
+extern void bpftime_agent_main(const char *, int *) __attribute__((weak));
+static int check_agent_policy(void)
+{
+	if (getenv("BPFTIME_TEST_FRIDA")) {
+		int resident = 0;
+		if (!bpftime_agent_main) return 8;
+		bpftime_agent_main("", &resident);
+	}
+
+	struct sigaction action;
+	if (!getenv("BPFTIME_USED") || sigaction(SIGUSR1, NULL, &action) != 0 ||
+	    action.sa_handler != (getenv("BPFTIME_TEST_HOST_SIGNAL") ? host_signal : SIG_DFL))
+		return 1;
+	if (getenv("BPFTIME_TEST_HOST_SIGNAL")) {
+		raise(SIGUSR1);
+		if (host_signal_seen != SIGUSR1) return 2;
+	}
+	const char *opt = getenv("BPFTIME_ENABLE_AGENT_IPC");
+	int enabled = getenv("BPFTIME_TEST_FRIDA") || (opt && opt[0] && strcmp(opt, "0") != 0);
+	DIR *tasks = opendir("/proc/self/task");
+	if (!tasks) return 3;
+	int threads = 0;
+	struct dirent *entry;
+	while ((entry = readdir(tasks)))
+		if (entry->d_name[0] != '.') ++threads;
+	closedir(tasks);
+	if (threads != 1 + enabled) return 4;
+	int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+	if (fd < 0) return 5;
+	struct timeval timeout = { 2, 0 };
+	setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+	struct sockaddr_un addr = { .sun_family = AF_UNIX };
+	int len = snprintf(addr.sun_path + 1, sizeof(addr.sun_path) - 1,
+			   "bpftime-agent-%d", getpid());
+	int connected = connect(fd, (struct sockaddr *)&addr,
+				offsetof(struct sockaddr_un, sun_path) + 1 + len) == 0;
+	int result = connected != enabled;
+	if (enabled && connected) {
+		char response[4] = {0};
+		if (send(fd, "detach", 6, MSG_NOSIGNAL) != 6) result = 6;
+		shutdown(fd, SHUT_WR);
+		if (recv(fd, response, 3, MSG_WAITALL) != 3 || strcmp(response, "ok\n")) result = 7;
+	}
+	close(fd);
+	return result;
+}
+
 int main(int argc, char **argv)
 {
 	if (argc != 2) {
 		return 64;
 	}
+	if (strcmp(argv[1], "agent-policy") == 0) return check_agent_policy();
 	if (strcmp(argv[1], "startup") == 0) {
 		return trigger_startup();
 	}
