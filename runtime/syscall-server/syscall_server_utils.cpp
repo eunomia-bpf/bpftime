@@ -381,20 +381,12 @@ static void remove_syscall_server_global_shm() noexcept
 		return;
 	}
 	// Static teardown (__destruct_shm) may already have unmapped the segment
-	// before this atexit handler runs; touching the in-segment pid-set mutex
-	// would then fault. The liveness flag lives in ordinary .bss and stays
-	// readable, so once cleared only a name-based unlink is safe.
-	if (!bpftime_global_shm_is_initialized()) {
-		if (g_syscall_server_owns_shm &&
-		    getpid() == g_syscall_server_shm_owner_pid) {
-			try {
-				boost::interprocess::shared_memory_object::remove(
-					g_syscall_server_shm_name.c_str());
-			} catch (...) {
-			}
-		}
+	// before this atexit handler runs; touching it would then fault. The
+	// participant tables are no longer readable, so whether agents still use
+	// the segment is unknown: preserve it. The next server start reclaims it
+	// through try_remove_unused_shm() once no participant is alive.
+	if (!bpftime_global_shm_is_initialized())
 		return;
-	}
 	if (getpid() != g_syscall_server_shm_owner_pid) {
 		try {
 			shm_holder.global_shared_memory
