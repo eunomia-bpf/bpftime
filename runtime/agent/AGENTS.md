@@ -11,6 +11,10 @@ are the binding contract for this directory.
   in `LD_PRELOAD` mode; preserve `errno` and avoid reentrant `malloc`.
 - Stay fork/exec-safe: `O_CLOEXEC`/`SOCK_CLOEXEC` on all internal fds, and no
   lock deadlock in the child after a multi-threaded `fork()`.
+- Never sleep/poll (`sleep`/`usleep`/`nanosleep`/`sleep_for`) or take an
+  unbounded `flock(LOCK_EX)` in the constructor init path; acquire the SHM
+  lifecycle lock non-blockingly and fail open — startup ordering lives in the
+  CLI.
 - Keep the target's stdout/stderr silent unless console output was explicitly
   selected.
 - Build to a low glibc baseline (e.g. 2.17) with `-fvisibility=hidden`, so

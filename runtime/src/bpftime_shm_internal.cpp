@@ -156,7 +156,8 @@ shm_write_window_guard::~shm_write_window_guard() {
 #endif
 		bpftime_protect_restore(saved_rights);
 }
-shm_lifecycle_lock::shm_lifecycle_lock(const char *shm_name) noexcept
+shm_lifecycle_lock::shm_lifecycle_lock(const char *shm_name,
+				       bool shared_non_blocking) noexcept
 {
 #if __linux__
 	try {
@@ -181,7 +182,11 @@ shm_lifecycle_lock::shm_lifecycle_lock(const char *shm_name) noexcept
 			return;
 		}
 		(void)fchmod(lock_fd, 0666);
-		while (flock(lock_fd, LOCK_EX) != 0) {
+		// Preload readers use LOCK_SH|LOCK_NB so concurrent agents do
+		// not contend while failing open if a server holds LOCK_EX.
+		const int op =
+			shared_non_blocking ? (LOCK_SH | LOCK_NB) : LOCK_EX;
+		while (flock(lock_fd, op) != 0) {
 			if (errno != EINTR) {
 				close(lock_fd);
 				lock_fd = -1;
@@ -196,6 +201,8 @@ shm_lifecycle_lock::shm_lifecycle_lock(const char *shm_name) noexcept
 	}
 #else
 	(void)shm_name;
+	(void)shared_non_blocking;
+	lock_fd = 0;
 #endif
 }
 
@@ -965,18 +972,11 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 	if (open_type == shm_open_type::SHM_OPEN_ONLY) {
 		auto pair = segment.find<cuda::CommSharedMem>(
 			"cuda_comm_shared_mem");
-		for (int i = 0; pair.first == nullptr && i < 100; i++) {
-			usleep(10000);
-			pair = segment.find<cuda::CommSharedMem>(
-				"cuda_comm_shared_mem");
-		}
-		if (pair.first == nullptr) {
+		// Server builds this under shm_lifecycle_lock; no polling.
+		cuda_comm_shared_mem = pair.first;
+		if (pair.first == nullptr)
 			SPDLOG_ERROR(
 				"CommSharedMem not found in shared memory; did syscall-server initialize CUDA support?");
-			cuda_comm_shared_mem = nullptr;
-		} else {
-			cuda_comm_shared_mem = pair.first;
-		}
 		// Register the shared communication memory for CUDA device
 		// mapping. This must happen after we have located the
 		// CommSharedMem in the shared segment.
@@ -1016,13 +1016,6 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 	}
 	is_mpk_init = true;
 #endif
-}
-
-void bpftime_shm::lock_bpf_cpu(int cpu)
-{
-	shm_write_window_guard shm_window;
-	if (cpu_exec_locks != nullptr && cpu >= 0 && cpu < BPFTIME_MAX_CPU_COUNT)
-		cpu_exec_locks->locks[cpu].lock();
 }
 
 void bpftime_shm::unlock_bpf_cpu(int cpu)

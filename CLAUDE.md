@@ -265,7 +265,11 @@ same pull request.
 8. **Fail open, zero blocking.** On unavailable shared memory, a full
    ringbuf, or an `ENOTRECOVERABLE` mutex, degrade cleanly and skip tracing:
    never block indefinitely, never `abort()`, never alter the host exit
-   status.
+   status. Constructor/`__libc_start_main`/`SHM_OPEN_ONLY` init paths must
+   never use `sleep`/`usleep`/`nanosleep`/`sleep_for` polling retries,
+   unbounded `flock(LOCK_EX)`, or untimed IPC socket waits (`SO_SNDTIMEO` /
+   `SO_RCVTIMEO` + `MSG_NOSIGNAL` are mandatory); use non-blocking acquisition
+   and move startup ordering into the external CLI/orchestrator.
 
 ## Trap and RISC-V backend constraints
 

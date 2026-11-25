@@ -104,7 +104,7 @@ TEST_CASE("BPF executions on one CPU are serialized", "[percpu][execution]")
 	// normally after release rather than running outside the lock.
 	maximum_active_helpers = 0;
 	auto &shm = bpftime::shm_holder.global_shared_memory;
-	shm.lock_bpf_cpu(cpu);
+	REQUIRE(shm.acquire_bpf_cpu(cpu));
 	int blocked_result = 0;
 	std::atomic<bool> contender_ready{ false }, contender_done{ false };
 	std::thread blocked([&] {
@@ -162,7 +162,7 @@ TEST_CASE("Per-CPU lock blocks through contention and releases cleanly",
 	// Under contention the lock must preserve per-CPU serialization: the
 	// contender blocks until the holder releases, then acquires it instead
 	// of spuriously skipping BPF execution on normal contention.
-	shm.lock_bpf_cpu(cpu);
+	REQUIRE(shm.acquire_bpf_cpu(cpu));
 	std::atomic<bool> contender_started{ false };
 	std::atomic<bool> contender_holds_lock{ false };
 	std::thread contender([&] {

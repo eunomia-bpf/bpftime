@@ -90,7 +90,6 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 		if (seq == BPFTIME_EPOCH_SEQ_UNSTABLE) {
 			SPDLOG_INFO(
 				"bpftime: shm epoch_seq is unstable before handler scan; retrying");
-			usleep(50 * 1000);
 			continue;
 		}
 		// Detect shm session switch and rebind.
@@ -192,7 +191,6 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				"bpftime: shm epoch_seq is unstable after handler scan; retrying");
 			destroy_all_attach_links_unlocked();
 			reset_instantiated_state_unlocked();
-			usleep(50 * 1000);
 			continue;
 		}
 		if (epoch_after == epoch_before || epoch_after == last_epoch_seq_seen) {
