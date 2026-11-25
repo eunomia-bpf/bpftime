@@ -15,12 +15,10 @@
 #include <bpftime_shm_internal.hpp>
 #include <cerrno>
 #include <cctype>
-#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
 #include <string>
-#include <thread>
 #include <vector>
 #if __linux__
 #include <fcntl.h>
@@ -158,74 +156,6 @@ shm_write_window_guard::~shm_write_window_guard() {
 #endif
 		bpftime_protect_restore(saved_rights);
 }
-
-namespace
-{
-class pid_set_scoped_lock {
-public:
-	explicit pid_set_scoped_lock(
-		boost::interprocess::interprocess_mutex *mutex)
-		: mutex(mutex),
-		  saved_write_window(bpftime_protect_open_write_window())
-	{
-		if (mutex == nullptr) {
-			locked = true;
-			return;
-		}
-
-		const auto deadline = std::chrono::steady_clock::now() +
-				      std::chrono::milliseconds(250);
-		do {
-			try {
-				if (mutex->try_lock()) {
-					locked = true;
-					return;
-				}
-			} catch (const std::exception &ex) {
-				SPDLOG_WARN(
-					"Unable to lock bpftime pid set: {}",
-					ex.what());
-				return;
-			} catch (...) {
-				SPDLOG_WARN(
-					"Unable to lock bpftime pid set");
-				return;
-			}
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		} while (std::chrono::steady_clock::now() < deadline);
-
-		SPDLOG_WARN("Timed out locking bpftime pid set");
-	}
-
-	pid_set_scoped_lock(const pid_set_scoped_lock &) = delete;
-	pid_set_scoped_lock &
-	operator=(const pid_set_scoped_lock &) = delete;
-
-	~pid_set_scoped_lock()
-	{
-		if (locked && mutex != nullptr) {
-			try {
-				mutex->unlock();
-			} catch (const std::exception &ex) {
-				SPDLOG_WARN(
-					"Unable to unlock bpftime pid set: {}",
-					ex.what());
-			} catch (...) {
-				SPDLOG_WARN("Unable to unlock bpftime pid set");
-			}
-		}
-		bpftime_protect_restore(saved_write_window);
-	}
-
-	bool owns_lock() const noexcept { return locked; }
-
-private:
-	boost::interprocess::interprocess_mutex *mutex = nullptr;
-	bool locked = false;
-	int saved_write_window = -1;
-};
-} // namespace
-
 shm_lifecycle_lock::shm_lifecycle_lock(const char *shm_name) noexcept
 {
 #if __linux__
@@ -937,10 +867,13 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			segment.find<alive_syscall_server_pid_set>(
 				       bpftime::DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME)
 				.first;
-		pid_set_lock =
-			segment.find<boost::interprocess::interprocess_mutex>(
-				       bpftime::DEFAULT_PID_SET_LOCK_NAME)
-				.first;
+		if (injected_pids == nullptr ||
+		    alive_syscall_server_pids == nullptr) {
+			SPDLOG_WARN(
+				"PID bookkeeping objects missing from shared memory; "
+				"the segment likely uses an incompatible older layout, "
+				"so alive-PID tracking is disabled for this process");
+		}
 		epoch_state = segment.find<bpftime_global_epoch_state>(
 					     "bpftime_global_epoch_state")
 				      .first;
@@ -972,20 +905,10 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			bpftime::DEFAULT_AGENT_CONFIG_NAME)(config);
 
 		injected_pids = segment.find_or_construct<alive_agent_pids>(
-			bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME)(
-			std::less<int>(),
-			alive_agent_pid_set_allocator(
-				segment.get_segment_manager()));
+			bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME)();
 		alive_syscall_server_pids =
 			segment.find_or_construct<alive_syscall_server_pid_set>(
-				bpftime::DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME)(
-				std::less<int>(),
-				alive_syscall_server_pid_set_allocator(
-					segment.get_segment_manager()));
-		pid_set_lock =
-			segment.find_or_construct<
-				boost::interprocess::interprocess_mutex>(
-				bpftime::DEFAULT_PID_SET_LOCK_NAME)();
+				bpftime::DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME)();
 		epoch_state =
 			segment.find_or_construct<bpftime_global_epoch_state>(
 				"bpftime_global_epoch_state")();
@@ -1018,20 +941,10 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			"done: bpftime_shm for server setup: runtime_config");
 
 		injected_pids = segment.construct<alive_agent_pids>(
-			bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME)(
-			std::less<int>(),
-			alive_agent_pid_set_allocator(
-				segment.get_segment_manager()));
+			bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME)();
 		alive_syscall_server_pids =
 			segment.construct<alive_syscall_server_pid_set>(
-				bpftime::DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME)(
-				std::less<int>(),
-				alive_syscall_server_pid_set_allocator(
-					segment.get_segment_manager()));
-		pid_set_lock =
-			segment.construct<
-				boost::interprocess::interprocess_mutex>(
-				bpftime::DEFAULT_PID_SET_LOCK_NAME)();
+				bpftime::DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME)();
 		epoch_state = segment.construct<bpftime_global_epoch_state>(
 			"bpftime_global_epoch_state")();
 		cpu_exec_locks = segment.construct<bpftime_cpu_exec_locks>(
@@ -1460,96 +1373,57 @@ bpftime::bpftime_shm::~bpftime_shm()
 
 bool bpftime_shm::add_pid_into_alive_agent_set(int pid)
 {
+	shm_write_window_guard shm_window;
 	if (injected_pids == nullptr) {
 		return true;
 	}
-	auto update = [&]() { injected_pids->insert(pid); };
-	pid_set_scoped_lock lock(pid_set_lock);
-	if (!lock.owns_lock()) {
-		return false;
-	}
-	update();
-	return true;
+	return injected_pids->insert(pid);
 }
 bool bpftime_shm::remove_pid_from_alive_agent_set(int pid)
 {
+	shm_write_window_guard shm_window;
 	if (injected_pids == nullptr) {
 		return true;
 	}
-	auto update = [&]() { injected_pids->erase(pid); };
-	pid_set_scoped_lock lock(pid_set_lock);
-	if (!lock.owns_lock()) {
-		return false;
-	}
-	update();
+	injected_pids->remove(pid);
 	return true;
 }
 bool bpftime_shm::iterate_all_pids_in_alive_agent_set(
 	std::function<void(int)> &&cb)
 {
-	std::vector<int> pids;
-	auto snapshot = [&]() {
-		if (injected_pids != nullptr) {
-			pids.assign(injected_pids->begin(), injected_pids->end());
-		}
-	};
-	pid_set_scoped_lock lock(pid_set_lock);
-	if (!lock.owns_lock()) {
-		return false;
+	if (injected_pids == nullptr) {
+		return true;
 	}
-	snapshot();
-	for (auto x : pids) {
-		cb(x);
-	}
+	injected_pids->iterate(cb);
 	return true;
 }
 
 bool bpftime_shm::add_pid_into_alive_syscall_server_set(int pid)
 {
+	shm_write_window_guard shm_window;
 	if (alive_syscall_server_pids == nullptr) {
 		return true;
 	}
-	auto update = [&]() { alive_syscall_server_pids->insert(pid); };
-	pid_set_scoped_lock lock(pid_set_lock);
-	if (!lock.owns_lock()) {
-		return false;
-	}
-	update();
-	return true;
+	return alive_syscall_server_pids->insert(pid);
 }
 
 bool bpftime_shm::remove_pid_from_alive_syscall_server_set(int pid)
 {
+	shm_write_window_guard shm_window;
 	if (alive_syscall_server_pids == nullptr) {
 		return true;
 	}
-	auto update = [&]() { alive_syscall_server_pids->erase(pid); };
-	pid_set_scoped_lock lock(pid_set_lock);
-	if (!lock.owns_lock()) {
-		return false;
-	}
-	update();
+	alive_syscall_server_pids->remove(pid);
 	return true;
 }
 
 bool bpftime_shm::iterate_all_pids_in_alive_syscall_server_set(
 	std::function<void(int)> &&cb)
 {
-	std::vector<int> pids;
-	auto snapshot = [&]() {
-		if (alive_syscall_server_pids != nullptr) {
-			pids.assign(alive_syscall_server_pids->begin(),
-				    alive_syscall_server_pids->end());
-		}
-	};
-	pid_set_scoped_lock lock(pid_set_lock);
-	if (!lock.owns_lock()) {
-		return false;
+	if (alive_syscall_server_pids == nullptr) {
+		return true;
 	}
-	snapshot();
-	for (auto x : pids) {
-		cb(x);
-	}
+	alive_syscall_server_pids->iterate(cb);
 	return true;
 }
 
