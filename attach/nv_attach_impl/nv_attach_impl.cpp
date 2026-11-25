@@ -74,7 +74,6 @@ namespace
 {
 struct nv_attach_hook_state_holder {
 	std::once_flag init_once;
-	std::mutex mutex;
 	std::optional<nv_attach_hook_state> state;
 };
 
@@ -84,8 +83,6 @@ static nv_attach_hook_state_holder g_nv_attach_hook_state_holder{};
 nv_attach_hook_state &nv_attach_get_hook_state()
 {
 	std::call_once(g_nv_attach_hook_state_holder.init_once, []() {
-		std::lock_guard<std::mutex> guard(
-			g_nv_attach_hook_state_holder.mutex);
 		g_nv_attach_hook_state_holder.state.emplace();
 	});
 	return *g_nv_attach_hook_state_holder.state;
@@ -152,11 +149,6 @@ int nv_attach_impl::detach_by_id(int id)
 	return 0;
 }
 
-void nv_attach_impl::register_custom_helpers(
-	ebpf_helper_register_callback register_callback)
-{
-}
-
 int nv_attach_impl::create_attach_with_ebpf_callback(
 	ebpf_run_callback &&cb, const attach_private_data &private_data,
 	int attach_type)
@@ -209,6 +201,9 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 		if (late_bootstrap_done.load(std::memory_order_acquire)) {
 			SPDLOG_INFO(
 				"nv_attach_impl: new hook added after bootstrap; rerunning late bootstrap");
+			// Drop the previous bootstrap's module set so the rerun doesn't
+			// leave two sets with split device-global addresses.
+			clear_patched_state_for_next_session();
 			reset_late_bootstrap_state_for_next_attach();
 		}
 		this->map_basic_info = data.map_basic_info;
@@ -314,7 +309,10 @@ nv_attach_impl::nv_attach_impl()
 	hook_state.replacements_installed.store(false,
 						std::memory_order_release);
 
+	bool transaction_open = false;
+	try {
 	gum_interceptor_begin_transaction(interceptor);
+	transaction_open = true;
 
 	auto register_hook = [&](AttachedToFunction func, void *addr) {
 		if (addr == nullptr) {
@@ -394,18 +392,6 @@ nv_attach_impl::nv_attach_impl()
 	}
 
 	{
-		void *cuda_malloc_addr = GSIZE_TO_POINTER(
-			gum_module_find_export_by_name(nullptr, "cudaMalloc"));
-		register_hook(AttachedToFunction::CudaMalloc, cuda_malloc_addr);
-	}
-	{
-		void *cuda_malloc_managed_addr =
-			GSIZE_TO_POINTER(gum_module_find_export_by_name(
-				nullptr, "cudaMallocManaged"));
-		register_hook(AttachedToFunction::CudaMallocManaged,
-			      cuda_malloc_managed_addr);
-	}
-	{
 		void *cuda_memcpy_to_symbol_addr =
 			GSIZE_TO_POINTER(gum_module_find_export_by_name(
 				nullptr, "cudaMemcpyToSymbol"));
@@ -462,8 +448,8 @@ nv_attach_impl::nv_attach_impl()
 		(gpointer)&cuda_runtime_function__cudaMemcpyFromSymbolAsync,
 		hook_state.orig_cuda_memcpy_from_symbol_async);
 	gum_interceptor_end_transaction(interceptor);
+	transaction_open = false;
 
-	nv_attach_set_active_impl(this);
 	this->original_cuda_launch_kernel =
 		hook_state.orig_cuda_launch_kernel.load(
 			std::memory_order_acquire);
@@ -555,9 +541,42 @@ nv_attach_impl::nv_attach_impl()
 				handle));
 	}
 	{
-		this->ptx_compiler = *load_nv_attach_impl_ptx_compiler(
-			DEFAULT_PTX_COMPILER_SHARED_LIB,
-			this->ptx_compiler_dl_handle);
+		const char *provided_compiler_lib =
+			getenv("BPFTIME_PTX_COMPILER_LIB");
+		const char *compiler_lib =
+			(provided_compiler_lib &&
+			 strlen(provided_compiler_lib) > 0)
+				? provided_compiler_lib
+				: DEFAULT_PTX_COMPILER_SHARED_LIB;
+		if (provided_compiler_lib &&
+		    strlen(provided_compiler_lib) > 0) {
+			SPDLOG_INFO(
+				"Using user provided (by BPFTIME_PTX_COMPILER_LIB) PTX compiler library: {}",
+				compiler_lib);
+		}
+		auto compiler = load_nv_attach_impl_ptx_compiler(
+			compiler_lib, this->ptx_compiler_dl_handle);
+		if (!compiler)
+			throw std::runtime_error("Unable to load PTX compiler");
+		this->ptx_compiler = *compiler;
+	}
+	nv_attach_set_active_impl(this);
+	} catch (...) {
+		// Initialization may fail after hooks were committed. Detach the
+		// listener before constructor unwinding destroys its contexts.
+		enabled.store(false, std::memory_order_release);
+		try {
+			if (transaction_open)
+				gum_interceptor_end_transaction(interceptor);
+			gum_interceptor_begin_transaction(interceptor);
+			gum_interceptor_detach(
+				interceptor, (GumInvocationListener *)listener);
+			gum_interceptor_end_transaction(interceptor);
+		} catch (...) {
+		}
+		g_object_unref(listener);
+		frida_listener = nullptr;
+		throw;
 	}
 }
 
@@ -1036,12 +1055,10 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 						resp.modified;
 				}
 			}
-			if (should_add_trampoline) {
-				current_ptx =
-					ptxpass::filter_out_version_headers_ptx(
-						wrap_ptx_with_trampoline(
-							current_ptx));
-			}
+			if (!should_add_trampoline)
+				return;
+			current_ptx = ptxpass::filter_out_version_headers_ptx(
+				wrap_ptx_with_trampoline(current_ptx));
 			std::lock_guard<std::mutex> _guard(map_mutex);
 			ptx_out["patched." + file_name] = std::make_tuple(
 				current_ptx, should_add_trampoline);
@@ -1605,7 +1622,6 @@ collect_ptx_entry_functions(const std::map<std::string, std::string> &all_ptx)
 void nv_attach_impl::build_host_symbol_cache_once()
 {
 	std::call_once(host_symbol_cache_once, [&]() {
-		std::lock_guard<std::mutex> guard(host_symbol_cache_mutex);
 		host_symbol_ranges.clear();
 
 		auto modules = elf_introspect::list_loaded_modules();
@@ -1656,7 +1672,6 @@ nv_attach_impl::resolve_host_function_symbol(void *addr)
 	}
 
 	build_host_symbol_cache_once();
-	std::lock_guard<std::mutex> guard(host_symbol_cache_mutex);
 	if (host_symbol_ranges.empty())
 		return std::nullopt;
 
@@ -1919,18 +1934,13 @@ void nv_attach_impl::bootstrap_existing_fatbins_once()
 	std::lock_guard<std::mutex> guard(late_bootstrap_mutex);
 	if (late_bootstrap_done.load(std::memory_order_acquire))
 		return;
-	if (!late_bootstrap_once) {
-		late_bootstrap_once = std::make_unique<std::once_flag>();
-	}
 	bool ok = false;
+	// A failure leaves late_bootstrap_done clear, so a later call retries,
+	// matching the previous std::call_once exception-retry semantics.
 	try {
-		// If the bootstrap lambda throws, std::call_once will allow a
-		// subsequent retry. Do not swallow exceptions inside the lambda.
-		std::call_once(*late_bootstrap_once, [&]() {
-			ensure_cuda_context_for_current_thread();
-			build_host_symbol_cache_once();
-			bootstrap_existing_fatbins();
-		});
+		ensure_cuda_context_for_current_thread();
+		build_host_symbol_cache_once();
+		bootstrap_existing_fatbins();
 		ok = true;
 	} catch (const std::exception &ex) {
 		SPDLOG_WARN("nv_attach_impl: late bootstrap failed: {}", ex.what());
@@ -1947,7 +1957,6 @@ void nv_attach_impl::reset_late_bootstrap_state_for_next_attach()
 	std::lock_guard<std::mutex> guard(late_bootstrap_mutex);
 	late_bootstrap_done.store(false, std::memory_order_release);
 	late_bootstrap_started.store(false, std::memory_order_release);
-	late_bootstrap_once = std::make_unique<std::once_flag>();
 }
 
 void nv_attach_impl::start_late_bootstrap_async()

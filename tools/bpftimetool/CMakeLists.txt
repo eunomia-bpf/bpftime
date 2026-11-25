@@ -1,6 +1,7 @@
 add_executable(bpftimetool
   main.cpp
 )
+target_link_libraries(bpftimetool PRIVATE argparse)
 if(${BPFTIME_ENABLE_CUDA_ATTACH})
   include(../../cmake/cuda.cmake)
   find_cuda()
@@ -17,7 +18,7 @@ if(${BPFTIME_BUILD_WITH_LIBBPF})
   )
 
   if(${BPFTIME_ENABLE_CUDA_ATTACH})
-    target_link_libraries(bpftimetool
+    target_link_libraries(bpftimetool PRIVATE
       -lpthread
       -lm
       -ldl
@@ -27,7 +28,7 @@ if(${BPFTIME_BUILD_WITH_LIBBPF})
       bpftime_nv_attach_impl
     )
   else()
-    target_link_libraries(bpftimetool
+    target_link_libraries(bpftimetool PRIVATE
       -lpthread
       -lm
       -ldl
@@ -41,7 +42,7 @@ else()
     ../../runtime/include
   )
   if(${BPFTIME_ENABLE_CUDA_ATTACH})
-    target_link_libraries(bpftimetool
+    target_link_libraries(bpftimetool PRIVATE
       -lpthread
       -lm
       -ldl
@@ -50,7 +51,7 @@ else()
       bpftime_nv_attach_impl
     )
   else()
-    target_link_libraries(bpftimetool
+    target_link_libraries(bpftimetool PRIVATE
       -lpthread
       -lm
       -ldl

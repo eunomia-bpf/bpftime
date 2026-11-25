@@ -107,22 +107,82 @@ resolve_mapped_module_path(const std::string_view &module_name)
 #endif
 }
 
+#if __linux__
+namespace
+{
+// Mirror Linux kernel/events/uprobes.c offset_to_vaddr(): find the executable
+// file-backed VMA for `target_path` in /proc/self/maps covering `file_offset`,
+// and translate to vma_start + (file_offset - vma_pgoff).
+void *resolve_exec_vma_by_file_offset(const std::string &target_path,
+				      uintptr_t file_offset)
+{
+	struct stat target_st = {};
+	const bool have_target_st = !target_path.empty() &&
+				    stat(target_path.c_str(), &target_st) == 0;
+	std::ifstream maps("/proc/self/maps");
+	std::string line;
+	while (std::getline(maps, line)) {
+		unsigned long long start = 0, end = 0, pgoff = 0, inode = 0;
+		unsigned dev_major = 0, dev_minor = 0;
+		char perms[5] = {};
+		int path_offset = 0;
+		if (sscanf(line.c_str(), "%llx-%llx %4s %llx %x:%x %llu %n",
+			   &start, &end, perms, &pgoff, &dev_major, &dev_minor,
+			   &inode, &path_offset) != 7)
+			continue;
+		if (perms[2] != 'x' || end <= start)
+			continue;
+		if (file_offset < pgoff || file_offset - pgoff >= end - start)
+			continue;
+		std::string path = unescape_proc_path(line.substr(path_offset));
+		if (path.empty() || path.front() != '/' ||
+		    path.ends_with(" (deleted)"))
+			continue;
+		bool matched = (path == target_path);
+		if (!matched && have_target_st && inode != 0 &&
+		    inode == target_st.st_ino &&
+		    dev_major == major(target_st.st_dev) &&
+		    dev_minor == minor(target_st.st_dev)) {
+			matched = true;
+		}
+		if (!matched && have_target_st) {
+			std::error_code ec;
+			if (std::filesystem::equivalent(path, target_path,
+							ec) &&
+			    !ec)
+				matched = true;
+		}
+		if (matched) {
+			return reinterpret_cast<void *>(
+				static_cast<uintptr_t>(start) +
+				(file_offset - static_cast<uintptr_t>(pgoff)));
+		}
+	}
+	return nullptr;
+}
+} // namespace
+#endif
+
 void *
 resolve_function_addr_by_module_offset(const std::string_view &module_name,
 				       uintptr_t func_offset)
 {
 	auto exec_path = get_executable_path();
-	void *module_base_addr = nullptr;
 	std::error_code ec;
-	// An empty module name explicitly denotes the main executable. Missing
-	// paths should fall through to module lookup, not throw from equivalent.
-	if (module_name.empty() ||
-	    std::filesystem::equivalent(module_name, exec_path, ec)) {
-		module_base_addr = get_module_base_addr("");
-	} else {
-		module_base_addr =
-			get_module_base_addr(std::string(module_name).c_str());
+	// Resolve the executable alias the same way for the base and its VMAs.
+	const std::string resolved_name =
+		(module_name.empty() ||
+		 std::filesystem::equivalent(module_name, exec_path, ec))
+			? "" : std::string(module_name);
+#if __linux__
+	const std::string &target_path =
+		resolved_name.empty() ? exec_path : resolved_name;
+	if (void *vma_addr =
+		    resolve_exec_vma_by_file_offset(target_path, func_offset)) {
+		return vma_addr;
 	}
+#endif
+	void *module_base_addr = get_module_base_addr(resolved_name.c_str());
 	if (!module_base_addr) {
 		// It's not a bug, it might be attach to a unrelated process
 		// when using the LD_PRELOAD
@@ -131,7 +191,16 @@ resolve_function_addr_by_module_offset(const std::string_view &module_name,
 		return nullptr;
 	}
 
-	return ((char *)module_base_addr) + func_offset;
+	// Reject both integer overflow and unmapped gaps. Missing mappings fail
+	// closed: an unchecked address must never reach Frida's trampoline writer.
+	const auto base = reinterpret_cast<uintptr_t>(module_base_addr);
+	if (func_offset > UINTPTR_MAX - base ||
+	    !module_contains_address(resolved_name, base + func_offset)) {
+		SPDLOG_ERROR("Module offset 0x{:x} is not mapped in {}",
+			     func_offset, module_name);
+		return nullptr;
+	}
+	return reinterpret_cast<void *>(base + func_offset);
 }
 
 void *find_function_addr_by_name(const char *name)
@@ -146,14 +215,100 @@ void *find_function_addr_by_name(const char *name)
 
 void *get_module_base_addr(const char *module_name)
 {
+#if __APPLE__
+	// dyld/gum-darwin identifies the main executable by its full path;
+	// the Linux empty-string alias is unknown, so resolve it explicitly.
+	std::string exec_storage;
+	if (!module_name || module_name[0] == '\0') {
+		exec_storage = get_executable_path();
+		module_name = exec_storage.c_str();
+	}
+#endif
 	gum_module_load(module_name, nullptr);
 	return (void *)gum_module_find_base_address(module_name);
 }
-void *find_module_export_by_name(const char *module_name,
-				 const char *symbol_name)
+
+namespace {
+struct ExtentAccumulator {
+	uintptr_t begin = UINTPTR_MAX;
+	uintptr_t end = 0;
+};
+
+gboolean accumulate_range(const GumRangeDetails *details, gpointer user_data)
 {
-	return (void *)(uintptr_t)gum_module_find_export_by_name(module_name,
-								 symbol_name);
+	auto *acc = static_cast<ExtentAccumulator *>(user_data);
+	const auto base = (uintptr_t)details->range->base_address;
+	const auto range_end = base + (uintptr_t)details->range->size;
+	if (base < acc->begin)
+		acc->begin = base;
+	if (range_end > acc->end)
+		acc->end = range_end;
+	return TRUE;
+}
+
+struct AddressLookup {
+	uintptr_t address;
+	bool found = false;
+};
+
+gboolean find_mapped_address(const GumRangeDetails *details, gpointer user_data)
+{
+	auto *lookup = static_cast<AddressLookup *>(user_data);
+	const auto start = (uintptr_t)details->range->base_address;
+	if (lookup->address >= start &&
+	    lookup->address - start < (uintptr_t)details->range->size) {
+		lookup->found = true;
+		return FALSE;
+	}
+	return TRUE;
+}
+
+} // namespace
+
+// gum's module lookup matches a full path for the base address but, for range
+// enumeration, only the executable name (the basename) is matched; a full path
+// yields zero ranges. Try the given name and then the basename so a path from
+// an attach spec still resolves.
+bool module_contains_address(std::string_view module_name, uintptr_t address)
+{
+	AddressLookup lookup{address};
+#if __APPLE__
+	const std::string name = module_name.empty()
+					 ? get_executable_path()
+					 : std::string(module_name);
+#else
+	const std::string name(module_name);
+#endif
+	gum_module_enumerate_ranges(name.c_str(), GUM_PAGE_READ,
+				    find_mapped_address, &lookup);
+	if (lookup.found)
+		return true;
+
+	const auto slash = name.find_last_of('/');
+	if (slash == std::string::npos || slash + 1 >= name.size())
+		return false;
+	gum_module_enumerate_ranges(name.c_str() + slash + 1, GUM_PAGE_READ,
+				    find_mapped_address, &lookup);
+	return lookup.found;
+}
+
+// Returns the span covering the module's mapped ranges (possibly with gaps),
+// or 0 when the ranges cannot be determined.
+uintptr_t module_mapped_extent(const std::string_view &module_name)
+{
+#if __APPLE__
+	const std::string name = module_name.empty()
+					 ? get_executable_path()
+					 : std::string(module_name);
+#else
+	const std::string name(module_name);
+#endif
+	ExtentAccumulator acc;
+	gum_module_enumerate_ranges(name.c_str(), GUM_PAGE_READ,
+				    accumulate_range, &acc);
+	if (acc.end <= acc.begin)
+		return 0;
+	return acc.end - acc.begin;
 }
 int from_cb_idx_to_attach_type(int idx)
 {

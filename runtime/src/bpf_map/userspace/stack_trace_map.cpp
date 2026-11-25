@@ -5,6 +5,7 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <stdexcept>
 
@@ -86,6 +87,33 @@ long stack_trace_map_impl::elem_delete(const void *key)
 	return 0;
 }
 
+// BPF_MAP_LOOKUP_AND_DELETE_ELEM on BPF_MAP_TYPE_STACK_TRACE. The kernel
+// (bpf_stackmap_extract with delete=true) copies the recorded frames and
+// zero-fills the rest of the value, so a shorter trace leaves the tail
+// clear rather than exposing whatever the caller's buffer held.
+int stack_trace_map_impl::lookup_and_delete(const void *key, void *value_out,
+					    bool from_syscall)
+{
+	if (key == nullptr) {
+		errno = EINVAL;
+		return -1;
+	}
+	uint32_t index = *(uint32_t *)key;
+	auto itr = data.find(index);
+	if (itr == data.end()) {
+		errno = ENOENT;
+		return -1;
+	}
+	const auto value_size = max_stack_entries * sizeof(uint64_t);
+	const auto trace_len =
+		std::min(itr->second.size(), size_t(max_stack_entries)) *
+		sizeof(uint64_t);
+	std::memcpy(value_out, itr->second.data(), trace_len);
+	std::memset((uint8_t *)value_out + trace_len, 0, value_size - trace_len);
+	data.erase(itr);
+	return 0;
+}
+
 int stack_trace_map_impl::map_get_next_key(const void *key, void *next_key)
 {
 	errno = ENOTSUP;
@@ -109,14 +137,18 @@ int stack_trace_map_impl::fill_stack_trace(const std::vector<uint64_t> &stk,
 		SPDLOG_DEBUG("Set new stack map entry");
 		return to_put_hash;
 	} else {
-		bool equals = true;
+		bool equals = compare_only_by_hash;
 		if (!compare_only_by_hash) {
 			SPDLOG_DEBUG("Checking equality by content..");
-			equals = equals && itr->second.size() == stk.size();
-			if (!equals) {
-				equals = equals &&
-					 std::equal(stk.begin(), stk.end(),
-						    itr->second.begin());
+			if (itr->second.size() == stk.size()) {
+				// Same size: compare every frame. The
+				// four-iterator overload stays bounded even
+				// if the size invariant were ever broken.
+				equals = std::equal(stk.begin(), stk.end(),
+						    itr->second.begin(),
+						    itr->second.end());
+			} else {
+				equals = false;
 			}
 		} else {
 			SPDLOG_DEBUG("Checking equality by hash..");
@@ -126,11 +158,17 @@ int stack_trace_map_impl::fill_stack_trace(const std::vector<uint64_t> &stk,
 			SPDLOG_DEBUG("Early return due to equals");
 			return to_put_hash;
 		}
-		if (discard_old_one) {
+		// A different stack hashed into an occupied bucket. Match
+		// the kernel bpf_get_stackid() behavior: without
+		// BPF_F_REUSE_STACKID the lookup fails with -EEXIST; with
+		// the flag the existing entry is replaced and its id reused.
+		if (!discard_old_one) {
 			SPDLOG_DEBUG(
-				"Discarding existsing stack trace entry..");
-			itr->second = key_buf;
+				"Stack trace collision without BPF_F_REUSE_STACKID, returning -EEXIST");
+			return -EEXIST;
 		}
+		SPDLOG_DEBUG("Discarding existing stack trace entry..");
+		itr->second = key_buf;
 		SPDLOG_DEBUG("Got hash {}", to_put_hash);
 		return to_put_hash;
 	}

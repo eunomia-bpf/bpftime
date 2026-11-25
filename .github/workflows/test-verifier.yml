@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - ".github/workflows/test-verifier.yml"
+      - ".github/actions/ccache/**"
       - "bpftime-verifier/**"
       - "cmake/**"
       - "third_party/**"
@@ -14,11 +15,16 @@ on:
     branches: [master]
     paths:
       - ".github/workflows/test-verifier.yml"
+      - ".github/actions/ccache/**"
       - "bpftime-verifier/**"
       - "cmake/**"
       - "third_party/**"
       - "CMakeLists.txt"
       - ".gitmodules"
+
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
@@ -29,6 +35,8 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: 'recursive'
+      - name: Enable ccache
+        uses: ./.github/actions/ccache
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v3
         with:

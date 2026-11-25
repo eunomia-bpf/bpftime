@@ -24,7 +24,7 @@ int cuda__trace_cuda_kernel(struct pt_regs *ctx)
 	u32 key = 0;
 	u64 *val = bpf_map_lookup_elem(&counter, &key);
 	if (val)
-		*val = *val + 1;
+		__atomic_add_fetch(val, 1, __ATOMIC_SEQ_CST);
 	return 0;
 }
 

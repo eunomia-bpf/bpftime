@@ -13,7 +13,7 @@
 #include <boost/interprocess/smart_ptr/deleter.hpp>
 #include <memory>
 #include <cstdint>
-#include <pthread.h>
+#include "robust_shm_mutex.hpp"
 
 namespace bpftime
 {
@@ -97,9 +97,9 @@ class lpm_trie_map_impl {
 
 	boost::interprocess::managed_shared_memory &memory;
 
-	// Coarse-grained spin lock to protect concurrent accesses (object lives
+	// Coarse-grained lock to protect concurrent accesses (object lives
 	// in SHM)
-	mutable pthread_spinlock_t mapSpin;
+	mutable robust_shm_mutex mapSpin;
 
 	// Helper functions
 	int extract_bit(const uint8_t *data, size_t index) const;
@@ -115,7 +115,9 @@ class lpm_trie_map_impl {
 	const uint8_t *get_node_value_data(const lpm_trie_node *node) const;
 
     public:
-	static constexpr bool should_lock = true;
+	// mapSpin already guards every operation, so bpf_map_handler must not
+	// take map_lock on top of it.
+	static constexpr bool should_lock = false;
 
 	lpm_trie_map_impl(boost::interprocess::managed_shared_memory &memory,
 			  unsigned int key_size, unsigned int value_size,

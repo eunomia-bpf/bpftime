@@ -69,6 +69,7 @@ set(sources
   src/ufunc.cpp
   src/bpf_helper.cpp
   src/platform_utils.cpp
+  src/ringbuf_eventfd.cpp
 
   src/bpf_map/userspace/array_map.cpp
   src/bpf_map/userspace/fix_hash_map.cpp
@@ -171,6 +172,9 @@ endif()
 
 if(UNIX AND NOT APPLE)
   target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_DL_LIBS})
+  # glibc before 2.34 keeps shm_open/shm_unlink (used by the shared-memory
+  # runtime) in librt; newer glibc and Darwin libSystem export them from libc.
+  target_link_libraries(${PROJECT_NAME} PUBLIC rt)
 endif()
 
 
@@ -191,7 +195,11 @@ if(BPFTIME_ENABLE_FRIDA)
   list(APPEND RUNTIME_DEPS FridaGum)
 endif()
 if(${BPFTIME_BUILD_WITH_LIBBPF})
-  list(APPEND RUNTIME_DEPS libbpf)
+  # copy_headers materialises the libbpf uapi headers into ${LIBBPF_INCLUDE_DIRS},
+  # which the sources below include as "linux/perf_event.h". Depending only on
+  # `libbpf` (the download step) leaves the copies racing the compile, so a
+  # partially written header surfaces as "unterminated #ifndef".
+  list(APPEND RUNTIME_DEPS libbpf copy_headers)
 endif()
 add_dependencies(${PROJECT_NAME} ${RUNTIME_DEPS})
 
@@ -237,6 +245,12 @@ if(APPLE)
   find_library(RESOLV_LIBRARY resolv)
   mark_as_advanced(COCOA_LIBRARY FOUNDATION_LIBRARY APPKIT_LIBRARY COREF_LIBRARY RESOLV_LIBRARY)
   set(EXTRA_LIBS ${COCOA_LIBRARY} ${FOUNDATION_LIBRARY} ${APPKIT_LIBRARY} ${COREF_LIBRARY} ${RESOLV_LIBRARY})
+  # Linux uapi constants (enum bpf_map_type, map/stack flags) have no native
+  # Darwin header. Provide them via the cross-platform compat shim; placed first
+  # so "linux/bpf.h" resolves here instead of failing on Apple. Linux builds do
+  # not add this path and keep using the genuine kernel header.
+  target_include_directories(${PROJECT_NAME} BEFORE PRIVATE
+			     ${CMAKE_SOURCE_DIR}/compat/darwin/include)
 endif()
 
 set(RUNTIME_LINK_LIBS
@@ -264,6 +278,15 @@ endif()
 target_link_libraries(${PROJECT_NAME} PUBLIC ${RUNTIME_LINK_LIBS})
 target_include_directories(${PROJECT_NAME} PUBLIC ${RUNTIME_INCLUDE_DIRS})
 
+# Lookup and helper paths run while libc may hold the allocator lock, so a
+# general-dynamic TLS access that reaches __tls_get_addr can re-enter malloc and
+# hang. The agent already places its PT_TLS segment in static TLS (its
+# attach-time variables are initial-exec), so compiling the runtime the same
+# way only removes __tls_get_addr calls and adds no static TLS.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT MSVC)
+  target_compile_options(${PROJECT_NAME} PRIVATE -ftls-model=initial-exec)
+endif()
+
 message(DEBUG "Successfully added all dependencies and linked against them.")
 
 set(BPFTIME_RUNTIME_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -275,12 +298,18 @@ endif()
 add_subdirectory(agent)
 add_subdirectory(syscall-server)
 
+if(BPFTIME_ENABLE_FUZZING)
+  add_subdirectory(fuzz)
+endif()
+
 #
 # Unit testing setup
 #
 if(BPFTIME_ENABLE_UNIT_TESTING AND BPFTIME_BUILD_WITH_LIBBPF)
   enable_testing()
   message(STATUS "Build unit tests for the runtime. Tests should always be found in the test folder\n")
+  # Lets unit tests observe internal caches that have no public surface.
+  target_compile_definitions(${PROJECT_NAME} PUBLIC BPFTIME_UNIT_TESTING=1)
   add_subdirectory(test)
   add_subdirectory(unit-test)
 endif()

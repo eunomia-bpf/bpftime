@@ -17,11 +17,28 @@ The attach system in bpftime provides a modular framework for attaching eBPF pro
 attach/
 ├── base_attach_impl/           # Base interface and common functionality
 ├── frida_uprobe_attach_impl/   # Function instrumentation using Frida
-├── syscall_trace_attach_impl/  # System call tracing
+├── syscall_trace_attach_impl/  # System call tracing (Frida trampoline events)
+├── trap_uprobe_attach_impl/    # Breakpoint + SIGTRAP based uprobe backend
 ├── nv_attach_impl/             # CUDA/GPU kernel instrumentation
 ├── simple_attach_impl/         # Simplified attach wrapper
-└── text_segment_transformer/   # Binary rewriting for syscall interception
+└── text_segment_transformer/   # Frida/libc binary rewriting only (no seccomp)
 ```
+
+The two syscall interception mechanisms are intentionally separate and
+mutually exclusive (selected at runtime):
+
+- **text_segment_transformer** rewrites libc/syscall instructions in the
+  process entry path (Frida). It must run before the agent and therefore stays
+  a standalone injected shared object. It contains no seccomp code.
+- The **seccomp user-notification tracer** lives in
+  `runtime/syscall-server/` (see `seccomp_notifier.cpp` and
+  `seccomp_tracer.hpp`). Gated by `BPFTIME_GO_SECCOMP`, it installs a kernel
+  seccomp user-notification filter that also catches runtimes (e.g. Go) which
+  issue raw syscall instructions and bypass libc, using its own
+  frida-independent raw syscall helper.
+
+The syscall server (`runtime/syscall-server/`) owns this seccomp hook and uses
+the same tracer for its no-agent rootless path.
 
 ## Base Interface
 
@@ -198,3 +215,15 @@ The attach system integrates with the bpftime runtime through:
 - Shared memory for cross-process access
 - VM interface for eBPF program execution
 - Helper function registration system
+## Rootless dependency boundary (mandatory)
+
+The rootless seccomp USER_NOTIF capture does NOT live here anymore. It moved
+into `runtime/syscall-server`, which is fully independent of this directory.
+This `attach/` tree keeps the in-process uprobe text-segment backend
+(frida/capstone) and the syscall-trace attach implementation. Components here
+may include neutral contract headers from `runtime/include/` (downward
+dependency only); they must not be referenced by `runtime/syscall-server`.
+Do not add a new shared object under `attach/` without explicit user approval.
+
+See the rootless dependency boundary section of
+`runtime/syscall-server/README.md` for the full rule and gates.

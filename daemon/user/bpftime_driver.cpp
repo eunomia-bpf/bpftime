@@ -28,25 +28,6 @@ int bpftime_driver::find_minimal_unused_id()
 	return id;
 }
 
-static int get_kernel_bpf_prog_insns(int fd, const bpf_prog_info *info,
-				     std::vector<ebpf_inst> &insns)
-{
-	insns.resize(info->xlated_prog_len / sizeof(ebpf_inst));
-	bpf_prog_info new_info = {};
-	uint32_t info_len = sizeof(bpf_prog_info);
-
-	new_info.xlated_prog_len = info->xlated_prog_len;
-	new_info.xlated_prog_insns =
-		(unsigned long long)(uintptr_t)insns.data();
-
-	int res = bpf_obj_get_info_by_fd(fd, &new_info, &info_len);
-	if (res < 0) {
-		SPDLOG_ERROR("Failed to get prog info for fd {}", fd);
-		return -1;
-	}
-	return 0;
-}
-
 struct bpf_insn_data insn_data;
 
 static int get_bpf_obj_id_from_pid_fd(bpf_tracer_bpf *obj, int pid, int fd)
@@ -380,19 +361,6 @@ void bpftime_driver::bpftime_close_server(int server_pid, int fd)
 	pid_fd_to_id_map.erase(get_pid_fd_key(server_pid, fd));
 	bpftime_close(fd_id);
 	SPDLOG_INFO("close id {} for pid {} fd {}", fd_id, server_pid, fd);
-}
-
-int bpftime_driver::bpftime_btf_load_server(int server_pid, int fd)
-{
-	int id = find_minimal_unused_id();
-	if (id < 0) {
-		SPDLOG_ERROR("Failed to find minimal unused id");
-		return -1;
-	}
-	pid_fd_to_id_map[get_pid_fd_key(server_pid, fd)] = id;
-	// TODO: handle kernel BTF in our system
-	SPDLOG_INFO("create btf {} for pid {} fd {}", id, server_pid, fd);
-	return 0;
 }
 
 bpftime_driver::bpftime_driver(daemon_config cfg, struct bpf_tracer_bpf *obj)

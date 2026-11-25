@@ -12,6 +12,8 @@
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/shared_memory_object.hpp>
 #include <cerrno>
+#include <filesystem>
+#include <set>
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
@@ -642,14 +644,9 @@ TEST_CASE("Uncertain bookkeeping and replaced names preserve shared memory",
 	shm.enable_automatic_cleanup();
 	SECTION("Registration failure disables automatic cleanup")
 	{
-		boost::interprocess::managed_shared_memory segment(
-			boost::interprocess::open_only, name.c_str());
-		auto *mutex = segment.find<boost::interprocess::interprocess_mutex>(
-			bpftime::DEFAULT_PID_SET_LOCK_NAME).first;
-		REQUIRE(mutex != nullptr);
-		mutex->lock();
-		bool registered = shm.add_pid_into_alive_agent_set(getpid());
-		mutex->unlock();
+		// The alive-PID sets are lock-free; the one registration they
+		// refuse here is a PID that cannot exist.
+		bool registered = shm.add_pid_into_alive_agent_set(0);
 		REQUIRE_FALSE(registered);
 		bpftime::shm_lifecycle_lock lock(name.c_str());
 		REQUIRE(lock.owns_lock());
@@ -678,13 +675,73 @@ TEST_CASE("Uncertain bookkeeping and replaced names preserve shared memory",
 		name.c_str()));
 }
 
-TEST_CASE("Syscall server mock files do not leave tmp entries",
+TEST_CASE("Syscall server synthetic files use a cached private temp "
+	  "directory without leftovers",
 	  "[allocation][syscall_server][cleanup]")
 {
-	auto result = run_allocation_helper("mock-tmp", "4", "128", nullptr);
+	// The helper inherits TMPDIR, so the parent watches the same root the
+	// child materializes into. Snapshot the entry set instead of counting
+	// entries so concurrent test processes cannot cause flaky failures.
+	const char *temp_root = getenv("TMPDIR");
+	if (temp_root == nullptr || temp_root[0] == '\0')
+		temp_root = "/tmp";
+	auto snapshot_synthetic_dirs = [&] {
+		std::set<std::string> entries;
+		std::error_code ec;
+		for (const auto &entry :
+		     std::filesystem::directory_iterator(temp_root, ec)) {
+			const std::string name = entry.path().filename();
+			if (name.rfind("bpftime-synthetic-fs-", 0) == 0)
+				entries.insert(name);
+		}
+		return entries;
+	};
+	const auto before = snapshot_synthetic_dirs();
+
+	auto result =
+		run_allocation_helper("synthetic-fs", "4", "128", nullptr);
 
 	REQUIRE(WIFEXITED(result.status));
 	REQUIRE(WEXITSTATUS(result.status) == 0);
 	REQUIRE(result.output.empty());
+
+	const auto after = snapshot_synthetic_dirs();
+	for (const auto &name : after)
+		REQUIRE(before.count(name) == 1);
+}
+TEST_CASE("Agent preload preserves host signals and gates IPC", "[agent][ipc]")
+{
+	env_var_guard name_guard("BPFTIME_GLOBAL_SHM_NAME");
+	const auto name = "bpftime-agent-policy-" + std::to_string(getpid());
+	REQUIRE(setenv("BPFTIME_GLOBAL_SHM_NAME", name.c_str(), 1) == 0);
+	parent_shm_guard memory;
+	bpftime_destroy_global_shm();
+	bpftime_initialize_global_shm(bpftime::shm_open_type::SHM_REMOVE_AND_CREATE);
+	memory.initialized = true;
+	for (const char *option : { "unset", "", "0", "1", "frida" }) {
+		for (bool host_handler : { false, true }) {
+			INFO("IPC=" << option << " host_handler=" << host_handler);
+			pid_t pid = fork();
+			REQUIRE(pid >= 0);
+			if (pid == 0) {
+				alarm(10);
+				setenv("LD_PRELOAD", BPFTIME_AGENT_LIBRARY, 1);
+				unsetenv("BPFTIME_USED");
+				unsetenv("BPFTIME_TEST_HOST_SIGNAL");
+				if (host_handler) setenv("BPFTIME_TEST_HOST_SIGNAL", "1", 1);
+				unsetenv("BPFTIME_ENABLE_AGENT_IPC");
+				unsetenv("BPFTIME_TEST_FRIDA");
+				if (std::string(option) == "frida") setenv("BPFTIME_TEST_FRIDA", "1", 1);
+				else if (std::string(option) != "unset") setenv("BPFTIME_ENABLE_AGENT_IPC", option, 1);
+				execl(BPFTIME_SHM_ALLOCATION_TEST_HELPER,
+				      BPFTIME_SHM_ALLOCATION_TEST_HELPER, "agent-policy", nullptr);
+				_exit(127);
+			}
+			int status = 0;
+			REQUIRE(waitpid(pid, &status, 0) == pid);
+			REQUIRE(WIFEXITED(status));
+			REQUIRE(WEXITSTATUS(status) == 0);
+		}
+	}
 }
 #endif

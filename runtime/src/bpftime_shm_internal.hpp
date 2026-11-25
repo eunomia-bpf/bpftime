@@ -10,9 +10,13 @@
 #include "bpf_map/userspace/stack_trace_map.hpp"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
+#include <atomic>
+#include <cerrno>
 #include <cstddef>
 #include <functional>
-#include <boost/interprocess/containers/set.hpp>
+#if defined(__unix__) || defined(__APPLE__)
+#include <signal.h>
+#endif
 #include "bpftime_shm.hpp"
 #include <handler/handler_manager.hpp>
 #include <optional>
@@ -63,25 +67,114 @@ struct shm_cleanup_state {
 	std::uint32_t disabled = 0;
 };
 
-using syscall_pid_set_allocator = boost::interprocess::allocator<
-	int, boost::interprocess::managed_shared_memory::segment_manager>;
-using syscall_pid_set =
-	boost::interprocess::set<int, std::less<int>, syscall_pid_set_allocator>;
+static constexpr int BPFTIME_MAX_CPU_COUNT = 1024;
 
-using alive_agent_pid_set_allocator = boost::interprocess::allocator<
-	int, boost::interprocess::managed_shared_memory::segment_manager>;
+struct bpftime_cpu_exec_locks {
+	boost::interprocess::interprocess_mutex locks[BPFTIME_MAX_CPU_COUNT];
+};
 
-using alive_agent_pids =
-	boost::interprocess::set<int, std::less<int>,
-				 alive_agent_pid_set_allocator>;
+// Fixed-capacity, lock-free PID table stored directly in shared memory.
+// Slot value 0 means empty. Every operation is atomic: no heap/SHM
+// allocation and no interprocess lock, so a process killed mid-operation
+// can never block the other processes attached to the same segment.
+template <std::size_t Capacity> struct atomic_pid_set {
+	static_assert(std::atomic<std::int32_t>::is_always_lock_free,
+		      "PID slots need lock-free atomics in shared memory");
+	std::atomic<std::int32_t> slots[Capacity]{};
 
-using alive_syscall_server_pid_set_allocator =
-	boost::interprocess::allocator<
-		int, boost::interprocess::managed_shared_memory::segment_manager>;
+	// Idempotent: returns true when pid is present after the call.
+	// A concurrent insert racing a remove of the same pid can occupy two
+	// slots transiently; remove() reclaims all matching slots, and the
+	// bookkeeping callers treat repeated iteration of one pid as harmless.
+	bool insert(int pid) noexcept
+	{
+		if (pid <= 0)
+			return false;
+		const auto value = static_cast<std::int32_t>(pid);
+		for (;;) {
+			std::size_t empty = Capacity;
+			for (std::size_t i = 0; i < Capacity; ++i) {
+				auto current = slots[i].load(
+					std::memory_order_acquire);
+				if (current == value)
+					return true;
+				if (empty == Capacity && current == 0)
+					empty = i;
+			}
+			if (empty == Capacity && !reclaim_dead_slots())
+				return false;
+			if (empty == Capacity)
+				continue; // rescan for a reclaimed slot
+			auto expected = std::int32_t(0);
+			if (slots[empty].compare_exchange_strong(
+				    expected, value, std::memory_order_acq_rel,
+				    std::memory_order_acquire))
+				return true;
+			// Lost the race for this slot; rescan for the
+			// duplicate and another empty slot.
+		}
+	}
 
-using alive_syscall_server_pid_set =
-	boost::interprocess::set<int, std::less<int>,
-				 alive_syscall_server_pid_set_allocator>;
+	// Runs only when no empty slot remains. Clears slots whose processes
+	// have exited, so admission cannot fail on stale entries left by
+	// processes that never ran their deregistration (e.g. SIGKILL).
+	// Mirrors the runtime pid_is_alive() convention: kill(pid, 0)
+	// succeeds or fails EPERM for live processes, ESRCH means gone.
+	// Zombies stay visible until reaped, as their parent can still
+	// observe them.
+	bool reclaim_dead_slots() noexcept
+	{
+		bool reclaimed = false;
+		for (auto &slot : slots) {
+			auto current = slot.load(std::memory_order_acquire);
+			if (current == 0)
+				continue;
+#if defined(__unix__) || defined(__APPLE__)
+			if (::kill(current, 0) == 0 || errno == EPERM)
+				continue;
+			if (slot.compare_exchange_strong(
+				    current, 0, std::memory_order_acq_rel,
+				    std::memory_order_acquire))
+				reclaimed = true;
+#endif
+		}
+		return reclaimed;
+	}
+
+	// Clears every slot holding pid; returns true if one was cleared.
+	bool remove(int pid) noexcept
+	{
+		if (pid <= 0)
+			return false;
+		const auto value = static_cast<std::int32_t>(pid);
+		bool removed = false;
+		for (auto &slot : slots) {
+			auto current = slot.load(std::memory_order_acquire);
+			while (current == value) {
+				if (slot.compare_exchange_weak(
+					    current, 0,
+					    std::memory_order_acq_rel,
+					    std::memory_order_acquire)) {
+					removed = true;
+					break;
+				}
+			}
+		}
+		return removed;
+	}
+
+	template <typename Callback> void iterate(Callback &&callback) const
+	{
+		for (auto &slot : slots) {
+			auto pid = slot.load(std::memory_order_acquire);
+			if (pid != 0)
+				callback(static_cast<int>(pid));
+		}
+	}
+};
+
+using alive_agent_pids = atomic_pid_set<4096>;
+using alive_syscall_server_pid_set = atomic_pid_set<64>;
 
 // global bpftime share memory
 class bpftime_shm {
@@ -94,9 +187,6 @@ class bpftime_shm {
 	// manage the bpf fds in the shared memory
 	bpftime::handler_manager *manager = nullptr;
 
-	// A set to record whether a process was setted up with syscall tracer
-	syscall_pid_set *syscall_installed_pids = nullptr;
-
 	// Configuration for the agent. e.g, which helpers are enabled
 	struct bpftime::runtime_config *runtime_config = nullptr;
 
@@ -108,10 +198,8 @@ class bpftime_shm {
 	// Record which pids own or use the syscall-server side of this shm.
 	alive_syscall_server_pid_set *alive_syscall_server_pids = nullptr;
 
-	// Guards pid bookkeeping sets stored in shared memory.
-	boost::interprocess::interprocess_mutex *pid_set_lock = nullptr;
-
 	bpftime_global_epoch_state *epoch_state = nullptr;
+	bpftime_cpu_exec_locks *cpu_exec_locks = nullptr;
 
 	// local agent config can be used for test or local process
 	std::optional<struct runtime_config> local_runtime_config;
@@ -138,6 +226,24 @@ class bpftime_shm {
 	{
 		return open_type;
 	}
+	// True when the fully-contained [addr, addr+size) range lies inside the
+	// mapped SHM segment. Backends with runtime memory safety checks
+	// (uBPF) use this to admit BPF map/context accesses that the kernel
+	// verifier would normally allow. Includes an overflow guard.
+	bool is_within_shm_segment(uint64_t addr, uint64_t size) const
+	{
+		if (size == 0) {
+			return true;
+		}
+		const auto base = reinterpret_cast<uint64_t>(
+			segment.get_address());
+		const uint64_t seg_size = segment.get_size();
+		if (addr < base || size > seg_size) {
+			return false;
+		}
+		const uint64_t offset = addr - base;
+		return offset <= seg_size - size;
+	}
 	void set_enable_mock(bool flag)
 	{
 		if (mock_setter.has_value())
@@ -152,12 +258,6 @@ class bpftime_shm {
 	const struct runtime_config &get_runtime_config();
 	// Set the configuration object
 	void set_runtime_config(struct runtime_config &&config);
-	// Check whether a certain pid was already equipped with syscall tracer
-	// Using a set stored in the shared memory
-	bool check_syscall_trace_setup(int pid);
-	// Set whether a certain pid was already equipped with syscall tracer
-	// Using a set stored in the shared memory
-	void set_syscall_trace_setup(int pid, bool whether);
 
 	// Add a pid into alive agent set
 	bool add_pid_into_alive_agent_set(int pid);
@@ -188,6 +288,15 @@ class bpftime_shm {
 	// Returns UINT64_MAX if the epoch couldn't be stabilized within
 	// max_tries.
 	std::uint64_t read_stable_epoch_seq(int max_tries = 200) const;
+	void lock_bpf_cpu(int cpu);
+	void unlock_bpf_cpu(int cpu);
+	// Blocking, exception-safe per-CPU lock used on the BPF hot path. It
+	// preserves the serialization semantics of lock() (waits through normal
+	// contention) but catches locking exceptions, returning false instead of
+	// letting one propagate through the Frida C trampoline into
+	// std::terminate. The caller skips BPF execution only on a locking
+	// error, never on ordinary contention.
+	bool acquire_bpf_cpu(int cpu);
 
 	const handler_variant &get_handler(int fd) const;
 	bool is_epoll_fd(int fd) const;
@@ -224,7 +333,9 @@ public:
 
 	std::optional<array_map_impl *> try_get_array_map_impl(int fd) const;
 	bool is_prog_fd(int fd) const;
-
+	// Whether a loaded program references map `fd` through an LDDW map
+	// pseudo instruction (BPF_PSEUDO_MAP_FD or BPF_PSEUDO_MAP_VALUE).
+	bool is_map_referenced_by_prog(int fd) const;
 	bool is_perf_fd(int fd) const;
 
 	bool is_prog_array_map_fd(int fd) const;
@@ -256,6 +367,9 @@ public:
 			       bool from_syscall) const;
 
 	long bpf_map_pop_elem(int fd, void *value, bool from_syscall) const;
+
+	long bpf_map_lookup_and_delete_elem(int fd, const void *key, void *value,
+					    bool from_syscall) const;
 
 	long bpf_map_peek_elem(int fd, void *value, bool from_syscall) const;
 
@@ -300,18 +414,20 @@ public:
 					     epoll_data_t extra_data);
 
 	int epoll_create();
+	int epoll_create_at(int fd);
 	// remove a fake fd from the manager.
 	// The fake fd should be closed by the caller.
 	void close_fd(int fd);
 	bool is_exist_fake_fd(int fd) const;
 
 	int add_memfd_handler(const char *name, int flags);
+	int add_memfd_handler_at_fd(int fd, const char *name, int flags);
 
 	int translate_shared_map_type_to_kernel_map_type(int type);
 
 #if BPFTIME_ENABLE_MPK
-	void enable_mpk();
-	void disable_mpk();
+	int open_mpk_write_window();
+	void restore_mpk_rights(int saved);
 #endif
 
 	// initialize the shared memory globally

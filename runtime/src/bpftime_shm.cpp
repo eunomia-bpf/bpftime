@@ -10,14 +10,16 @@
 #include "spdlog/spdlog.h"
 #include <csignal>
 #include <cstddef>
-#include <exception>
-#include <optional>
+#include <algorithm>
+#include <stdexcept>
 #include <signal.h>
 #include <cerrno>
 #include <errno.h>
 #include <bpftime_shm_internal.hpp>
 #if __linux__
 #include <sys/epoll.h>
+#include <unistd.h>
+#include "ringbuf_eventfd.hpp"
 #elif __APPLE__
 #include "bpftime_epoll.h"
 #endif
@@ -112,11 +114,12 @@ int bpftime_helper_map_get_next_key(int fd, const void *key, void *next_key)
 	}
 }
 
-const void *bpftime_map_lookup_elem(int fd, const void *key)
+const void *bpftime_map_lookup_elem_with_origin(int fd, const void *key,
+						bool from_syscall)
 {
 	try {
 		return shm_holder.global_shared_memory.bpf_map_lookup_elem(
-			fd, key, true);
+			fd, key, from_syscall);
 	} catch (std::exception &ex) {
 		SPDLOG_ERROR(
 			"Exception happened when performing map lookup elem: {}",
@@ -125,12 +128,18 @@ const void *bpftime_map_lookup_elem(int fd, const void *key)
 	}
 }
 
-long bpftime_map_update_elem(int fd, const void *key, const void *value,
-			     uint64_t flags)
+const void *bpftime_map_lookup_elem(int fd, const void *key)
+{
+	return bpftime_map_lookup_elem_with_origin(fd, key, true);
+}
+
+long bpftime_map_update_elem_with_origin(int fd, const void *key,
+					 const void *value, uint64_t flags,
+					 bool from_syscall)
 {
 	try {
 		return shm_holder.global_shared_memory.bpf_map_update_elem(
-			fd, key, value, flags, true);
+			fd, key, value, flags, from_syscall);
 	} catch (std::exception &ex) {
 		SPDLOG_ERROR(
 			"Exception happened when performing map update: {}",
@@ -139,11 +148,18 @@ long bpftime_map_update_elem(int fd, const void *key, const void *value,
 	}
 }
 
-long bpftime_map_delete_elem(int fd, const void *key)
+long bpftime_map_update_elem(int fd, const void *key, const void *value,
+			     uint64_t flags)
+{
+	return bpftime_map_update_elem_with_origin(fd, key, value, flags, true);
+}
+
+long bpftime_map_delete_elem_with_origin(int fd, const void *key,
+					 bool from_syscall)
 {
 	try {
-		return shm_holder.global_shared_memory.bpf_delete_elem(fd, key,
-								       true);
+		return shm_holder.global_shared_memory.bpf_delete_elem(
+			fd, key, from_syscall);
 	} catch (std::exception &ex) {
 		SPDLOG_ERROR(
 			"Exception happened when performing map delete elem: {}",
@@ -152,11 +168,16 @@ long bpftime_map_delete_elem(int fd, const void *key)
 	}
 }
 
-long bpftime_map_lookup_and_delete_elem(int fd, void *value)
+long bpftime_map_delete_elem(int fd, const void *key)
+{
+	return bpftime_map_delete_elem_with_origin(fd, key, true);
+}
+
+long bpftime_map_lookup_and_delete_elem(int fd, const void *key, void *value)
 {
 	try {
-		return shm_holder.global_shared_memory.bpf_map_pop_elem(
-			fd, value, true);
+		return shm_holder.global_shared_memory
+			.bpf_map_lookup_and_delete_elem(fd, key, value, true);
 	} catch (std::exception &ex) {
 		SPDLOG_ERROR(
 			"Exception happened when performing map lookup and delete elem: {}",
@@ -279,6 +300,11 @@ int bpftime_epoll_create()
 	return shm_holder.global_shared_memory.epoll_create();
 }
 
+int bpftime_epoll_create_at(int fd)
+{
+	return shm_holder.global_shared_memory.epoll_create_at(fd);
+}
+
 void bpftime_close(int fd)
 {
 	shm_holder.global_shared_memory.close_fd(fd);
@@ -310,20 +336,6 @@ int bpftime_is_ringbuf_map(int fd)
 	return shm_holder.global_shared_memory.is_ringbuf_map_fd(fd);
 }
 
-void bpftime_protect_enable()
-{
-#if BPFTIME_ENABLE_MPK
-	return shm_holder.global_shared_memory.enable_mpk();
-#endif
-}
-
-void bpftime_protect_disable()
-{
-#if BPFTIME_ENABLE_MPK
-	return shm_holder.global_shared_memory.disable_mpk();
-#endif
-}
-
 int bpftime_is_map_fd(int fd)
 {
 	return shm_holder.global_shared_memory.is_map_fd(fd);
@@ -332,6 +344,11 @@ int bpftime_is_map_fd(int fd)
 int bpftime_is_perf_event_fd(int fd)
 {
 	return shm_holder.global_shared_memory.is_perf_event_handler_fd(fd);
+}
+
+int bpftime_is_map_referenced_by_prog(int fd)
+{
+	return shm_holder.global_shared_memory.is_map_referenced_by_prog(fd);
 }
 
 int bpftime_is_prog_fd(int fd)
@@ -400,19 +417,92 @@ void *bpftime_ringbuf_reserve(int fd, uint64_t size)
 
 void bpftime_ringbuf_submit(int fd, void *data, int discard)
 {
+	bpftime_ringbuf_submit_with_flags(fd, data, discard, 0);
+}
+
+void bpftime_ringbuf_submit_with_flags(int fd, void *data, int discard,
+				       uint64_t flags)
+{
 	auto &shm = shm_holder.global_shared_memory;
-	if (auto ret = shm.try_get_ringbuf_map_impl(fd); ret.has_value()) {
-		auto impl = ret.value();
-		impl->submit(data, discard);
-	} else {
+	auto ret = shm.try_get_ringbuf_map_impl(fd);
+	if (!ret.has_value()) {
 		errno = EINVAL;
 		SPDLOG_ERROR("Expected fd {} to be ringbuf map fd ", fd);
+		return;
 	}
+	auto impl = ret.value();
+#if defined(__linux__)
+	bool wake = !discard && impl->should_wakeup(data, flags);
+#endif
+	impl->submit(data, discard);
+#if defined(__linux__)
+	if (wake) {
+		int eventfd = bpftime_ringbuf_get_local_eventfd(fd);
+		if (eventfd >= 0) {
+			uint64_t one = 1;
+			ssize_t written = write(eventfd, &one, sizeof(one));
+			(void)written; // EAGAIN on a saturated counter is fine:
+				       // the consumer is already wakeable.
+		}
+	}
+#endif
 }
+
+#if defined(__linux__)
+int bpftime_ringbuf_creator_eventfd(int fd)
+{
+	auto &shm = shm_holder.global_shared_memory;
+	if (auto ret = shm.try_get_ringbuf_map_impl(fd); ret.has_value())
+		return ret.value()->get_kernel_eventfd();
+	errno = EINVAL;
+	return -1;
+}
+
+int bpftime_ringbuf_eventfd_owner_pid(int fd)
+{
+	auto &shm = shm_holder.global_shared_memory;
+	if (auto ret = shm.try_get_ringbuf_map_impl(fd); ret.has_value())
+		return ret.value()->get_eventfd_owner_pid();
+	return 0;
+}
+#endif
 
 int bpftime_is_epoll_handler(int fd)
 {
 	return shm_holder.global_shared_memory.is_epoll_fd(fd);
+}
+// Non-blocking collection of ready events from userspace-backed sources.
+// Shared by the legacy signal-driven epoll loop and the kernel-eventfd path.
+static int
+poll_userspace_sources(const bpftime::epoll_handler &epoll_inst,
+		       struct epoll_event *out_evts, int max_evt)
+{
+	int next_id = 0;
+	for (const auto &p : epoll_inst.files) {
+		if (std::holds_alternative<
+			    bpftime::software_perf_event_weak_ptr>(p.file)) {
+			if (auto ptr =
+				    std::get<bpftime::software_perf_event_weak_ptr>(
+					    p.file)
+					    .lock();
+			    ptr && ptr->has_data() && next_id < max_evt) {
+				out_evts[next_id++] = epoll_event{
+					.events = EPOLLIN, .data = p.data
+				};
+			}
+		} else if (std::holds_alternative<bpftime::ringbuf_weak_ptr>(
+				   p.file)) {
+			if (auto ptr =
+				    std::get<bpftime::ringbuf_weak_ptr>(p.file)
+					    .lock();
+			    ptr && ptr->has_data() && next_id < max_evt) {
+				out_evts[next_id++] = epoll_event{
+					.events = EPOLLIN, .data = p.data
+				};
+			}
+		}
+	}
+	return next_id;
 }
 
 int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
@@ -462,42 +552,50 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 			break;
 		}
 
-		for (const auto &p : epoll_inst.files) {
-			if (std::holds_alternative<software_perf_event_weak_ptr>(
-				    p.file)) {
-				if (auto ptr =
-					    std::get<software_perf_event_weak_ptr>(
-						    p.file)
-						    .lock();
-				    ptr) {
-					if (ptr->has_data() &&
-					    next_id < max_evt) {
-						out_evts[next_id++] =
-							epoll_event{
-								.events =
-									EPOLLIN,
-								.data = p.data
-							};
+		// A perpetually ready source must not starve signal delivery.
+		// The no-data branch below was previously the only place that
+		// consumed a blocked SIGINT/SIGTERM; under a high-frequency
+		// tracepoint the ready path (next_id > 0) is taken every
+		// iteration, so the signal stayed pending and was never
+		// delivered, leaving the process unresponsive to SIGINT/SIGTERM.
+		// Poll for a pending blocked signal here so it is honored
+		// regardless of event readiness. sigpending is a cheap
+		// non-consuming probe; only when it reports a pending SIGINT/
+		// SIGTERM do we take the heavier sigtimedwait path to dequeue and
+		// dispatch it, keeping the common no-signal ready path inexpensive.
+		{
+			sigset_t pending_now;
+			if (sigpending(&pending_now) == 0 &&
+			    (sigismember(&pending_now, SIGINT) ||
+			     sigismember(&pending_now, SIGTERM))) {
+				siginfo_t sig_info;
+				const timespec nonblock{ .tv_sec = 0,
+							 .tv_nsec = 0 };
+				if (int sig = sigtimedwait(&to_block, &sig_info,
+							   &nonblock);
+				    sig > 0) {
+					SPDLOG_DEBUG(
+						"epoll_wait interrupted by pending signal {}",
+						sig);
+					// Invoke the original signal handler
+					struct sigaction act;
+					sigaction(sig, nullptr, &act);
+					if ((act.sa_flags & SA_SIGINFO) &&
+					    act.sa_sigaction) {
+						act.sa_sigaction(sig, &sig_info,
+								 nullptr);
+					} else if (auto f = act.sa_handler) {
+						f(sig);
 					}
-				}
-			} else if (std::holds_alternative<ringbuf_weak_ptr>(
-					   p.file)) {
-				if (auto ptr =
-					    std::get<ringbuf_weak_ptr>(p.file)
-						    .lock();
-				    ptr) {
-					if (ptr->has_data() &&
-					    next_id < max_evt) {
-						out_evts[next_id++] =
-							epoll_event{
-								.events =
-									EPOLLIN,
-								.data = p.data
-							};
-					}
+					failed_with_intr = true;
+					break;
 				}
 			}
 		}
+
+		next_id += poll_userspace_sources(epoll_inst,
+						  out_evts + next_id,
+						  max_evt - next_id);
 		if (next_id > 0 || timeout == 0) {
 			break;
 		} else {
@@ -538,11 +636,90 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 	return next_id;
 }
 
+#if defined(__linux__)
+static const bpftime::epoll_handler &get_epoll_or_throw(int fd)
+{
+	auto &shm = shm_holder.global_shared_memory;
+	if (!shm.is_epoll_fd(fd)) {
+		errno = EINVAL;
+		SPDLOG_ERROR("Expected {} to be an epoll fd", fd);
+		throw std::invalid_argument("not an epoll fd");
+	}
+	return std::get<bpftime::epoll_handler>(
+		shm.get_manager()->get_handler(fd));
+}
+
+int bpftime_epoll_poll_userspace(int fd, struct epoll_event *out_evts,
+				 int max_evt)
+{
+	if (max_evt <= 0)
+		return 0;
+	auto &epoll_inst = get_epoll_or_throw(fd);
+	return poll_userspace_sources(epoll_inst, out_evts, max_evt);
+}
+
+int bpftime_epoll_requires_userspace_polling(int fd)
+{
+	auto &epoll_inst = get_epoll_or_throw(fd);
+	for (const auto &p : epoll_inst.files) {
+		if (std::holds_alternative<
+			    bpftime::software_perf_event_weak_ptr>(p.file))
+			return 1;
+		if (std::holds_alternative<bpftime::ringbuf_weak_ptr>(
+			    p.file) &&
+		    bpftime_ringbuf_get_local_eventfd(p.origin_fd) < 0)
+			return 1;
+	}
+	return 0;
+}
+
+int bpftime_epoll_prepare_kernel_block(int fd)
+{
+	auto &epoll_inst = get_epoll_or_throw(fd);
+	for (const auto &p : epoll_inst.files) {
+		if (!std::holds_alternative<bpftime::ringbuf_weak_ptr>(
+			    p.file))
+			continue;
+		auto ptr = std::get<bpftime::ringbuf_weak_ptr>(p.file).lock();
+		if (!ptr)
+			continue;
+		if (ptr->has_data())
+			return 1;
+		// Empty in SHM: drop any stale eventfd counter, then re-check
+		// so a submit racing the drain cannot lose its wakeup.
+		bpftime_ringbuf_drain_local_eventfd(p.origin_fd);
+		if (ptr->has_data())
+			return 1;
+	}
+	return 0;
+}
+
+int bpftime_epoll_remove_origin(int epfd, int origin_fd)
+{
+	auto &epoll_inst = get_epoll_or_throw(epfd);
+	auto old_size = epoll_inst.files.size();
+	epoll_inst.files.erase(
+		std::remove_if(epoll_inst.files.begin(),
+			       epoll_inst.files.end(),
+			       [origin_fd](const bpftime::epoll_file &f) {
+				       return f.origin_fd == origin_fd;
+			       }),
+		epoll_inst.files.end());
+	return static_cast<int>(old_size - epoll_inst.files.size());
+}
+#endif
 int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 				    int64_t config)
 {
 	auto &shm = shm_holder.global_shared_memory;
 	return shm.add_software_perf_event(cpu, sample_type, config);
+}
+
+int bpftime_add_software_perf_event_at(int fd, int cpu, int32_t sample_type,
+				       int64_t config)
+{
+	auto &shm = shm_holder.global_shared_memory;
+	return shm.add_software_perf_event(fd, cpu, sample_type, config);
 }
 
 int bpftime_add_ureplace_or_override(int fd, int pid, const char *name,
@@ -574,6 +751,7 @@ void *bpftime_get_software_perf_event_raw_buffer(int fd, size_t expected_size)
 
 int bpftime_perf_event_output(int fd, const void *buf, size_t sz)
 {
+	shm_write_window_guard shm_window;
 	auto &shm = shm_holder.global_shared_memory;
 	if (!shm.is_perf_event_handler_fd(fd)) {
 		SPDLOG_ERROR("Expected fd {} to be a perf event handler", fd);
@@ -598,6 +776,7 @@ int bpftime_perf_event_output(int fd, const void *buf, size_t sz)
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz)
 {
+	shm_write_window_guard shm_window;
 	SPDLOG_DEBUG("Output data into shared perf event array fd {}", map_fd);
 	auto &shm = shm_holder.global_shared_memory;
 	if (!shm.is_shared_perf_event_array_map_fd(map_fd)) {
@@ -707,4 +886,10 @@ int bpftime_add_memfd_handler(const char *name, int flags)
 {
 	auto &shm = shm_holder.global_shared_memory;
 	return shm.add_memfd_handler(name, flags);
+}
+
+int bpftime_add_memfd_handler_at_fd(int fd, const char *name, int flags)
+{
+	auto &shm = shm_holder.global_shared_memory;
+	return shm.add_memfd_handler_at_fd(fd, name, flags);
 }

@@ -21,6 +21,9 @@ class bpftime_ubpf_vm : public compat::bpftime_vm_impl {
 						     ...));
 	int register_external_function(size_t index, const std::string &name,
 				       void *fn);
+	int register_data_bounds_check(
+		bool (*fn)(void *context, uint64_t addr, uint64_t size),
+		void *context) override;
 	int load_code(const void *code, size_t code_len);
 	void unload_code();
 	int exec(void *mem, size_t mem_len, uint64_t &bpf_return_value);

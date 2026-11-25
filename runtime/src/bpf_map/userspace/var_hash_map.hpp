@@ -42,15 +42,21 @@ class var_size_hash_map_impl {
 			       uint32_t value_size, uint32_t max_entries,
 			       uint32_t flags);
 
-	void *elem_lookup(const void *key);
+	// from_syscall distinguishes fd-based syscall access (true) from BPF
+	// helper access (false). BPF_F_RDONLY/BPF_F_WRONLY only restrict the
+	// syscall path, mirroring the kernel fd-mode checks.
+	void *elem_lookup(const void *key, bool from_syscall = false);
 
-	long elem_update(const void *key, const void *value, uint64_t flags);
+	long elem_update(const void *key, const void *value, uint64_t flags,
+			 bool from_syscall = false);
 
-	long elem_delete(const void *key);
+	long elem_delete(const void *key, bool from_syscall = false);
 
-	int map_get_next_key(const void *key, void *next_key);
+	int map_get_next_key(const void *key, void *next_key,
+			     bool from_syscall = false);
 
-	int lookup_and_delete(const void *key, void *value_out);
+	int lookup_and_delete(const void *key, void *value_out,
+			      bool from_syscall = false);
 	uint32_t get_value_size() const
 	{
 		return _value_size;

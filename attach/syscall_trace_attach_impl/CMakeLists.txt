@@ -18,7 +18,17 @@ add_library(
 add_dependencies(bpftime_syscall_trace_attach_impl bpftime_base_attach_impl spdlog::spdlog bpftime_syscall_trace_syscall_id_table)
 set(SYSCALL_TRACE_ATTACH_IMPL_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include CACHE STRING "Include path of syscall trace impl")
 
-target_include_directories(bpftime_syscall_trace_attach_impl PRIVATE ${SPDLOG_INCLUDE} ${CMAKE_CURRENT_BINARY_DIR} PUBLIC ${BASE_ATTACH_IMPL_INCLUDE} ${SYSCALL_TRACE_ATTACH_IMPL_INCLUDE})
+# Own include dirs stay PUBLIC (agent and tests consume them) and are listed
+# first: this module also has a syscall_table.hpp that must not be shadowed
+# by the same-named header in runtime/include. The shared rootless id
+# derivation lives in the runtime-level platform_utils.hpp, reached through
+# the PRIVATE runtime include dir below as a downward-only dependency.
+target_include_directories(bpftime_syscall_trace_attach_impl PUBLIC
+    ${SYSCALL_TRACE_ATTACH_IMPL_INCLUDE}
+    ${BASE_ATTACH_IMPL_INCLUDE})
+target_include_directories(bpftime_syscall_trace_attach_impl PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../runtime/include
+    ${SPDLOG_INCLUDE} ${CMAKE_CURRENT_BINARY_DIR})
 
 target_link_libraries(bpftime_syscall_trace_attach_impl PUBLIC bpftime_base_attach_impl spdlog::spdlog)
 

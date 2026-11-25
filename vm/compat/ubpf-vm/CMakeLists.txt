@@ -3,14 +3,26 @@ add_library(bpftime_ubpf_vm_obj OBJECT ./compat_ubpf.cpp)
 # add_subdirectory(ubpf)
 set(UBPF_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/ubpf)
 include(ExternalProject)
-set(UBPF_CROSS_ARGS "")
+# Always propagate the configured toolchain into the uBPF ExternalProject.
+# Previously these were only passed under CMAKE_CROSSCOMPILING, so a native
+# build with a non-default compiler (e.g. a conda prefix) silently let uBPF use
+# the system cc and fail to link against the conda sysroot. Cross-compilation
+# still appends the platform/system-name arguments below.
+set(UBPF_CMAKE_ARGS
+  -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
+  -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+  -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+  -DCMAKE_SYSROOT=${CMAKE_SYSROOT}
+  # bpftime only consumes libubpf.a; uBPF's own conformance runner and
+  # upstream test suites need extra nested submodules that a shallow,
+  # non-recursive checkout does not provide.
+  -DUBPF_SKIP_EXTERNAL=ON
+  -DUBPF_ENABLE_TESTS=OFF
+)
 if(CMAKE_CROSSCOMPILING)
-    list(APPEND UBPF_CROSS_ARGS
+    list(APPEND UBPF_CMAKE_ARGS
         -DCMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}
         -DCMAKE_SYSTEM_PROCESSOR=${CMAKE_SYSTEM_PROCESSOR}
-        -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
-        -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
-        -DCMAKE_SYSROOT=${CMAKE_SYSROOT}
     )
 endif()
 ExternalProject_Add(
@@ -18,7 +30,7 @@ ExternalProject_Add(
     SOURCE_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/ubpf
     BINARY_DIR ${UBPF_BUILD_DIR}
     BUILD_BYPRODUCTS ${UBPF_BUILD_DIR}/lib/libubpf.a ${UBPF_BUILD_DIR}/vm/ubpf_config.h
-    CMAKE_ARGS ${UBPF_CROSS_ARGS}
+    CMAKE_ARGS ${UBPF_CMAKE_ARGS}
     INSTALL_COMMAND ""
 )
 add_dependencies(bpftime_ubpf_vm_obj ubpf spdlog::spdlog bpftime_vm_compat)

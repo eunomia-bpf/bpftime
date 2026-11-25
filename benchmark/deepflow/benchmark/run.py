@@ -82,7 +82,7 @@ async def run_server(executable: str, data_size: int) -> asyncio.subprocess.Proc
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
         cwd=wd,
-        env={"BPFTIME_USE_JIT": "1", "GOMAXPROCS": "20"},
+        env={"GOMAXPROCS": "20"},
     )
     return server
 

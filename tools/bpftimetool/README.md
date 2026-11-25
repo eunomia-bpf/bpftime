@@ -21,6 +21,34 @@ export PATH=$PATH:~/.bpftime/
 
 ## Command Reference
 
+All commands accept `--help`. Command-line syntax and numeric validation errors
+produce a diagnostic and exit status 1 before accessing shared memory.
+Validation of JSON contents and runtime objects remains part of command execution.
+File descriptors and program IDs must be decimal integers in 0..INT_MAX;
+repeat counts and CUDA counts/dimensions must be in 1..INT_MAX. A leading
+`+` or whitespace before a number remains accepted; trailing characters,
+including whitespace, are rejected.
+
+The documented `run ... repeat N type RUN_TYPE` syntax remains supported.
+`--repeat N`, `--repeat=N`, `--type RUN_TYPE` and `--type=RUN_TYPE` are also
+accepted, and the two options may appear in either order. Repeated options
+are rejected, including mixtures such as `repeat 2 --repeat 3`; repeated
+`type` no longer silently overwrites the earlier value. The default remains
+one JIT execution.
+
+As with other argparse-based commands, names starting with `-` are treated
+as options. Use a path such as `./-input.bin` or `./--help` for such files;
+do not rely on a bare `--` separator with the bundled argparse version.
+
+### load - Load One JSON Object
+
+```bash
+bpftimetool load <fd> <JSON>
+```
+
+Load one JSON-encoded handler at the specified descriptor. Quote the JSON
+as one shell argument. This differs from `import`, which reads a JSON file.
+
 ### export - Dump Shared Memory to JSON
 
 Export all eBPF objects (programs, maps, links) from shared memory to a JSON file:
@@ -115,6 +143,18 @@ Return value: 0
 - `JIT`: LLVM JIT compilation (fast compilation, good performance)
 - `AOT`: Pre-compiled native code (best performance, requires prior compilation)
 - `INTERPRET`: Bytecode interpreter (slowest, no compilation overhead)
+
+### run-on-cuda - Execute a CUDA Program
+
+Available only in CUDA-enabled builds:
+
+```bash
+bpftimetool run-on-cuda <program> [count [gridX gridY gridZ blockX blockY blockZ]]
+```
+
+The default count is 1. Supply all six dimensions or none; omitted dimensions
+retain the runtime's existing launch configuration. Invalid counts and dimensions
+are rejected instead of being partially converted with `atoi`.
 
 ### remove - Clean Up Shared Memory
 

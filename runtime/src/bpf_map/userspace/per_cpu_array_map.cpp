@@ -20,7 +20,7 @@ per_cpu_array_map_impl::per_cpu_array_map_impl(
 	: data(memory.get_segment_manager()), ncpu(ncpu),
 	  value_size(value_size), max_ent(max_entries)
 {
-	data.resize(max_entries * ncpu * value_size);
+	data.resize(size_t(max_entries) * ncpu * value_size);
 }
 
 per_cpu_array_map_impl::per_cpu_array_map_impl(
@@ -131,7 +131,8 @@ long per_cpu_array_map_impl::elem_update_userspace(const void *key,
 		errno = E2BIG;
 		return -1;
 	}
-	std::copy((uint8_t *)value, (uint8_t *)value + ncpu * value_size,
+	std::copy((uint8_t *)value,
+		  (uint8_t *)value + size_t(ncpu) * value_size,
 		  data_at(key_val, 0));
 	return 0;
 }

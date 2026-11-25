@@ -147,22 +147,25 @@ else()
   message(STATUS "Skipping ebpf verifier")
 
   # Catch2
-  if(NOT DEFINED Catch2_INCLUDE)
-    message(STATUS "Adding Catch2 by subdirectory")
-    add_subdirectory(third_party/Catch2)
-  endif()
+  message(STATUS "Adding Catch2 by subdirectory")
+  add_subdirectory(third_party/Catch2)
 endif()
 
 # spdlog
 add_subdirectory(third_party/spdlog)
 
 if(NOT DEFINED SPDLOG_ACTIVE_LEVEL)
-  add_compile_definitions(SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE)
-  message(STATUS "Setting SPDLOG_ACTIVE_LEVEL to SPDLOG_LEVEL_TRACE")
-else()
-  add_compile_definitions(SPDLOG_ACTIVE_LEVEL=${SPDLOG_ACTIVE_LEVEL})
+  # spdlog evaluates SPDLOG_ACTIVE_LEVEL at compile time: log calls at or
+  # below this level are compiled out entirely. Debug builds keep TRACE for
+  # development, while optimized builds drop DEBUG/TRACE from hot paths (BPF
+  # program execution, syscall/attach callbacks), where formatting the log
+  # arguments would otherwise run on every event even when logging is off.
+  set(SPDLOG_ACTIVE_LEVEL
+      "$<IF:$<CONFIG:Debug>,SPDLOG_LEVEL_TRACE,SPDLOG_LEVEL_INFO>")
   message(STATUS "Setting SPDLOG_ACTIVE_LEVEL to ${SPDLOG_ACTIVE_LEVEL}")
 endif()
+add_compile_definitions(SPDLOG_ACTIVE_LEVEL=${SPDLOG_ACTIVE_LEVEL})
+message(STATUS "SPDLOG_ACTIVE_LEVEL=${SPDLOG_ACTIVE_LEVEL} (override with -DSPDLOG_ACTIVE_LEVEL=...)")
 
 set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
 
@@ -184,6 +187,16 @@ add_subdirectory(vm)
 add_subdirectory(attach)
 
 add_subdirectory(runtime)
+
+option(BPFTIME_BUILD_RUNTIME_LIBRARY_EXAMPLE "Build the direct runtime-library example" OFF)
+if(BPFTIME_BUILD_RUNTIME_LIBRARY_EXAMPLE)
+  add_subdirectory(example/runtime_library)
+endif()
+
+option(BPFTIME_BUILD_MACOS_EXAMPLE "Build the macOS userspace uprobe + eBPF map example" OFF)
+if(BPFTIME_BUILD_MACOS_EXAMPLE)
+  add_subdirectory(example/macos)
+endif()
 
 # option to use probe read/write checks
 if(ENABLE_PROBE_READ_CHECK)

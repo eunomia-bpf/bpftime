@@ -59,6 +59,7 @@ const unsigned char bpf_add_mem_64_bit_minimal[] =
 TEST_CASE("Test bpftime shm json import/export")
 {
 	bpftime_shm shm(SHM_NAME, shm_open_type::SHM_REMOVE_AND_CREATE);
+	shm_write_window_guard shm_window(shm);
 
 	SECTION("Test shm json export")
 	{
