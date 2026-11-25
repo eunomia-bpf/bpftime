@@ -1,6 +1,4 @@
-#include "spdlog/cfg/env.h"
-#include "spdlog/sinks/stdout_color_sinks.h"
-#include "spdlog/sinks/stdout_sinks.h"
+#include "bpftime_logger.hpp"
 #include "spdlog/spdlog.h"
 #include <algorithm>
 #include <cstdlib>
@@ -12,6 +10,12 @@
 #include "text_segment_transformer.hpp"
 
 #include <string>
+
+// Same default as runtime/include/bpftime_config.hpp, which this target does
+// not include because it pulls in Boost.Interprocess.
+#ifndef DEFAULT_LOGGER_OUTPUT_PATH
+#define DEFAULT_LOGGER_OUTPUT_PATH "~/.bpftime/runtime.log"
+#endif
 
 using main_func_t = int (*)(int, char **, char **);
 
@@ -52,9 +56,13 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
-	auto logger = spdlog::stderr_color_mt("stderr");
-	spdlog::set_default_logger(logger);
-	spdlog::cfg::load_env_levels();
+	// Use the configured bpftime sink instead of an unconditional stderr
+	// logger, so the transformer's startup logs follow BPFTIME_LOG_OUTPUT
+	// like the agent and syscall-server ones do.
+	const char *logger_target = getenv("BPFTIME_LOG_OUTPUT");
+	bpftime::bpftime_set_logger(logger_target == nullptr ?
+					    DEFAULT_LOGGER_OUTPUT_PATH :
+					    logger_target);
 	/* We don't want to our library to be unloaded after we return. */
 	*stay_resident = TRUE;
 

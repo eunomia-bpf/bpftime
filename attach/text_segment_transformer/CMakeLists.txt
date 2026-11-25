@@ -17,6 +17,9 @@ target_include_directories(bpftime_text_segment_transformer
     PRIVATE
     ${FRIDA_GUM_INSTALL_DIR}
     ${SPDLOG_INCLUDE}
+    # Header-only bpftime_logger.hpp, so the transformer honors the same
+    # BPFTIME_LOG_OUTPUT sink as the agent and the syscall-server.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../runtime/include
 )
 
 # The trampoline defines its entry points from inline assembly only, so a
