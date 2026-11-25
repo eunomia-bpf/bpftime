@@ -31,10 +31,11 @@ struct {
 } launch_times SEC(".maps");
 
 // queue_state[0] = host writes, queue_state[1] = device reads,
-// queue_state[2] = underflow, queue_state[3] = overflow.
+// queue_state[2] = underflow, queue_state[3] = overflow,
+// queue_state[4] = in-flight queue depth.
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(max_entries, 4);
+	__uint(max_entries, 5);
 	__type(key, u32);
 	__type(value, u64);
 } queue_state SEC(".maps");
@@ -62,20 +63,21 @@ int BPF_KPROBE(uprobe_cuda_launch)
 	if (offset_ptr)
 		ts_calibrated = ts_mono + *offset_ptr;
 
+	u32 depth_key = 4;
+	u64 *depth = bpf_map_lookup_elem(&queue_state, &depth_key);
 	u64 *write_seq = bpf_map_lookup_elem(&queue_state, &key);
-	if (!write_seq)
+	if (!depth || !write_seq)
 		return 0;
-	u64 seq = __sync_fetch_and_add(write_seq, 1);
-	u32 read_key = 1;
-	u64 *read_seq = bpf_map_lookup_elem(&queue_state, &read_key);
-	if (read_seq && seq >= *read_seq + LAUNCH_QUEUE_SIZE) {
+	u64 prev_depth = __sync_fetch_and_add(depth, 1);
+	if (prev_depth >= LAUNCH_QUEUE_SIZE) {
+		__sync_fetch_and_add(depth, ~0ULL);
 		u32 overflow_key = 3;
 		u64 *overflow = bpf_map_lookup_elem(&queue_state, &overflow_key);
 		if (overflow)
 			__sync_fetch_and_add(overflow, 1);
 		return 0;
 	}
-	u32 slot = seq & (LAUNCH_QUEUE_SIZE - 1);
+	u32 slot = __sync_fetch_and_add(write_seq, 1) & (LAUNCH_QUEUE_SIZE - 1);
 	bpf_map_update_elem(&launch_times, &slot, &ts_calibrated, BPF_ANY);
 
 	return 0;
@@ -123,12 +125,23 @@ int cuda__probe()
 	}
 
 	u64 seq = __sync_fetch_and_add(read_seq, 1);
+	u32 depth_key = 4;
+	u64 *depth = bpf_map_lookup_elem(&queue_state, &depth_key);
 	u32 slot = seq & (LAUNCH_QUEUE_SIZE - 1);
 	u64 *launch_ts = bpf_map_lookup_elem(&launch_times, &slot);
-	if (!launch_ts || *launch_ts == 0)
+	if (!launch_ts) {
+		if (depth)
+			__sync_fetch_and_add(depth, ~0ULL);
+		return 0;
+	}
+	u64 ts = *launch_ts;
+	*launch_ts = 0;
+	if (depth)
+		__sync_fetch_and_add(depth, ~0ULL);
+	if (ts == 0)
 		return 0;
 	u64 gpu_ts = bpf_get_globaltimer();
-	u64 delta_ns = gpu_ts > *launch_ts ? gpu_ts - *launch_ts : 0;
+	u64 delta_ns = gpu_ts > ts ? gpu_ts - ts : 0;
 	u32 bin = get_hist_bin(delta_ns);
 	u64 *count = bpf_map_lookup_elem(&time_histogram, &bin);
 	if (count)
