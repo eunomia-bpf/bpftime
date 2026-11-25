@@ -141,6 +141,7 @@ The codebase is organized into distinct components that interact through well-de
 2. **Testing**: Add unit tests in component's test directory
 3. **eBPF programs**: Use standard clang/libbpf toolchain, test with both userspace and kernel
 4. **Performance**: Consider shared memory overhead, prefer batch operations
+5. **Benchmark and performance impact**: Every pull request includes a benchmark (master vs. the change, same machine and build options, with a multi-thread or multi-process run when a lock or shared state is touched) and a performance impact analysis of the hot paths it touches, in the section the PR template provides. The CI `Benchmarks` workflow runs on different runners from build to build, so its absolute numbers do not replace a same-machine comparison.
 
 The architecture prioritizes performance (bypassing kernel), compatibility (same APIs as kernel eBPF), and extensibility (modular design for new features).
 
