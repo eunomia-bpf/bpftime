@@ -331,10 +331,11 @@ may cross the syscall-server / attach boundary.
 ## Single-Purpose PRs, Minimal Change, Anti-Over-Engineering & Anti-Over-Testing
 
 - **One PR, one thing (strictly no `and` bundling).** Every pull request must
-  solve one independent root cause or deliver one cohesive capability. Never
-  bundle two independently buildable, testable, mergeable, or revertible
-  changes into a single PR (for example, combining a dependency update with
-  runtime behavior changes, mixing two distinct bug fixes or refactors, or
+  solve one independent root cause or deliver one cohesive capability (together
+  with its own regression coverage and corresponding documentation). Never
+  bundle two orthogonal changes that can be built, tested, merged, and reverted
+  independently into a single PR (for example, combining a dependency update
+  with runtime behavior changes, mixing two distinct bug fixes or refactors, or
   coupling a runtime/attach fix with unrelated CI workflow expansion). If a PR
   title needs `and` to join separate topics or its diff spans independent
   subsystems, split it immediately into separate atomic PRs against `master`.
