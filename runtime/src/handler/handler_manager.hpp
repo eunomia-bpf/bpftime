@@ -22,7 +22,6 @@
 #include <boost/interprocess/smart_ptr/unique_ptr.hpp>
 #include <boost/interprocess/containers/string.hpp>
 #include <bpftime_shm.hpp>
-#include <boost/interprocess/containers/set.hpp>
 #include <handler/link_handler.hpp>
 #include <handler/prog_handler.hpp>
 #include <handler/map_handler.hpp>
@@ -45,11 +44,14 @@ using boost::interprocess::vector;
 constexpr const char *DEFAULT_GLOBAL_SHM_NAME = "bpftime_maps_shm";
 constexpr const char *DEFAULT_GLOBAL_HANDLER_NAME = "bpftime_handler";
 constexpr const char *DEFAULT_AGENT_CONFIG_NAME = "bpftime_runtime_config";
+// The "_v2" suffix marks the lock-free atomic slot layout. A segment left
+// behind by the previous boost::interprocess::set build stores different
+// objects under the old names, so the v2 names resolve to null and PID
+// bookkeeping fails open instead of interpreting foreign memory as slots.
 constexpr const char *DEFAULT_ALIVE_AGENT_PIDS_NAME =
-	"bpftime_alive_agent_pids";
+	"bpftime_alive_agent_pids_v2";
 constexpr const char *DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME =
-	"bpftime_alive_syscall_server_pids";
-constexpr const char *DEFAULT_PID_SET_LOCK_NAME = "bpftime_pid_set_lock";
+	"bpftime_alive_syscall_server_pids_v2";
 inline const char *get_global_shm_name()
 {
 	const char *name = getenv("BPFTIME_GLOBAL_SHM_NAME");
