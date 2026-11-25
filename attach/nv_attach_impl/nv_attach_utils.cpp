@@ -29,7 +29,7 @@ std::string rewrite_ptx_target(std::string ptx,
 
 	// Rewrite .version based on SM arch (sm_120+ needs 8.7, sm_100+ needs 8.5)
 	int sm_num = (sm_arch.size() > 3) ? std::atoi(sm_arch.c_str() + 3) : 0;
-	const char *ptx_ver = (sm_num >= 120) ? "8.7" : (sm_num >= 100) ? "8.5" : nullptr;
+	const char *ptx_ver = (sm_num >= 120) ? "8.7" : (sm_num >= 103) ? "8.8" : (sm_num >= 100) ? "8.5" : nullptr;
 	if (ptx_ver) {
 		auto vpos = ptx.find(".version");
 		if (vpos != std::string::npos) {
@@ -65,19 +65,6 @@ std::string wrap_ptx_with_trampoline_for_sm(std::string input,
 	return rewrite_ptx_target(get_default_trampoline_ptx(), sm_arch) + input;
 }
 
-std::string patch_main_from_func_to_entry(std::string result)
-{
-	const std::string entry_func = ".visible .func bpf_main";
-
-	auto idx = result.find(entry_func);
-	SPDLOG_INFO("entry_func ({}) index {}", entry_func, idx);
-
-	if (idx != result.npos) {
-		result = result.replace(idx, entry_func.size(),
-					".visible .entry bpf_main");
-	}
-	return result;
-}
 std::string sha256(const void *data, size_t length)
 {
 	unsigned char hash[SHA256_DIGEST_LENGTH];

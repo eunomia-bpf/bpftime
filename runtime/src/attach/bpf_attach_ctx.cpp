@@ -5,6 +5,9 @@
  */
 #include "attach_private_data.hpp"
 #include "base_attach_impl.hpp"
+#if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
+#include "trap_uprobe_attach_impl.hpp"
+#endif
 #include "bpftime_shm.hpp"
 
 #include "handler/link_handler.hpp"
@@ -17,7 +20,6 @@
 #include <cstdint>
 #include <map>
 #include <memory>
-#include <syscall_table.hpp>
 #include <bpf_attach_ctx.hpp>
 #include <bpftime_shm_internal.hpp>
 #include <bpftime_prog.hpp>
@@ -27,6 +29,7 @@
 #include <bpftime_helper_group.hpp>
 #include <handler/handler_manager.hpp>
 #include <utility>
+#include <vector>
 #include <variant>
 #include <sys/resource.h>
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
@@ -37,7 +40,7 @@ extern "C" uint64_t bpftime_set_retval(uint64_t value);
 namespace bpftime
 {
 
-static int load_prog_and_helpers(bpftime_prog *prog, const runtime_config &config)
+int load_prog_and_helpers(bpftime_prog *prog, const runtime_config &config)
 {
 #if defined(__linux__)
 	if (config.enable_kernel_helper_group) {
@@ -56,20 +59,26 @@ static int load_prog_and_helpers(bpftime_prog *prog, const runtime_config &confi
 	return prog->bpftime_prog_load(config.jit_enabled);
 }
 
-int bpf_attach_ctx::init_attach_ctx_from_handlers(const runtime_config &config)
+int bpf_attach_ctx::init_attach_ctx_from_handlers(const runtime_config &config,
+						  int *failed_count)
 {
 	const handler_manager *manager =
 		shm_holder.global_shared_memory.get_manager();
 	if (!manager) {
+		if (failed_count)
+			*failed_count = 0;
 		return -1;
 	}
-	return init_attach_ctx_from_handlers(manager, config);
+	return init_attach_ctx_from_handlers(manager, config, failed_count);
 }
 
 // create a attach context and progs from handlers
 int bpf_attach_ctx::init_attach_ctx_from_handlers(
-	const handler_manager *manager, const runtime_config &config)
+	const handler_manager *manager, const runtime_config &config,
+	int *failed_count)
 {
+	if (failed_count)
+		*failed_count = 0;
 	std::lock_guard<std::mutex> lock(ctx_mutex);
 	for (int attempt = 0; attempt < 3; attempt++) {
 		auto seq = shm_holder.global_shared_memory.read_stable_epoch_seq();
@@ -100,6 +109,17 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			last_epoch_seq_seen = seq;
 		}
 		const std::uint64_t epoch_before = last_epoch_seq_seen;
+		// Failed (handler id, first error) pairs of this scan. The
+		// vector stays empty on the common success path, so a normal
+		// scan performs no heap allocation here.
+		std::vector<std::pair<int, int>> failures;
+		auto record_failure = [&](int id, int err) {
+			for (const auto &[seen_id, _] : failures) {
+				if (seen_id == id)
+					return;
+			}
+			failures.emplace_back(id, err);
+		};
 		for (int i = 0; i < (int)manager->size(); i++) {
 			if (manager->is_allocated(i)) {
 				std::set<int> stk;
@@ -107,11 +127,12 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					    manager, i, stk, config, false);
 				    err < 0) {
 					SPDLOG_DEBUG(
-						"Failed to instantiate handler {}",
-						i);
+						"Failed to instantiate handler {}: {}",
+						i, err);
 					// Unable to instantiate handler may not be an
 					// error. We can continue trying to instantiate
 					// other handlers.
+					record_failure(i, err);
 				}
 			}
 		}
@@ -126,14 +147,44 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					    manager, i, stk, config, true);
 				    err < 0) {
 					SPDLOG_DEBUG(
-						"Failed to instantiate handler {}",
-						i);
+						"Failed to instantiate handler {}: {}",
+						i, err);
+					record_failure(i, err);
 				}
 			}
 		}
+		// Emit the aggregate warning and hand the distinct failed
+		// handler count to the caller only when this scan is about
+		// to be accepted as stable, so an unstable retry never logs
+		// a stale partial result. A handler that failed one pass but
+		// succeeded the other is instantiated by the end of the
+		// scan, so drop it from the final failure set.
+		auto finalize_scan = [&]() {
+			if (failures.empty())
+				return;
+			std::string detail;
+			int failed_total = 0;
+			for (const auto &[id, err] : failures) {
+				if (instantiated_handlers.contains(id))
+					continue;
+				if (failed_total > 0)
+					detail += ", ";
+				detail += std::to_string(id) + " (" +
+					  std::to_string(err) + ")";
+				++failed_total;
+			}
+			if (failed_total == 0)
+				return;
+			SPDLOG_WARN(
+				"bpftime: {} handler(s) could not be instantiated: {}",
+				failed_total, detail);
+			if (failed_count)
+				*failed_count = failed_total;
+		};
 		const std::uint64_t epoch_after =
 			shm_holder.global_shared_memory.read_stable_epoch_seq();
 		if (epoch_after == BPFTIME_EPOCH_SEQ_MISSING) {
+			finalize_scan();
 			return 0;
 		}
 		if (epoch_after == BPFTIME_EPOCH_SEQ_UNSTABLE) {
@@ -145,6 +196,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			continue;
 		}
 		if (epoch_after == epoch_before || epoch_after == last_epoch_seq_seen) {
+			finalize_scan();
 			return 0;
 		}
 		SPDLOG_INFO(
@@ -182,6 +234,13 @@ bpf_attach_ctx::bpf_attach_ctx()
 			"CUDA shared communication memory not available; CUDA attach will be disabled for this process");
 	}
 #endif
+}
+
+bpftime_prog *bpf_attach_ctx::find_instantiated_prog(int handler_id) const
+{
+	auto program = instantiated_progs.find(handler_id);
+	return program == instantiated_progs.end() ? nullptr :
+						    program->second.get();
 }
 
 int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
@@ -291,14 +350,18 @@ int bpf_attach_ctx::instantiate_prog_handler_at(int id,
 	instantiated_progs[id] =
 		std::make_unique<bpftime_prog>(insns, cnt, name);
 	bpftime_prog *prog = instantiated_progs[id].get();
+	// Attach-impl-defined helpers (e.g. the CUDA/GPU helper group) must be
+	// registered into the prog before it is loaded:
+	// bpftime_prog_load now rejects programs calling helpers that the VM
+	// has not seen, so the load must see the full helper set.
+	for (const auto &item : helpers) {
+		prog->bpftime_prog_register_raw_helper(item.second);
+	}
 	if (int err = load_prog_and_helpers(prog, config); err < 0) {
 		SPDLOG_ERROR(
 			"Failed to load program helpers for prog handler {}: {}",
 			id, err);
 		return err;
-	}
-	for (const auto &item : helpers) {
-		prog->bpftime_prog_register_raw_helper(item.second);
 	}
 	instantiated_handlers.insert(id);
 	return 0;
@@ -378,9 +441,18 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 		}
 #endif
 		auto cookie = handler.attach_cookie;
+#if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
+		if (dynamic_cast<attach::trap::trap_attach_impl *>(attach_impl)) {
+			if (int err = prog->prepare_for_signal_execution(); err < 0)
+				return err;
+		}
+#endif
 		attach_id = attach_impl->create_attach_with_ebpf_callback(
 			[=](void *mem, size_t mem_size, uint64_t *ret) -> int {
-				current_thread_bpf_cookie = cookie;
+				if (auto *ctx = attach::current_signal_callback)
+					ctx->cookie = cookie;
+				else
+					current_thread_bpf_cookie = cookie;
 				int err = prog->bpftime_prog_exec(
 					(void *)mem, mem_size, ret);
 				return err;

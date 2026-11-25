@@ -1,4 +1,6 @@
 [Bb]uild*/*
+# ccache output used by CI composite action (.github/actions/ccache)
+.ccache/
 [Dd]ocs/*
 CMakeCache.*
 CMakeFiles/*
@@ -62,3 +64,4 @@ example/attach_implementation/benchmark/wasm-micro-runtime/
 
 build
 target
+/.agents/skills/

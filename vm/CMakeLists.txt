@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.16)
 #
 project(
   "vm-bpf"
-  VERSION 0.1.0
+  VERSION 0.9.0
   LANGUAGES C CXX
 )
 
@@ -33,15 +33,7 @@ if(${BPFTIME_BUILD_STANDALONE_VM})
   add_subdirectory(../third_party/argparse ${CMAKE_CURRENT_BINARY_DIR}/argparse)
 endif()
 
-if(${BPFTIME_LLVM_JIT})
-  set(BPFTIME_BPF_RUNTIME_NAME "bpftime_llvm_vm")
-endif()
-
-if(${BPFTIME_UBPF_JIT})
-  set(BPFTIME_BPF_RUNTIME_NAME "bpftime_ubpf_vm")
-endif()
-
-if(NOT BPFTIME_BPF_RUNTIME_NAME)
+if(NOT BPFTIME_LLVM_JIT AND NOT BPFTIME_UBPF_JIT)
   message(WARNING "No built-in VMs has been enabled.")
 endif()
 
@@ -51,14 +43,29 @@ add_subdirectory(vm-core)
 #
 # Unit testing setup
 #
-set(test_sources
-  src/test.c
-  src/test_jit.c
-  src/test_vm.c
-  src/test_core_minimal_ffi.c
-)
-
 if(BPFTIME_ENABLE_UNIT_TESTING)
   enable_testing()
   message(STATUS "Build unit tests for the project. Tests should always be found in the test folder\n")
+  if(BPFTIME_UBPF_JIT AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # Retain the uBPF factory registration from the static library.
+    add_executable(bpftime_ubpf_lifetime_test
+      test/ubpf_lifetime.cpp
+      $<TARGET_OBJECTS:bpftime_ubpf_vm_obj>)
+    target_link_libraries(bpftime_ubpf_lifetime_test PRIVATE bpftime_vm)
+    target_include_directories(bpftime_ubpf_lifetime_test PRIVATE
+      compat/ubpf-vm)
+    target_compile_features(bpftime_ubpf_lifetime_test PRIVATE cxx_std_17)
+    target_link_options(bpftime_ubpf_lifetime_test PRIVATE
+      -Wl,--wrap=ubpf_create -Wl,--wrap=ubpf_destroy)
+    add_test(NAME bpftime_ubpf_lifetime COMMAND bpftime_ubpf_lifetime_test)
+
+    add_executable(bpftime_ubpf_jit_buffer_test
+      test/ubpf_jit_buffer.cpp
+      $<TARGET_OBJECTS:bpftime_ubpf_vm_obj>)
+    target_link_libraries(bpftime_ubpf_jit_buffer_test PRIVATE bpftime_vm)
+    target_include_directories(bpftime_ubpf_jit_buffer_test PRIVATE
+      compat/ubpf-vm)
+    target_compile_features(bpftime_ubpf_jit_buffer_test PRIVATE cxx_std_17)
+    add_test(NAME bpftime_ubpf_jit_buffer COMMAND bpftime_ubpf_jit_buffer_test)
+  endif()
 endif()

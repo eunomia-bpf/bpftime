@@ -7,7 +7,10 @@ endif()
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
 set(CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} -fno-omit-frame-pointer")
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lncurses")
+# ncurses is only needed when LLVM JIT is enabled (LLVM pulls it in)
+if(NOT DEFINED BPFTIME_LLVM_JIT OR BPFTIME_LLVM_JIT)
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lncurses")
+endif()
 add_definitions(-DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1)
 
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
@@ -18,7 +21,7 @@ add_definitions(-DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1)
 #
 project(
   "bpftime"
-  VERSION 0.1.0
+  VERSION 0.9.0
   LANGUAGES C CXX
 )
 
@@ -27,6 +30,12 @@ project(
 #
 include(cmake/CompilerWarnings.cmake)
 include(cmake/StandardSettings.cmake)
+
+if(BPFTIME_ENABLE_UNIT_TESTING OR
+   (BPFTIME_ENABLE_TRAP_UPROBE AND
+    (NOT DEFINED BPFTIME_TRAP_ATTACH_BUILD_TESTS OR BPFTIME_TRAP_ATTACH_BUILD_TESTS)))
+  enable_testing()
+endif()
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Debug")
@@ -125,8 +134,10 @@ if(${BPFTIME_BUILD_WITH_LIBBPF})
   include(cmake/libbpf.cmake)
 endif()
 
-# install frida
-include(cmake/frida.cmake)
+# install frida (not available on riscv64)
+if(BPFTIME_ENABLE_FRIDA)
+  include(cmake/frida.cmake)
+endif()
 
 set(CMAKE_POSITION_INDEPENDENT_CODE YES)
 
@@ -136,22 +147,25 @@ else()
   message(STATUS "Skipping ebpf verifier")
 
   # Catch2
-  if(NOT DEFINED Catch2_INCLUDE)
-    message(STATUS "Adding Catch2 by subdirectory")
-    add_subdirectory(third_party/Catch2)
-  endif()
+  message(STATUS "Adding Catch2 by subdirectory")
+  add_subdirectory(third_party/Catch2)
 endif()
 
 # spdlog
 add_subdirectory(third_party/spdlog)
 
 if(NOT DEFINED SPDLOG_ACTIVE_LEVEL)
-  add_compile_definitions(SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE)
-  message(STATUS "Setting SPDLOG_ACTIVE_LEVEL to SPDLOG_LEVEL_TRACE")
-else()
-  add_compile_definitions(SPDLOG_ACTIVE_LEVEL=${SPDLOG_ACTIVE_LEVEL})
+  # spdlog evaluates SPDLOG_ACTIVE_LEVEL at compile time: log calls at or
+  # below this level are compiled out entirely. Debug builds keep TRACE for
+  # development, while optimized builds drop DEBUG/TRACE from hot paths (BPF
+  # program execution, syscall/attach callbacks), where formatting the log
+  # arguments would otherwise run on every event even when logging is off.
+  set(SPDLOG_ACTIVE_LEVEL
+      "$<IF:$<CONFIG:Debug>,SPDLOG_LEVEL_TRACE,SPDLOG_LEVEL_INFO>")
   message(STATUS "Setting SPDLOG_ACTIVE_LEVEL to ${SPDLOG_ACTIVE_LEVEL}")
 endif()
+add_compile_definitions(SPDLOG_ACTIVE_LEVEL=${SPDLOG_ACTIVE_LEVEL})
+message(STATUS "SPDLOG_ACTIVE_LEVEL=${SPDLOG_ACTIVE_LEVEL} (override with -DSPDLOG_ACTIVE_LEVEL=...)")
 
 set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
 
@@ -173,6 +187,16 @@ add_subdirectory(vm)
 add_subdirectory(attach)
 
 add_subdirectory(runtime)
+
+option(BPFTIME_BUILD_RUNTIME_LIBRARY_EXAMPLE "Build the direct runtime-library example" OFF)
+if(BPFTIME_BUILD_RUNTIME_LIBRARY_EXAMPLE)
+  add_subdirectory(example/runtime_library)
+endif()
+
+option(BPFTIME_BUILD_MACOS_EXAMPLE "Build the macOS userspace uprobe + eBPF map example" OFF)
+if(BPFTIME_BUILD_MACOS_EXAMPLE)
+  add_subdirectory(example/macos)
+endif()
 
 # option to use probe read/write checks
 if(ENABLE_PROBE_READ_CHECK)
@@ -208,8 +232,13 @@ if(${BPFTIME_BUILD_STATIC_LIB})
   endif()
 
 
-  bpftime_add_libs_component_command(${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
-  bpftime_add_static_lib_component_command(bpftime_frida_uprobe_attach_impl)
+  if(BPFTIME_ENABLE_FRIDA)
+    bpftime_add_libs_component_command(${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
+    bpftime_add_static_lib_component_command(bpftime_frida_uprobe_attach_impl)
+  endif()
+  if(TARGET bpftime_trap_uprobe_attach_impl)
+    bpftime_add_static_lib_component_command(bpftime_trap_uprobe_attach_impl)
+  endif()
 
   if(${BPFTIME_BUILD_WITH_LIBBPF})
     bpftime_add_libs_component_command(${CMAKE_CURRENT_BUILD_DIR}libbpf/libbpf/libbpf.a)
@@ -250,19 +279,16 @@ if(${BUILD_ATTACH_IMPL_EXAMPLE})
   add_subdirectory(example/attach_implementation)
 endif()
 
-# benchmark that requires bpftime libraries
-if(${BPFTIME_BUILD_WITH_LIBBPF})
-  # Currently benchmark is using libbpf
-  add_subdirectory(benchmark)
-endif()
+# benchmarks — libbpf-dependent ones are gated inside benchmark/CMakeLists.txt
+add_subdirectory(benchmark)
 
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
 set(DEST_DIR "$ENV{HOME}/.bpftime")
 
-if(${BPFTIME_BUILD_WITH_LIBBPF})
+if(${BPFTIME_BUILD_WITH_LIBBPF} AND BPFTIME_ENABLE_FRIDA)
   install(TARGETS bpftime-agent bpftime_text_segment_transformer bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ${DEST_DIR})
-else()
+elseif(TARGET bpftime-agent)
   install(TARGETS bpftime-agent bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ${DEST_DIR})
 endif()
 

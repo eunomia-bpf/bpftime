@@ -3,11 +3,16 @@
 #include "frida_register_def.hpp"
 #include "frida_uprobe_attach_impl.hpp"
 #include "spdlog/spdlog.h"
+#include <array>
 #include <cstdint>
 #include <cmath>
 #include <string>
+#include <vector>
 using namespace bpftime;
 using namespace attach;
+
+extern "C" uint64_t __bpftime_test_stripped_back_trace__func1(uint64_t x);
+extern "C" uint64_t __bpftime_test_stripped_back_trace__func5(uint64_t x);
 
 extern "C" __attribute__((__noinline__)) uint64_t
 __bpftime_test_attach_with_back_trace__func5(uint64_t x)
@@ -50,7 +55,16 @@ __bpftime_test_attach_with_back_trace__func1(uint64_t x)
 
 TEST_CASE("Test with backtrace")
 {
-	frida_attach_impl impl;
+	bool use_fuzzy_backtracer = false;
+	SECTION("accurate")
+	{
+		use_fuzzy_backtracer = false;
+	}
+	SECTION("fuzzy")
+	{
+		use_fuzzy_backtracer = true;
+	}
+	frida_attach_impl impl(use_fuzzy_backtracer);
 	bool invoked = false;
 	impl.create_uprobe_at(
 		(void *)&__bpftime_test_attach_with_back_trace__func5,
@@ -59,22 +73,57 @@ TEST_CASE("Test with backtrace")
 			auto stack = (std::vector<uint64_t> *)
 					     impl.call_attach_specific_function(
 						     "generate_stack", nullptr);
-			for (int i = 0; i < 4; i++) {
-				auto addr = stack->at(i);
-				GumDebugSymbolDetails debug_details;
-				REQUIRE(gum_symbol_details_from_address(
-						(GumReturnAddress)addr,
-						&debug_details) == true);
-				SPDLOG_INFO("symbol name {}",
-					    debug_details.symbol_name);
-				auto expected_name = std::string(
-					"__bpftime_test_attach_with_back_trace__func");
-				REQUIRE(std::string(debug_details.symbol_name)
-						.starts_with(expected_name));
+			REQUIRE_FALSE(stack->empty());
+			if (!use_fuzzy_backtracer) {
+				for (int i = 0; i < 4; i++) {
+					auto addr = stack->at(i);
+					GumDebugSymbolDetails debug_details;
+					REQUIRE(gum_symbol_details_from_address(
+							(GumReturnAddress)addr,
+							&debug_details) == true);
+					SPDLOG_INFO("symbol name {}",
+						    debug_details.symbol_name);
+					auto expected_name = std::string(
+						"__bpftime_test_attach_with_back_trace__func");
+					REQUIRE(std::string(debug_details.symbol_name)
+							.starts_with(expected_name));
+				}
 			}
 
 			delete stack;
 		});
 	REQUIRE(__bpftime_test_attach_with_back_trace__func1(100) == 635);
 	REQUIRE(invoked == true);
+}
+
+TEST_CASE("Fuzzy backtracer recovers a call chain without unwind metadata")
+{
+	std::array<std::size_t, 2> fixture_frames{};
+	for (const bool use_fuzzy_backtracer : { false, true }) {
+		frida_attach_impl impl(use_fuzzy_backtracer);
+		impl.create_uprobe_at(
+			(void *)&__bpftime_test_stripped_back_trace__func5,
+			[&](const pt_regs &) {
+				auto stack = (std::vector<uint64_t> *)
+						     impl.call_attach_specific_function(
+							     "generate_stack", nullptr);
+				REQUIRE(stack != nullptr);
+				for (const auto addr : *stack) {
+					GumDebugSymbolDetails details;
+					if (gum_symbol_details_from_address(
+						    (GumReturnAddress)addr,
+						    &details) &&
+					    std::string(details.symbol_name)
+						    .starts_with(
+							    "__bpftime_test_stripped_back_trace__func")) {
+						fixture_frames[use_fuzzy_backtracer]++;
+					}
+				}
+				delete stack;
+			});
+		REQUIRE(__bpftime_test_stripped_back_trace__func1(1) == 16);
+	}
+
+	REQUIRE(fixture_frames[1] >= 3);
+	REQUIRE(fixture_frames[1] > fixture_frames[0]);
 }

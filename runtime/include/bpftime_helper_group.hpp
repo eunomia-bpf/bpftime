@@ -18,6 +18,9 @@ struct bpftime_helper_info {
 	void *fn;
 };
 
+// Checks the concrete implementation as well as the BPF helper number.
+bool helper_is_async_signal_safe(unsigned index, void *fn);
+
 class bpftime_helper_group {
     public:
 	bpftime_helper_group() = default;
@@ -30,9 +33,6 @@ class bpftime_helper_group {
 
 	// Register a helper
 	int register_helper(const bpftime_helper_info &info);
-
-	// Append another group to the current one
-	int append(const bpftime_helper_group &another_group);
 
 	// Utility function to get the UFUNC helper group
 	static const bpftime_helper_group &get_ufunc_helper_group();

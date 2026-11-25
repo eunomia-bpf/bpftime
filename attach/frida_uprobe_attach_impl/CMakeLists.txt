@@ -16,6 +16,15 @@ target_include_directories(bpftime_frida_uprobe_attach_impl PRIVATE ${SPDLOG_INC
 
 target_link_libraries(bpftime_frida_uprobe_attach_impl PRIVATE ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a PUBLIC bpftime_base_attach_impl spdlog::spdlog dl)
 
+if(APPLE)
+  # Frida's documented Darwin link set for the static gum library:
+  # Foundation/CoreFoundation frameworks plus libbsm and libresolv. The
+  # 16.1.2 devkit only hard-requires libresolv, but propagate the full set
+  # publicly so every consumer links standalone across gum versions.
+  target_link_libraries(bpftime_frida_uprobe_attach_impl PUBLIC
+    "-framework Foundation" "-framework CoreFoundation" bsm resolv)
+endif()
+
 set(TEST_SOURCES
     test/test_uprobe_uretprobe.cpp
     test/test_function_address_resolve.cpp
@@ -26,9 +35,37 @@ set(TEST_SOURCES
     test/test_attach_private_data_parsing.cpp
     test/test_base_attach_impl.cpp
     test/test_back_trace.cpp
+    test/test_register_conversion.cpp
+    test/test_short_uprobe_reclaim.cpp
 )
 option(TEST_LCOV "option for lcov" OFF)
-add_executable(bpftime_frida_uprobe_attach_tests ${TEST_SOURCES})
+add_library(bpftime_frida_stripped_backtrace_fixture SHARED
+    test/stripped_back_trace_fixture.cpp)
+target_compile_options(bpftime_frida_stripped_backtrace_fixture PRIVATE
+    -O2
+    -g0
+    -fno-exceptions
+    -fomit-frame-pointer
+    -fno-asynchronous-unwind-tables
+    -fno-unwind-tables
+    -fno-optimize-sibling-calls)
+# The empty-marker target is hand-written assembly so its first byte is
+# ret (0xc3) on every GNU/Clang CET configuration; a compiled naked function
+# can be prefixed with endbr64 on some GCC point releases even with
+# -fcf-protection=none. Enable the assembler only where this source is built.
+if(NOT APPLE
+   AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
+    # Any Linux x86_64 compiler (GNU/Clang/IntelLLVM) drives a GNU-syntax
+    # assembler for .S; keep this guard identical to the test's
+    # defined(__linux__) && defined(__x86_64__) so the symbol is always built
+    # wherever the test references it.
+    enable_language(ASM)
+    set(EMPTY_MARKER_ASM_SOURCE test/empty_marker_x86_64.S)
+else()
+    set(EMPTY_MARKER_ASM_SOURCE "")
+endif()
+add_executable(bpftime_frida_uprobe_attach_tests
+    ${TEST_SOURCES} ${EMPTY_MARKER_ASM_SOURCE})
 
 if (${TEST_LCOV}) 
     target_compile_options(bpftime_frida_uprobe_attach_tests PRIVATE -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
@@ -50,9 +87,9 @@ endif()
 add_dependencies(bpftime_frida_uprobe_attach_tests Catch2 bpftime_frida_uprobe_attach_impl spdlog::spdlog)
 if (${TEST_LCOV}) 
     target_link_options(bpftime_frida_uprobe_attach_tests PRIVATE -lgcov)
-    target_link_libraries(bpftime_frida_uprobe_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl spdlog::spdlog gcov)
+    target_link_libraries(bpftime_frida_uprobe_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl bpftime_frida_stripped_backtrace_fixture spdlog::spdlog gcov)
 else ()
-    target_link_libraries(bpftime_frida_uprobe_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl spdlog::spdlog)
+    target_link_libraries(bpftime_frida_uprobe_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl bpftime_frida_stripped_backtrace_fixture spdlog::spdlog)
 endif()
 target_include_directories(bpftime_frida_uprobe_attach_tests PRIVATE ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE} ${Catch2_INCLUDE} ${SPDLOG_INCLUDE})
 

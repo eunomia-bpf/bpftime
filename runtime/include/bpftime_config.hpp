@@ -14,9 +14,14 @@
 #endif
 
 #ifndef DEFAULT_VM_NAME
+#if defined(BPFTIME_LLVM_JIT)
 #define DEFAULT_VM_NAME "llvm"
+#elif defined(BPFTIME_UBPF_JIT)
+#define DEFAULT_VM_NAME "ubpf"
+#else
+#define DEFAULT_VM_NAME ""
 #endif
-
+#endif
 #define LOG_PATH_MAX_LEN 1024
 #define VM_NAME_MAX_LEN 128
 
@@ -69,6 +74,10 @@ struct runtime_config {
 	// self-defined or non-buildin supported map type, if will not be
 	// rejected
 	bool allow_non_buildin_map_types = false;
+
+	// Use Frida's fuzzy backtracer for user stack collection. Accurate
+	// unwinding remains the default.
+	bool enable_frida_fuzzy_backtracer = false;
 
 	// memory size will determine the maximum size of the shared memory
 	// available for the eBPF programs and maps

@@ -56,7 +56,9 @@ my_bpf_syscall_fd(long cmd, union bpf_attr *attr, unsigned long size)
 	long fd;
 	do {
 		fd = libc_syscall(__NR_bpf, cmd, attr, size);
-	} while (fd < 0 && fd == -EAGAIN && --attempts > 0);
+		// libc syscall() returns -1 and sets errno on failure; it never
+		// returns -EAGAIN directly, so the retry must inspect errno.
+	} while (fd < 0 && errno == EAGAIN && --attempts > 0);
 	return fd;
 }
 
@@ -97,6 +99,8 @@ constexpr int decode_userspace_prog_fd(int32_t value)
 }
 } // namespace
 
+// The runtime is compiled with -ftls-model=initial-exec, so this access never
+// reaches __tls_get_addr while libc holds an allocator lock.
 static thread_local int32_t current_thread_lookup_val = 0;
 
 prog_array_map_impl::prog_array_map_impl(
@@ -189,22 +193,22 @@ long prog_array_map_impl::elem_delete(const void *key)
 
 int prog_array_map_impl::map_get_next_key(const void *key, void *next_key)
 {
-	int32_t *out = (int32_t *)next_key;
-	if (key == nullptr) {
+	// Kernel array_map_get_next_key semantics: an absent or out-of-range
+	// key restarts at index 0 instead of failing, and the last index is
+	// the only one that reports -ENOENT. Array iteration is dense, so
+	// empty slots are still visited.
+	uint32_t index = key != nullptr ? *(const uint32_t *)key : UINT32_MAX;
+	uint32_t *out = (uint32_t *)next_key;
+
+	if (index >= data.size()) {
 		*out = 0;
 		return 0;
 	}
-	int32_t k = *(int32_t *)key;
-	// The last key
-	if ((size_t)(k + 1) == data.size()) {
+	if (index == data.size() - 1) {
 		errno = ENOENT;
 		return -1;
 	}
-	if (k < 0 || (size_t)k >= data.size()) {
-		errno = EINVAL;
-		return -1;
-	}
-	*out = k + 1;
+	*out = index + 1;
 	return 0;
 }
 

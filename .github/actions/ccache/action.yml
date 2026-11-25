@@ -1,0 +1,86 @@
+name: ccache build cache
+description: Install ccache, put compiler launchers on PATH, and persist the cache across runs
+
+inputs:
+  variant:
+    description: Cache key discriminator, typically the container or runner image name
+    required: false
+    default: default
+
+runs:
+  using: composite
+  steps:
+    - name: Install ccache
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v ccache >/dev/null 2>&1; then
+          ccache --version | head -1
+          exit 0
+        fi
+        if command -v apt-get >/dev/null 2>&1; then
+          if [ "$(id -u)" -eq 0 ]; then SUDO=""; else SUDO="sudo"; fi
+          $SUDO apt-get update -y
+          $SUDO apt-get install -y --no-install-recommends ccache
+        elif command -v dnf >/dev/null 2>&1; then
+          if [ "$(id -u)" -eq 0 ]; then SUDO=""; else SUDO="sudo"; fi
+          $SUDO dnf install -y ccache
+        elif command -v yum >/dev/null 2>&1; then
+          if [ "$(id -u)" -eq 0 ]; then SUDO=""; else SUDO="sudo"; fi
+          $SUDO yum install -y ccache
+        elif command -v apk >/dev/null 2>&1; then
+          if [ "$(id -u)" -eq 0 ]; then SUDO=""; else SUDO="sudo"; fi
+          $SUDO apk add --no-cache ccache
+        else
+          echo "No supported package manager (apt/dnf/yum/apk) found to install ccache" >&2
+          exit 1
+        fi
+        ccache --version | head -1
+
+    - name: Restore ccache
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/.ccache
+        # Per-workflow/per-variant namespace keeps entries small and restores
+        # precise; the SHA key always misses on new commits and falls back to
+        # the most recent matching run via restore-keys.
+        key: ccache-${{ runner.os }}-${{ inputs.variant }}-${{ github.workflow }}-${{ github.sha }}
+        restore-keys: |
+          ccache-${{ runner.os }}-${{ inputs.variant }}-${{ github.workflow }}-
+
+    - name: Configure ccache and compiler launchers
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Keep the cache inside the workspace so container jobs (which may not
+        # grant writes to $HOME) can use it and actions/cache can persist it.
+        export CCACHE_DIR="${GITHUB_WORKSPACE}/.ccache"
+        mkdir -p "$CCACHE_DIR"
+        # ccache masquerades as each compiler through same-named symlinks on
+        # PATH, so plain Make builds and explicit CC=gcc-N setups are covered
+        # without touching any CMake flags.
+        LAUNCHER_DIR="${RUNNER_TEMP}/ccache-bin"
+        mkdir -p "$LAUNCHER_DIR"
+        # Only shadow a compiler that actually exists: ccache resolves the
+        # real binary by the name it was invoked as, so a shim for an
+        # uninstalled name (clang when the image only ships clang-18) gives
+        # "Could not find compiler "clang" in PATH". Existence is checked
+        # outside LAUNCHER_DIR so a previous run's shims do not count.
+        for name in \
+          cc gcc g++ c++ \
+          gcc-10 g++-10 gcc-11 g++-11 gcc-12 g++-12 gcc-13 g++-13 \
+          clang clang++ clang-14 clang-15 clang-16 clang-17 clang-18 clang-19 \
+          aarch64-linux-gnu-gcc aarch64-linux-gnu-g++ \
+          riscv64-linux-gnu-gcc riscv64-linux-gnu-g++; do
+          if command -v "$name" >/dev/null 2>&1 &&
+             [ "$(command -v "$name")" != "$LAUNCHER_DIR/$name" ]; then
+            ln -sf "$(command -v ccache)" "$LAUNCHER_DIR/$name"
+          fi
+        done
+        echo "$LAUNCHER_DIR" >> "$GITHUB_PATH"
+        echo "CCACHE_DIR=$CCACHE_DIR" >> "$GITHUB_ENV"
+        echo "CCACHE_COMPILERCHECK=content" >> "$GITHUB_ENV"
+        echo "CCACHE_SLOPPINESS=time_macros,include_file_mtime,include_file_ctime,pch_defines" >> "$GITHUB_ENV"
+        echo "CCACHE_BASEDIR=${GITHUB_WORKSPACE}" >> "$GITHUB_ENV"
+        ccache -M 500M
+        ccache -s || true

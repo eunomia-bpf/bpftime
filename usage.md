@@ -18,13 +18,14 @@ If you find any bugs or suggestions, please feel free to open an issue, thanks!
     - [Controlling the Log Path](#controlling-the-log-path)
     - [Allow external maps](#allow-external-maps)
     - [Set memory size for shared memory maps](#set-memory-size-for-shared-memory-maps)
+    - [Use fuzzy stack unwinding](#use-fuzzy-stack-unwinding)
   - [Verifier](#verifier)
 
 ## Uprobe and uretprobe
 
 With `bpftime`, you can build eBPF applications using familiar tools like clang and libbpf, and execute them in userspace. For instance, the `malloc` eBPF program traces malloc calls using uprobe and aggregates the counts using a hash map.
 
-You can refer to [documents/build-and-test.md](build-and-test.md) for how to build the project.
+You can refer to [installation.md](installation.md) for how to build the project.
 
 To get started, you can build and run a libbpf based eBPF program starts with `bpftime` cli:
 
@@ -83,10 +84,10 @@ $ sudo example/malloc/malloc
 
 ## Syscall tracing
 
-An example can be found at [examples/opensnoop](https://github.com/eunomia-bpf/bpftime/tree/master/example/opensnoop)
+An example can be found at [example/tracing/opensnoop](https://github.com/eunomia-bpf/bpftime/tree/master/example/tracing/opensnoop)
 
 ```console
-$ sudo ~/.bpftime/bpftime load ./example/opensnoop/opensnoop
+$ sudo ~/.bpftime/bpftime load ./example/tracing/opensnoop/opensnoop
 [2023-10-09 04:36:33.891] [info] manager constructed
 [2023-10-09 04:36:33.892] [info] global_shm_open_type 0 for bpftime_maps_shm
 [2023-10-09 04:36:33][info][23999] Enabling helper groups ffi, kernel, shm_map by default
@@ -100,7 +101,7 @@ PID    COMM              FD ERR PATH
 In another terminal, run the victim program:
 
 ```console
-$ sudo ~/.bpftime/bpftime start -s example/opensnoop/victim
+$ sudo ~/.bpftime/bpftime start -s example/tracing/opensnoop/victim
 [2023-10-09 04:38:16.196] [info] Entering new main..
 [2023-10-09 04:38:16.197] [info] Using agent /root/.bpftime/libbpftime-agent.so
 [2023-10-09 04:38:16.198] [info] Page zero setted up..
@@ -145,13 +146,7 @@ Set `BPFTIME_DISABLE_JIT=true` in the server to disable JIT, for example, when r
 LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so BPFTIME_DISABLE_JIT=true example/malloc/malloc
 ```
 
-The JIT may be disabled in old version. Set `BPFTIME_USE_JIT=true` in the server to enable JIT, for example, when running the server:
-
-```sh
-LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so BPFTIME_USE_JIT=true example/malloc/malloc
-```
-
-The default behavior is using LLVM JIT, you can also use ubpf JIT by compile with LLVM JIT enabled. See [documents/build-and-test.md](build-and-test.md) for more details.
+The default behavior is using LLVM JIT, you can also use ubpf JIT by compile with LLVM JIT enabled. See [installation.md](installation.md) for more details.
 
 ### Run with kernel eBPF and kernel verifier
 
@@ -225,6 +220,20 @@ BPFTIME_SHM_MEMORY_MB=1024 LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so ex
 ```
 
 The shared memory also contains the handler table. Its capacity can be set with `BPFTIME_MAX_FD_COUNT` (the default is 6144), and larger values require more shared memory before any maps or perf buffers are allocated. If startup reports insufficient shared memory, increase `BPFTIME_SHM_MEMORY_MB` or reduce `BPFTIME_MAX_FD_COUNT`. Allocation failures while creating a perf buffer are reported to the caller as `ENOMEM`.
+
+### Use fuzzy stack unwinding
+
+User stack collection uses Frida's accurate backtracer by default. For stripped
+binaries where accurate unwinding cannot recover enough frames, select the fuzzy
+backtracer when starting the loader:
+
+```sh
+bpftime load --fuzzy-backtracer bpftrace simple.bt
+```
+
+The equivalent environment variable is `BPFTIME_FRIDA_FUZZY_BACKTRACER=true`.
+It affects user stack collection after the agent attaches; omit it to keep the
+default accurate unwinding behavior.
 
 ## Verifier
 

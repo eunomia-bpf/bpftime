@@ -14,8 +14,8 @@
 #include <boost/interprocess/smart_ptr/unique_ptr.hpp>
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
 #include <boost/interprocess/smart_ptr/weak_ptr.hpp>
-#include <boost/interprocess/sync/interprocess_mutex.hpp>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <pthread.h>
@@ -23,14 +23,6 @@
 
 namespace bpftime
 {
-using sharable_mutex_ptr = boost::interprocess::managed_unique_ptr<
-	boost::interprocess::interprocess_sharable_mutex,
-	boost::interprocess::managed_shared_memory>::type;
-
-using mutex_ptr = boost::interprocess::managed_unique_ptr<
-	boost::interprocess::interprocess_mutex,
-	boost::interprocess::managed_shared_memory>::type;
-
 class ringbuf {
 	using vec_allocator = boost::interprocess::allocator<
 		char,
@@ -46,9 +38,17 @@ class ringbuf {
 	boost::interprocess::offset_ptr<unsigned long> consumer_pos;
 	boost::interprocess::offset_ptr<unsigned long> producer_pos;
 	boost::interprocess::offset_ptr<uint8_t> data;
-	// Guard for reserving memory
-	// mutable mutex_ptr reserve_mutex;
-	mutable pthread_spinlock_t reserve_spin_lock;
+#if defined(__linux__)
+	// Kernel eventfd backing this ringbuf. The fd number is only valid in
+	// the process that constructed the ringbuf (the syscall server); other
+	// processes obtain a dup through the SCM_RIGHTS export socket.
+	int kernel_eventfd = -1;
+	int32_t eventfd_owner_pid = 0;
+#endif
+	// Process-shared reserve lock (PTHREAD_PROCESS_SHARED). On Linux
+	// it is also robust: a killed holder hands the lock to the next
+	// locker via EOWNERDEAD instead of wedging all producers.
+	mutable pthread_mutex_t reserve_lock;
 	// raw buffer
 	buf_vec_unique_ptr raw_buffer;
 
@@ -56,11 +56,37 @@ class ringbuf {
 	bool has_data() const;
 	void *reserve(size_t size, int self_fd);
 	void submit(const void *sample, bool discard);
+	// libbpf-adaptive wakeup decision: BPF_RB_FORCE_WAKEUP always wakes,
+	// BPF_RB_NO_WAKEUP never wakes, otherwise wake only when the consumer
+	// had drained every record before this one (it is likely blocked in
+	// epoll_wait). `sample` is the pointer returned by reserve().
+	bool should_wakeup(const void *sample, uint64_t flags) const;
 	int fetch_data(int (*)(void *ctx, void *data, size_t len), void *ctx);
+#if defined(__linux__)
+	int get_kernel_eventfd() const
+	{
+		return kernel_eventfd;
+	}
+	int32_t get_eventfd_owner_pid() const
+	{
+		return eventfd_owner_pid;
+	}
+#endif
 	ringbuf(uint32_t max_ent,
 		boost::interprocess::managed_shared_memory &memory);
 	friend class ringbuf_map_impl;
 	~ringbuf();
+
+	// Test-only seam: hold the lock across a fork+SIGKILL so robust
+	// mutex recovery is exercised deterministically.
+	void lock_for_testing() const
+	{
+		pthread_mutex_lock(&reserve_lock);
+	}
+	void unlock_for_testing() const
+	{
+		pthread_mutex_unlock(&reserve_lock);
+	}
 };
 
 using ringbuf_shared_ptr = boost::interprocess::managed_shared_ptr<
@@ -93,6 +119,20 @@ class ringbuf_map_impl {
 	void *get_producer_page() const;
 	void *reserve(size_t size, int self_fd);
 	void submit(const void *sample, bool discard);
+#if defined(__linux__)
+	int get_kernel_eventfd() const
+	{
+		return ringbuf_impl->get_kernel_eventfd();
+	}
+	int32_t get_eventfd_owner_pid() const
+	{
+		return ringbuf_impl->get_eventfd_owner_pid();
+	}
+	bool should_wakeup(const void *sample, uint64_t flags) const
+	{
+		return ringbuf_impl->should_wakeup(sample, flags);
+	}
+#endif
 };
 
 } // namespace bpftime

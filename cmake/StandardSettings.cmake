@@ -2,8 +2,6 @@
 # Project settings
 #
 
-option(BPFTIME_BUILD_EXECUTABLE "Build the project as an executable, rather than a library." OFF)
-
 #
 # library options
 #
@@ -31,16 +29,12 @@ option(BPFTIME_ENABLE_CUDA_ATTACH "Whether to enable CUDA attach" OFF)
 
 option(BPFTIME_ENABLE_UNIT_TESTING "Enable unit tests for the projects (from the `test` subfolder)." OFF)
 
-option(BPFTIME_USE_CATCH2 "Use the Catch2 project for creating unit tests." OFF)
-
 #
 # Miscelanious options
 #
 
 # Generate compile_commands.json for clang based tools
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-option(BPFTIME_VERBOSE_OUTPUT "Enable verbose output, allowing for a better understanding of each step taken." ON)
 
 # Export all symbols when building a shared library
 if(BUILD_SHARED_LIBS)
@@ -60,7 +54,6 @@ if(BPFTIME_ENABLE_LTO)
   endif()
 endif()
 
-option(BPFTIME_ENABLE_CCACHE "Enable the usage of Ccache, in order to speed up rebuild times." OFF)
 find_program(CCACHE_FOUND ccache)
 if(CCACHE_FOUND)
   set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
@@ -71,6 +64,24 @@ option(BPFTIME_ENABLE_ASAN "Enable Address Sanitize to detect memory error." OFF
 if(BPFTIME_ENABLE_ASAN)
     add_compile_options(-fsanitize=address,undefined)
     add_link_options(-fsanitize=address,undefined)
+endif()
+
+# libFuzzer targets under runtime/fuzz. Coverage instrumentation needs clang.
+option(BPFTIME_ENABLE_FUZZING "Build the libFuzzer targets (requires clang)." OFF)
+if(BPFTIME_ENABLE_FUZZING)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "BPFTIME_ENABLE_FUZZING requires clang (-fsanitize=fuzzer)")
+    endif()
+    add_compile_options(-fsanitize=fuzzer-no-link,address,undefined)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^riscv")
+    set(BPFTIME_ENABLE_TRAP_UPROBE ON CACHE BOOL "Build the trap (breakpoint + SIGTRAP) uprobe backend" FORCE)
+    set(BPFTIME_ENABLE_FRIDA OFF CACHE BOOL "Build the frida-gum based uprobe backend" FORCE)
+else()
+    set(BPFTIME_ENABLE_TRAP_UPROBE OFF CACHE BOOL "Build the trap (breakpoint + SIGTRAP) uprobe backend" FORCE)
+    option(BPFTIME_ENABLE_FRIDA "Build the frida-gum based uprobe backend" ON)
 endif()
 
 option(BPFTIME_ENABLE_MPK "Enable Memory Protection Keys for the share memory." OFF)
@@ -88,9 +99,6 @@ option(ENABLE_EBPF_VERIFIER "Whether to enable ebpf verifier" OFF)
 
 # whether to build with bpftime daemon
 option(BUILD_BPFTIME_DAEMON "Whether to build the bpftime daemon" ON)
-
-# whether to build with shared bpf_map
-option(BPFTIME_BUILD_KERNEL_BPF "Whether to build with bpf share maps" ON)
 
 # whether to build single static library
 option(BPFTIME_BUILD_STATIC_LIB "Whether to build a single static library for different archive files" OFF)

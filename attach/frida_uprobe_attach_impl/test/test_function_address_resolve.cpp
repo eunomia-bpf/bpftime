@@ -3,6 +3,14 @@
 #include <catch2/catch_test_macros.hpp>
 #include <frida_uprobe_attach_impl.hpp>
 #include <cstdlib>
+#if defined(__linux__)
+#include <cstdio>
+#include <sys/mman.h>
+#include <unistd.h>
+#if defined(__linux__)
+#include <dlfcn.h>
+#endif
+#endif
 using namespace bpftime::attach;
 
 extern "C" int __func_reolve_test(int a, int b)
@@ -26,3 +34,148 @@ TEST_CASE("Test external function resolve")
 	INFO("malloc addr resolved: " << (uintptr_t)addr);
 	REQUIRE(addr == (void *)&malloc);
 }
+
+TEST_CASE("Module offset resolution handles empty and missing paths")
+{
+	frida_attach_impl man;
+	void *base = get_module_base_addr("");
+	REQUIRE(base != nullptr);
+	const auto offset = (uintptr_t)&__func_reolve_test - (uintptr_t)base;
+	REQUIRE(resolve_function_addr_by_module_offset("", offset) ==
+		(void *)&__func_reolve_test);
+	REQUIRE(resolve_function_addr_by_module_offset(
+		"/bpftime-nonexistent-module-for-resolution-test.so", 0) == nullptr);
+}
+
+#if defined(__linux__)
+TEST_CASE("Mapped module paths survive VMA splitting")
+{
+	char path[] = "/tmp/bpftime-map-files-XXXXXX";
+	const int fd = mkstemp(path);
+	REQUIRE(fd >= 0);
+	const size_t page_size = static_cast<size_t>(sysconf(_SC_PAGESIZE));
+	REQUIRE(page_size > 0);
+	REQUIRE(ftruncate(fd, page_size * 2) == 0);
+	void *mapping = mmap(nullptr, page_size * 2, PROT_READ, MAP_PRIVATE, fd, 0);
+	REQUIRE(mapping != MAP_FAILED);
+
+	// Split the original file mapping into two VMAs. Callers may still carry a
+	// map_files range describing the pre-split mapping.
+	REQUIRE(mprotect(static_cast<char *>(mapping) + page_size, page_size,
+			 PROT_NONE) == 0);
+
+	char module_name[128];
+	snprintf(module_name, sizeof(module_name), "/proc/%d/map_files/%lx-%lx",
+		 getpid(), reinterpret_cast<uintptr_t>(mapping),
+		 reinterpret_cast<uintptr_t>(mapping) + page_size * 2);
+	const auto resolved = resolve_mapped_module_path(module_name);
+
+	REQUIRE(munmap(mapping, page_size * 2) == 0);
+	REQUIRE(close(fd) == 0);
+	REQUIRE(unlink(path) == 0);
+	REQUIRE(resolved.has_value());
+	REQUIRE(*resolved == path);
+}
+#endif
+
+TEST_CASE("Module offset resolution rejects offsets outside the module extent")
+{
+	frida_attach_impl man;
+	void *base = get_module_base_addr("");
+	REQUIRE(base != nullptr);
+	const auto extent = module_mapped_extent("");
+	REQUIRE(extent > 0);
+
+	const auto valid = (uintptr_t)&__func_reolve_test - (uintptr_t)base;
+	REQUIRE(valid < extent);
+	REQUIRE(resolve_function_addr_by_module_offset("", valid) ==
+		(void *)&__func_reolve_test);
+#if defined(__linux__)
+	// Both main-executable spellings must enumerate the same mappings.
+	REQUIRE(resolve_function_addr_by_module_offset("/proc/self/exe", valid) ==
+		(void *)&__func_reolve_test);
+#endif
+
+	// A wrapped offset used to be added unchecked, producing an address
+	// anywhere in the address space for gum to install a trampoline at.
+	REQUIRE(resolve_function_addr_by_module_offset("", UINTPTR_MAX) ==
+		nullptr);
+	REQUIRE(resolve_function_addr_by_module_offset("", extent) == nullptr);
+	REQUIRE(resolve_function_addr_by_module_offset("", extent - 1) !=
+		nullptr);
+}
+
+#if defined(__linux__)
+TEST_CASE("Resolution accepts a full module path from an attach spec")
+{
+	frida_attach_impl man;
+	// gum matches a full path for the base address but enumerates ranges only
+	// for the executable name, so a path must not be rejected as unmapped.
+	char exe_path[4096];
+	const ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+	REQUIRE(len > 0);
+	exe_path[len] = '\0';
+
+	void *base = get_module_base_addr(exe_path);
+	REQUIRE(base != nullptr);
+	const auto offset = (uintptr_t)&__func_reolve_test - (uintptr_t)base;
+	REQUIRE(resolve_function_addr_by_module_offset(exe_path, offset) ==
+		(void *)&__func_reolve_test);
+	REQUIRE(resolve_function_addr_by_module_offset(exe_path, UINTPTR_MAX) ==
+		nullptr);
+}
+
+// An address past the module's own mappings must not count as mapped, even
+// though it falls inside the outer [base, base+extent) span that a bounds-only
+// check would accept.
+TEST_CASE("Module membership rejects an address in a VMA gap")
+{
+	frida_attach_impl man;
+	// Keep the protected page wholly inside this module's own file-backed
+	// data, with readable module pages on each side (including 64K pages).
+	alignas(65536) static const unsigned char pages[3 * 65536] = { 1 };
+	const auto page_size = static_cast<size_t>(sysconf(_SC_PAGESIZE));
+	REQUIRE(page_size > 0);
+	REQUIRE(page_size <= 65536);
+	void *gap = const_cast<unsigned char *>(pages + 65536);
+	const auto address = reinterpret_cast<uintptr_t>(gap);
+	REQUIRE(module_contains_address("", address));
+	REQUIRE(mprotect(gap, page_size, PROT_NONE) == 0);
+	const bool accepted_gap = module_contains_address("", address);
+	const int restore_result = mprotect(gap, page_size, PROT_READ);
+	REQUIRE(restore_result == 0);
+	REQUIRE_FALSE(accepted_gap);
+}
+
+TEST_CASE("File offset resolves through executable VMA when p_vaddr != p_offset")
+{
+	frida_attach_impl man;
+	char path[] = "/tmp/bpftime-separate-code-XXXXXX";
+	const int fd = mkstemp(path);
+	REQUIRE(fd >= 0);
+	const size_t page_size = static_cast<size_t>(sysconf(_SC_PAGESIZE));
+	REQUIRE(page_size > 0);
+	REQUIRE(ftruncate(fd, static_cast<off_t>(page_size * 2)) == 0);
+
+	// Mirror an ELF linked with -z separate-code (e.g. lld/zig):
+	// an r--p mapping covers file [0, 2*page_size) while the r-xp code
+	// segment starts at file offset page_size in a separate VMA.
+	void *ro_map = mmap(nullptr, page_size * 2, PROT_READ, MAP_PRIVATE, fd, 0);
+	REQUIRE(ro_map != MAP_FAILED);
+	void *exec_map = mmap(nullptr, page_size, PROT_READ | PROT_EXEC,
+			      MAP_PRIVATE, fd, static_cast<off_t>(page_size));
+	REQUIRE(exec_map != MAP_FAILED);
+
+	const uintptr_t file_offset = page_size + 0x123;
+	void *resolved = resolve_function_addr_by_module_offset(path, file_offset);
+
+	REQUIRE(munmap(exec_map, page_size) == 0);
+	REQUIRE(munmap(ro_map, page_size * 2) == 0);
+	REQUIRE(close(fd) == 0);
+	REQUIRE(unlink(path) == 0);
+
+	REQUIRE(resolved ==
+		reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(exec_map) +
+					 0x123));
+}
+#endif

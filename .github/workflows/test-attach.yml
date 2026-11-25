@@ -6,6 +6,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-attach.yml"
+      - ".github/actions/ccache/**"
       - "attach/**"
       - "runtime/**"
       - "vm/**"
@@ -17,6 +18,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-attach.yml"
+      - ".github/actions/ccache/**"
       - "attach/**"
       - "runtime/**"
       - "vm/**"
@@ -25,14 +27,31 @@ on:
       - "CMakeLists.txt"
       - ".gitmodules"
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
+  pick-runner:
+    uses: ./.github/workflows/pick-runner.yml
+    permissions:
+      actions: read
+    with:
+      hosted: ubuntu-latest
+      jobs: 2
+
   build_and_test_attach:
-    runs-on: "ubuntu-latest"
+    needs: pick-runner
+    # The VM runners or GitHub's, whichever is picked for this run; job
+    # containers on a VM runner run --privileged against that VM's own kernel.
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-latest"') }}
     strategy:
+      # Keep every matrix leg independent: one flaky leg must not cancel
+      # the others and hide their real results (GitHub defaults to true).
+      fail-fast: false
       matrix:
         container:
           - ubuntu-2204
@@ -44,6 +63,10 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: "recursive"
+      - name: Enable ccache
+        uses: ./.github/actions/ccache
+        with:
+          variant: ${{ matrix.container }}
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v3
         with:
@@ -87,17 +110,16 @@ jobs:
           include-hidden-files: false
           path: |
             ./coverage-uprobe.info
-      - name: Remove the build
-        run: rm -rf build
-
       - name: Build syscall trace uprobe attach tests
         run: |
-          cmake -DTEST_LCOV=ON -DBUILD_BPFTIME_DAEMON=OFF -B build -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
-          cmake --build build --config Debug --target bpftime_syscall_trace_attach_tests -j$(nproc)
+          # A separate build tree keeps the frida build (and its ccache hits)
+          # intact instead of deleting the build directory.
+          cmake -DTEST_LCOV=ON -DBUILD_BPFTIME_DAEMON=OFF -B build-syscall -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
+          cmake --build build-syscall --config Debug --target bpftime_syscall_trace_attach_tests -j$(nproc)
 
       - name: Run syscall trace uprobe attach tests
         run: |
-          ./build/attach/syscall_trace_attach_impl/bpftime_syscall_trace_attach_tests
+          ./build-syscall/attach/syscall_trace_attach_impl/bpftime_syscall_trace_attach_tests
       - name: Generate syscall trace uprobe attach coverage (Ubuntu)
         if: "matrix.container == 'ubuntu-2204'"
         run: |
@@ -118,7 +140,7 @@ jobs:
           path: |
             ./coverage-syscall-trace.info
       - uses: codecov/codecov-action@v4
-        if: github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/master'
         with:
           fail_ci_if_error: true # optional (default = false)
           files: ./coverage-syscall-trace.info, ./coverage-uprobe.info # optional

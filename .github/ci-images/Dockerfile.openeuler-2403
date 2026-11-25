@@ -1,0 +1,31 @@
+# CI base image for the openEuler 24.03 LTS SP1 container job in
+# test-runtime.yml. The workflow currently starts from the vanilla
+# openeuler image and installs the toolchain on every run; baking the
+# packages here removes that per-job cost.
+#
+# Built and pushed only by the manual workflow:
+#   .github/workflows/build-ci-images.yml
+# Target: ghcr.io/eunomia-bpf/ci-openeuler-2403
+FROM openeuler/openeuler:24.03-lts-sp1
+
+# No blanket 'dnf update': a full distro upgrade makes image builds slow
+# and non-reproducible (content depends on the build timestamp), and the
+# ubuntu image does not run apt upgrade either. Package installs pull
+# current metadata and versions on their own; security refreshes happen
+# through periodic image rebuilds.
+# Keep this list to what test-runtime.yml installs on openEuler today:
+# the openEuler mirrors are slow from CI runners, and debugging/GPG extras
+# the job never uses would add many minutes to every manual image build.
+RUN if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi \
+    && $PM -y install \
+        git ca-certificates which file \
+        cmake make gcc gcc-c++ \
+        clang llvm llvm-devel \
+        zlib-devel elfutils-libelf-devel pkgconf-pkg-config \
+        libasan boost-devel openssl-devel \
+        python3 \
+        ccache \
+    && $PM clean all
+
+# CCACHE_DIR is provided at job time by .github/actions/ccache/action.yml
+# (workspace-local, so the same image works on hosted and self-hosted runners).

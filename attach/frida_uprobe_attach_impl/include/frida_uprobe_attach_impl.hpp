@@ -45,9 +45,6 @@ using uretprobe_callback = std::function<void(const pt_regs &regs)>;
 using uprobe_override_callback = std::function<void(const pt_regs &regs)>;
 using callback_variant = std::variant<uprobe_callback, uretprobe_callback,
 				      uprobe_override_callback>;
-// Callback type used for iterating over all attaches
-using attach_iterate_callback =
-	std::function<void(int id, const void *addr, int ty)>;
 
 struct ebpf_callback_args {
 	ebpf_run_callback ebpf_cb;
@@ -64,7 +61,7 @@ extern thread_local std::optional<void *> current_thread_gum_cpu_context;
 // The frida uprobe attach implementation
 class frida_attach_impl final : public base_attach_impl {
     public:
-	frida_attach_impl();
+	explicit frida_attach_impl(bool use_fuzzy_backtracer = false);
 	~frida_attach_impl();
 	// Create a uprobe attach entry at the specified address
 	int create_uprobe_at(void *func_addr, uprobe_callback &&cb);
@@ -76,8 +73,6 @@ class frida_attach_impl final : public base_attach_impl {
 	// Attach at a certain function, with a ebpf function as callback
 	int attach_at_with_ebpf_callback(void *func_addr,
 					 ebpf_callback_args &&cb);
-	// Iterate over all attaches managed by this attach impl instance
-	void iterate_attaches(attach_iterate_callback cb);
 	// Detach all attach entry at a specified function address
 	int detach_by_func_addr(const void *func);
 
@@ -101,6 +96,7 @@ class frida_attach_impl final : public base_attach_impl {
 	std::unordered_map<void *,
 			   std::unique_ptr<class frida_internal_attach_entry> >
 		internal_attaches;
+	bool use_fuzzy_backtracer;
 
 	friend class frida_internal_attach_entry;
 	int attach_at(void *func_addr, frida_attach_entry_callback &&cb);

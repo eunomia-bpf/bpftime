@@ -5,7 +5,6 @@
  */
 #ifndef _SYSCALL_CONTEXT_HPP
 #define _SYSCALL_CONTEXT_HPP
-#include <cassert>
 #include <set>
 #include <unordered_map>
 #if defined(__linux__)
@@ -22,6 +21,10 @@
 #include <pthread.h>
 #include <atomic>
 #include <future>
+#include <mutex>
+#include <memory>
+#include <string>
+#include <stdexcept>
 #include <thread>
 // #include "pos/include/common.h"
 // #include "pos/include/utils/command_caller.h"
@@ -36,29 +39,13 @@ constexpr const int MOCKED_URETPROBE_BIT = 0;
 constexpr const int MOCKED_KPROBE_TYPE_VALUE = 8;
 constexpr const int MOCKED_KRETPROBE_BIT = 0;
 
-struct mocked_file_provider {
-	/**
-	 * @brief Next available byte
-	 *
-	 */
-	int cursor = 0;
-	std::string buf;
-	pthread_spinlock_t access_lock;
-	FILE *replacement_file = nullptr;
-	mocked_file_provider(std::string buf) : buf(buf)
-	{
-		pthread_spin_init(&access_lock, 0);
-	}
-	virtual ~mocked_file_provider()
-	{
-		pthread_spin_destroy(&access_lock);
-	}
-	mocked_file_provider(const mocked_file_provider &) = delete;
-	mocked_file_provider &operator=(const mocked_file_provider &) = delete;
 
-	mocked_file_provider(mocked_file_provider &&) = default;
-	mocked_file_provider &operator=(mocked_file_provider &&) = default;
-};
+#if defined(__linux__)
+namespace bpftime
+{
+class ringbuf_eventfd_exporter;
+}
+#endif
 
 class syscall_context {
 	using syscall_fn = long (*)(long, ...);
@@ -72,7 +59,6 @@ class syscall_context {
 	using munmap_fn = int (*)(void *, size_t);
 	using openat_fn = int (*)(int, const char *, int, ...);
 	using open_fn = int (*)(const char *, int, ...);
-	using read_fn = ssize_t (*)(int fd, void *buf, size_t count);
 	using fopen_fn = FILE *(*)(const char *, const char *);
 
 	close_fn orig_close_fn = nullptr;
@@ -85,64 +71,76 @@ class syscall_context {
 	openat_fn orig_openat_fn = nullptr;
 	open_fn orig_open_fn = nullptr;
 	mmap_fn orig_mmap_fn = nullptr;
-	read_fn orig_read_fn = nullptr;
 	fopen_fn orig_fopen_fn = nullptr;
 
 	std::unordered_set<uintptr_t> mocked_mmap_values;
-	pthread_spinlock_t mocked_file_lock;
-	std::unordered_map<int, std::unique_ptr<mocked_file_provider>>
-		mocked_files;
+	std::mutex map_in_map_refs_mutex;
+	std::unordered_map<int, std::unordered_map<std::string, int>>
+		map_in_map_refs;
+	// Map fds the caller closed while a loaded program still references
+	// them. Their slot and fd number stay reserved until the last such
+	// program is closed, matching the kernel's program-held map reference.
+	std::mutex deferred_map_close_mutex;
+	std::set<int> deferred_map_closes;
 	void init_original_functions()
 	{
+		auto require_symbol = [](const char *name) {
+			void *symbol = dlsym(RTLD_NEXT, name);
+			if (symbol == nullptr)
+				throw std::runtime_error(
+					std::string(
+						"Unable to resolve original ") +
+					name);
+			return symbol;
+		};
+
 		orig_epoll_wait_fn =
-			(epoll_wait_fn)dlsym(RTLD_NEXT, "epoll_wait");
-		assert(orig_epoll_wait_fn != nullptr);
-		orig_epoll_ctl_fn = (epoll_ctl_fn)dlsym(RTLD_NEXT, "epoll_ctl");
-		assert(orig_epoll_ctl_fn != nullptr);
+			(epoll_wait_fn)require_symbol("epoll_wait");
+		orig_epoll_ctl_fn = (epoll_ctl_fn)require_symbol("epoll_ctl");
 		orig_epoll_create1_fn =
-			(epoll_craete1_fn)dlsym(RTLD_NEXT, "epoll_create1");
-		assert(orig_epoll_create1_fn != nullptr);
-		orig_ioctl_fn = (ioctl_fn)dlsym(RTLD_NEXT, "ioctl");
-		assert(orig_ioctl_fn != nullptr);
-		orig_syscall_fn = (syscall_fn)dlsym(RTLD_NEXT, "syscall");
-		assert(orig_syscall_fn != nullptr);
-		// orig_mmap64_fn = (mmap64_fn)dlsym(RTLD_NEXT, "mmap64");
-		// assert(orig_mmap64_fn != nullptr);
-		orig_close_fn = (close_fn)dlsym(RTLD_NEXT, "close");
-		assert(orig_close_fn != nullptr);
-		orig_munmap_fn = (munmap_fn)dlsym(RTLD_NEXT, "munmap");
-		assert(orig_munmap_fn != nullptr);
-		orig_mmap64_fn = orig_mmap_fn =
-			(mmap_fn)dlsym(RTLD_NEXT, "mmap");
-		assert(orig_mmap_fn != nullptr);
-		assert(orig_mmap64_fn != nullptr);
-		orig_openat_fn = (openat_fn)dlsym(RTLD_NEXT, "openat");
-		assert(orig_openat_fn != nullptr);
-		orig_open_fn = (open_fn)dlsym(RTLD_NEXT, "open");
-		assert(orig_open_fn != nullptr);
-		orig_read_fn = (read_fn)dlsym(RTLD_NEXT, "read");
-		assert(orig_read_fn != nullptr);
+			(epoll_craete1_fn)require_symbol("epoll_create1");
+		orig_ioctl_fn = (ioctl_fn)require_symbol("ioctl");
+		orig_syscall_fn = (syscall_fn)require_symbol("syscall");
+		orig_close_fn = (close_fn)require_symbol("close");
+		orig_munmap_fn = (munmap_fn)require_symbol("munmap");
+		orig_mmap_fn = (mmap_fn)require_symbol("mmap");
+		orig_mmap64_fn = (mmap64_fn)orig_mmap_fn;
+		orig_openat_fn = (openat_fn)require_symbol("openat");
+		orig_open_fn = (open_fn)require_symbol("open");
 		orig_fopen_fn = (fopen_fn)dlsym(RTLD_NEXT, "fopen");
 		if (orig_fopen_fn == nullptr)
 			orig_fopen_fn = (fopen_fn)dlsym(RTLD_NEXT, "fopen64");
-		assert(orig_fopen_fn != nullptr);
+		if (orig_fopen_fn == nullptr)
+			throw std::runtime_error(
+				"Unable to resolve original fopen");
 
 		// To avoid polluting other child processes,
 		// unset the LD_PRELOAD env var after syscall context being
 		// initialized
 		unsetenv("LD_PRELOAD");
-		// Keep this log allocation-free. spdlog/fmt may throw in extremely
-		// early init paths (and will print "[*** LOG ERROR ***]").
-		SPDLOG_DEBUG("Resolved original libc function pointers");
 	}
 
 	int create_kernel_bpf_map(int fd, int bpftime_map_type);
 	int create_kernel_bpf_prog_in_userspace(int cmd, union bpf_attr *attr,
 						size_t size);
+	// Reserve a plain kernel fd for a mocked BPF handle. On Linux the
+	// fd is a dup of an open /dev/null descriptor: no filesystem path
+	// is created or unlinked, the result is always >= 3 (standard
+	// descriptors are never handed out), and the close-on-exec flag
+	// follows close_on_exec. Non-Linux builds fall back to
+	// create_unlinked_mock_fd(), whose guarantees match the previous
+	// behavior.
+	int reserve_handle_fd(bool close_on_exec);
 	// try loading the bpf syscall helpers.
 	// if the syscall original function is not prepared, it will cause a
 	// segfault.
-	void try_startup();
+	// try_startup() is public: see the declaration near the ctor.
+	bool mock_enabled_for_current_thread() const noexcept;
+	// Single gate every mocked handler checks before emulating a syscall:
+	// mocking is active only when enabled for this thread, CUDA is not being
+	// initialized, and post-initialization mocking is still on. Handlers
+	// must call this instead of re-reading the three conditions separately.
+	bool mock_active_for_current_thread() const noexcept;
 
 	// enable userspace eBPF runing with kernel eBPF.
 	bool run_with_kernel = false;
@@ -152,7 +150,20 @@ class syscall_context {
 	std::string by_pass_kernel_verifier_pattern;
 
 	void load_config_from_env();
-
+	long handle_map_update(int fd, const void *key, const void *value,
+			       uint64_t flags);
+	long handle_map_delete(int fd, const void *key);
+	void release_map_in_map_refs(int outer_fd);
+	void release_owned_map_fd(int fd);
+	void release_unreferenced_deferred_maps();
+#if defined(__linux__)
+	// Lazily-started AF_UNIX SCM_RIGHTS exporter that lets producer
+	// processes (injected agents) obtain a dup of each ringbuf kernel
+	// eventfd without ptrace or /proc/<pid>/fd access.
+	std::unique_ptr<bpftime::ringbuf_eventfd_exporter> mapfd_exporter;
+	std::mutex mapfd_exporter_mutex;
+	void ensure_ringbuf_eventfd_exporter();
+#endif
     public:
 	// enable mock the syscall behavior in userspace
 	std::atomic<bool> enable_mock{ true };
@@ -161,11 +172,14 @@ class syscall_context {
 	// Whether enable mock after syscall server has been initialized
 	std::atomic<bool> enable_mock_after_initialized{ true };
 	syscall_context();
-	virtual ~syscall_context()
-	{
-		pthread_spin_destroy(&this->mocked_file_lock);
-	}
+	virtual ~syscall_context();
 	syscall_fn orig_syscall_fn = nullptr;
+	// Public, recursion-safe one-time startup. It holds mock_disable_depth for
+	// its whole duration so the SHM/mmap syscalls issued during initialization
+	// hit the real libc instead of re-entering interposed handlers (which would
+	// deadlock on the same std::call_once). Use this, never start_up()
+	// directly, when pre-warming before installing the seccomp filter.
+	void try_startup();
 
 	// handle syscall
 	int handle_close(int);
@@ -186,10 +200,20 @@ class syscall_context {
 	int handle_openat(int fd, const char *file, int oflag,
 			  unsigned short mode);
 	int handle_open(const char *file, int oflag, unsigned short mode);
-	ssize_t handle_read(int fd, void *buf, size_t count);
 	FILE *handle_fopen(const char *pathname, const char *flags);
 	int handle_dup3(int oldfd, int newfd, int flags);
+	long handle_fcntl(int fd, int cmd, unsigned long arg);
 	int handle_memfd_create(const char *name, int flags);
+
+	// Run the real libc open/fopen and, when an unprivileged map_files
+	// open is denied with EPERM/EACCES, retry the validated backing-file
+	// resolution without requiring CAP_SYS_ADMIN or CAP_SYS_PTRACE.
+	int openat_with_map_files_fallback(int fd, const char *file, int oflag,
+					   unsigned short mode);
+	int open_with_map_files_fallback(const char *file, int oflag,
+					 unsigned short mode);
+	FILE *fopen_with_map_files_fallback(const char *pathname,
+					    const char *flags);
 
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	void initialize_cuda();

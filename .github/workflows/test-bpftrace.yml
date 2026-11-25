@@ -6,6 +6,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-bpftrace.yml"
+      - ".github/actions/ccache/**"
       - "attach/**"
       - "example/malloc/**"
       - "example/tracing/bpftrace/**"
@@ -19,6 +20,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-bpftrace.yml"
+      - ".github/actions/ccache/**"
       - "attach/**"
       - "example/malloc/**"
       - "example/tracing/bpftrace/**"
@@ -37,9 +39,31 @@ env:
   SERVER_LOG: logs/bpftime_server.log
   CLIENT_LOG: logs/bpftime_client.log
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
 jobs:
-  build-and-run-syscall-tracing-load-start-test:
-    runs-on: ubuntu-22.04
+  pick-runner:
+    uses: ./.github/workflows/pick-runner.yml
+    permissions:
+      actions: read
+    with:
+      hosted: ubuntu-22.04
+      jobs: 5
+
+  # Single compile job for the whole workflow. The three test jobs below
+  # previously ran the identical CMake configure/build independently; they
+  # now download the artifacts produced here. RelWithDebInfo defaults to
+  # SPDLOG_LEVEL_INFO, so the default build serves the syscall, malloc and
+  # INFO one-liner jobs, while the TRACE build only differs by the explicitly
+  # compiled-in spdlog level required by the TRACE one-liner matrix entry.
+  build-bpftime:
+    needs: pick-runner
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-22.04"') }}
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
       options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
@@ -51,13 +75,125 @@ jobs:
           submodules: "recursive"
 
       - name: System setup and kernel headers
+        shell: bash
         run: |
+          set -euo pipefail
           apt-get update
           apt-get install -y --no-install-recommends \
           lcov tree strace gdb sudo libc6-dev bpftrace \
           linux-headers-generic linux-tools-generic \
-          linux-headers-$(uname -r) \
+          $(apt-cache show linux-headers-$(uname -r) >/dev/null 2>&1 && echo linux-headers-$(uname -r)) \
+          libelf-dev libssl-dev procps gnupg gnupg-agent pinentry-curses dirmngr
+          if [ ! -d "/lib/modules/$(uname -r)/build" ]; then
+            echo "BPFTRACE_KERNEL_SOURCE=$(ls -d /usr/src/linux-headers-*-generic | sort -V | tail -n 1)" >> "$GITHUB_ENV"
+          fi
+          mkdir -p logs build
+          sudo mkdir -p "$BPFTIME_SHARED_MEMORY_PATH"
+          sudo chmod 1777 "$BPFTIME_SHARED_MEMORY_PATH"
+
+      - name: Build bpftime (default, SPDLOG_LEVEL_INFO via RelWithDebInfo)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Building bpftime with CMake (INFO)"
+          cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
+            -DBPFTIME_LLVM_JIT=1 \
+            -DBUILD_BPFTIME_DAEMON=OFF \
+            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
+            -DTEST_LCOV=YES \
+            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
+          cmake --build build --config RelWithDebInfo --target bpftime-agent bpftime-syscall-server bpftime_text_segment_transformer -j$(nproc)
+
+      - name: Build bpftime (SPDLOG_LEVEL_TRACE)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Building bpftime with CMake (TRACE)"
+          cmake -Bbuild-trace -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
+            -DBPFTIME_LLVM_JIT=1 \
+            -DBUILD_BPFTIME_DAEMON=OFF \
+            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
+            -DTEST_LCOV=YES \
+            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'" \
+            -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE
+          cmake --build build-trace --config RelWithDebInfo --target bpftime-agent bpftime-syscall-server bpftime_text_segment_transformer -j$(nproc)
+
+      - name: Build malloc example
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -C example/malloc
+          test -f example/malloc/malloc
+          test -f example/malloc/victim
+
+      - name: Verify built libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          for d in build build-trace; do
+            echo "== $d =="
+            ls -la "$d"/runtime/agent/
+            ls -la "$d"/runtime/syscall-server/
+            ls -la "$d"/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
+            test -f "$d/runtime/agent/libbpftime-agent.so"
+            test -f "$d/runtime/syscall-server/libbpftime-syscall-server.so"
+          done
+
+      - name: Upload INFO build
+        uses: actions/upload-artifact@v4
+        with:
+          name: bpftime-build-info
+          path: build/
+          retention-days: 14
+      - name: Upload TRACE build
+        uses: actions/upload-artifact@v4
+        with:
+          name: bpftime-build-trace
+          path: build-trace/
+          retention-days: 14
+      - name: Upload malloc example binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: bpftime-malloc-example
+          path: |
+            example/malloc/malloc
+            example/malloc/victim
+          retention-days: 14
+
+  build-and-run-syscall-tracing-load-start-test:
+    needs: [pick-runner, build-bpftime]
+    # The VM runners or GitHub's, whichever is picked for this run; job
+    # containers on a VM runner run --privileged against that VM's own kernel.
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-22.04"') }}
+    container:
+      image: "manjusakalza/bpftime-base-image:ubuntu-2204"
+      options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+      - name: Enable ccache
+        uses: ./.github/actions/ccache
+        with:
+          variant: ubuntu-2204
+
+      - name: System setup and kernel headers
+        run: |
+          apt-get update
+          # The running kernel's headers come from Ubuntu when it packages that
+          # kernel; a VM runner's guest kernel has none, and bpftrace reads its BTF.
+          apt-get install -y --no-install-recommends \
+          lcov tree strace gdb sudo libc6-dev bpftrace \
+          linux-headers-generic linux-tools-generic \
+          $(apt-cache show linux-headers-$(uname -r) >/dev/null 2>&1 && echo linux-headers-$(uname -r)) \
           libelf-dev procps gnupg gnupg-agent pinentry-curses dirmngr
+          # bpftrace 0.14 here takes tracepoint argument types from kernel headers;
+          # without headers for the running kernel it reads the generic ones above.
+          if [ ! -d "/lib/modules/$(uname -r)/build" ]; then
+            echo "BPFTRACE_KERNEL_SOURCE=$(ls -d /usr/src/linux-headers-*-generic | sort -V | tail -n 1)" >> "$GITHUB_ENV"
+          fi
 
           mkdir -p ~/.gnupg
           echo "allow-loopback-pinentry" > ~/.gnupg/gpg-agent.conf
@@ -87,22 +223,11 @@ jobs:
           sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
           sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
 
-      - name: Build bpftime
-        run: |
-          echo "Building bpftime with CMake"
-          cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
-            -DBPFTIME_LLVM_JIT=1 \
-            -DBUILD_BPFTIME_DAEMON=OFF \
-            -DBUILD_AGENT=1 \
-            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
-            -DTEST_LCOV=YES \
-            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
-          cmake --build build --config RelWithDebInfo --target bpftime-agent bpftime-syscall-server bpftime_text_segment_transformer -j$(nproc)
-
-          echo "Checking built libraries:"
-          ls -la build/runtime/agent/
-          ls -la build/runtime/syscall-server/
-          ls -la build/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
+      - name: Download prebuilt bpftime
+        uses: actions/download-artifact@v4
+        with:
+          name: bpftime-build-info
+          path: build
 
       - name: Find all necessary libraries
         run: |
@@ -226,8 +351,11 @@ jobs:
           fi
 
           # Execute command
-          sudo -E $LD_PRELOAD_CMD cat build/install_manifest.txt | tee "$CLIENT_LOG"
-          CAT_EXIT_CODE=$?
+          # Capture the real client status: without this, a pipeline to tee
+          # makes $? reflect tee (0 when tee itself succeeds), masking a crashing client.
+          CAT_EXIT_CODE=0
+          sudo -E $LD_PRELOAD_CMD cat build/install_manifest.txt > "$CLIENT_LOG" 2>&1 || CAT_EXIT_CODE=$?
+          cat "$CLIENT_LOG"
 
           # Wait for server to process events
           echo "Waiting for server to process events..."
@@ -354,7 +482,7 @@ jobs:
 
       - name: Upload to Codecov
         # Only upload when this workflow was run on the main repository
-        if: (success() || failure()) && github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: (success() || failure()) && github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: true
@@ -364,7 +492,10 @@ jobs:
           verbose: true
 
   build-and-run-malloc-example-test:
-    runs-on: ubuntu-22.04
+    needs: [pick-runner, build-bpftime]
+    # The VM runners or GitHub's, whichever is picked for this run; job
+    # containers on a VM runner run --privileged against that VM's own kernel.
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-22.04"') }}
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
       options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
@@ -374,15 +505,26 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: "recursive"
+      - name: Enable ccache
+        uses: ./.github/actions/ccache
+        with:
+          variant: ubuntu-2204
 
       - name: System setup and kernel headers
         run: |
           apt-get update
+          # The running kernel's headers come from Ubuntu when it packages that
+          # kernel; a VM runner's guest kernel has none, and bpftrace reads its BTF.
           apt-get install -y --no-install-recommends \
             lcov tree strace gdb sudo libc6-dev bpftrace \
             linux-headers-generic linux-tools-generic \
-            linux-headers-$(uname -r) \
-            libelf-dev procps gnupg gnupg-agent pinentry-curses dirmngr
+            $(apt-cache show linux-headers-$(uname -r) >/dev/null 2>&1 && echo linux-headers-$(uname -r)) \
+            libelf-dev libssl-dev procps gnupg gnupg-agent pinentry-curses dirmngr
+          # bpftrace 0.14 here takes tracepoint argument types from kernel headers;
+          # without headers for the running kernel it reads the generic ones above.
+          if [ ! -d "/lib/modules/$(uname -r)/build" ]; then
+            echo "BPFTRACE_KERNEL_SOURCE=$(ls -d /usr/src/linux-headers-*-generic | sort -V | tail -n 1)" >> "$GITHUB_ENV"
+          fi
 
           # Setup GPG agent for Codecov
           mkdir -p ~/.gnupg
@@ -413,42 +555,34 @@ jobs:
           sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
           sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
 
-      - name: Build bpftime
+      - name: Download prebuilt bpftime
+        uses: actions/download-artifact@v4
+        with:
+          name: bpftime-build-info
+          path: build
+      - name: Download prebuilt malloc example
+        uses: actions/download-artifact@v4
+        with:
+          name: bpftime-malloc-example
+          path: example/malloc
+      - name: Verify downloaded build results
+        shell: bash
         run: |
-          echo "Building bpftime with CMake"
-          cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
-            -DBPFTIME_LLVM_JIT=1 \
-            -DBUILD_BPFTIME_DAEMON=OFF \
-            -DBUILD_AGENT=1 \
-            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
-            -DTEST_LCOV=YES \
-            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
-          cmake --build build --config RelWithDebInfo --target bpftime-agent bpftime-syscall-server bpftime_text_segment_transformer -j$(nproc)
-
+          set -euo pipefail
           echo "Checking built libraries:"
           ls -la build/runtime/agent/
           ls -la build/runtime/syscall-server/
           ls -la build/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
-
-      - name: Build malloc example
-        run: |
-          echo "Building malloc example"
-          make -C example/malloc
-
-          # Check build results - note that executables may be in .output directory or current directory
+          echo "Checking malloc example binaries:"
           if [ -f "example/malloc/malloc" ] && [ -f "example/malloc/victim" ]; then
-            echo "SUCCESS: Malloc example built successfully"
+            # The artifact round-trip can drop the executable bit; restore
+            # it explicitly so the LD_PRELOAD test can exec the binaries.
+            chmod +x example/malloc/malloc example/malloc/victim
+            echo "SUCCESS: malloc example downloaded successfully"
             ls -la example/malloc/
-          elif [ -f "example/malloc/.output/malloc" ] && [ -f "example/malloc/victim" ]; then
-            echo "SUCCESS: Malloc example built successfully (malloc in .output directory)"
-            ls -la example/malloc/ example/malloc/.output/
           else
-            echo "FAILURE: Malloc example build failed"
-            echo "Searching for malloc and victim executables:"
-            find example/malloc -type f -name "malloc" -o -name "victim" | sort
-            echo "Directory contents:"
-            ls -la example/malloc/
-            ls -la example/malloc/.output/ 2>/dev/null || echo "No .output directory"
+            echo "FAILURE: malloc example binaries missing after artifact download"
+            find example/malloc -maxdepth 1 -type f | sort
             exit 1
           fi
 
@@ -588,8 +722,11 @@ jobs:
 
           # Execute victim program, using timeout command to limit running time to 5 seconds
           echo "Running victim program with 5 second timeout..."
-          sudo -E timeout 5s $LD_PRELOAD_CMD ./example/malloc/victim | tee "$CLIENT_LOG"
-          VICTIM_EXIT_CODE=$?
+          # Same pipeline-masking fix: read timeout/victim's own status, not
+          # tee's, so the expected 124 (and any real crash) is observed.
+          VICTIM_EXIT_CODE=0
+          sudo -E timeout 5s $LD_PRELOAD_CMD ./example/malloc/victim > "$CLIENT_LOG" 2>&1 || VICTIM_EXIT_CODE=$?
+          cat "$CLIENT_LOG"
 
           # Check exit code, timeout command returns 124 when terminating program after timeout
           if [ $VICTIM_EXIT_CODE -eq 124 ]; then
@@ -713,7 +850,7 @@ jobs:
 
       - name: Upload to Codecov
         # Only upload when this workflow was run on the main repository
-        if: (success() || failure()) && github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: (success() || failure()) && github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: true
@@ -722,15 +859,318 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           verbose: true
 
+  build-and-run-one-liners-test:
+    needs: [pick-runner, build-bpftime]
+    name: build-and-run-one-liners-test (${{ matrix.log_level }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # TRACE keeps historical timing; INFO compiles DEBUG/TRACE call sites
+        # out of hot paths. Host syscall/fork control flow must stay correct
+        # under both build levels: INFO timing deterministically exposed a
+        # multi-threaded fork corruption (garbage wait4 pid/ECHILD followed by
+        # SIGSEGV) that TRACE timing masked. The trampoline fix lands in #727.
+        log_level: [TRACE, INFO]
+    # The VM runners or GitHub's, whichever is picked for this run; job
+    # containers on a VM runner run --privileged against that VM's own kernel.
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-22.04"') }}
+    container:
+      image: "manjusakalza/bpftime-base-image:ubuntu-2204"
+      options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+      - name: Enable ccache
+        uses: ./.github/actions/ccache
+        with:
+          variant: ubuntu-2204
+
+      - name: System setup and kernel headers
+        run: |
+          apt-get update
+          # The running kernel's headers come from Ubuntu when it packages that
+          # kernel; a VM runner's guest kernel has none, and bpftrace reads its BTF.
+          apt-get install -y --no-install-recommends \
+            lcov tree strace gdb sudo libc6-dev bpftrace \
+            linux-headers-generic linux-tools-generic \
+            $(apt-cache show linux-headers-$(uname -r) >/dev/null 2>&1 && echo linux-headers-$(uname -r)) \
+            libelf-dev procps gnupg gnupg-agent pinentry-curses dirmngr
+          # bpftrace 0.14 here takes tracepoint argument types from kernel headers;
+          # without headers for the running kernel it reads the generic ones above.
+          if [ ! -d "/lib/modules/$(uname -r)/build" ]; then
+            echo "BPFTRACE_KERNEL_SOURCE=$(ls -d /usr/src/linux-headers-*-generic | sort -V | tail -n 1)" >> "$GITHUB_ENV"
+          fi
+
+          echo "==== System Information ===="; uname -a && cat /etc/os-release
+          echo "==== Checking bpftrace ===="
+          which bpftrace || { echo "ERROR: bpftrace not found! This is required for tests."; exit 1; }
+          bpftrace --version || { echo "ERROR: bpftrace installation is broken!"; exit 1; }
+          echo "bpftrace successfully verified."
+
+          # Ensure shared memory directory exists with correct permissions
+          sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
+          sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
+
+          # Data read by the openat one-liner victim
+          mkdir -p build
+          echo "TEST_DATA_LINE_1_ABC" > build/install_manifest.txt
+          echo "TEST_DATA_LINE_2_XYZ" >> build/install_manifest.txt
+
+      - name: Select build for the log level
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.log_level }}" = "TRACE" ]; then
+            BUILD_DIR=build-trace
+            BUILD_ARTIFACT=bpftime-build-trace
+          else
+            BUILD_DIR=build
+            BUILD_ARTIFACT=bpftime-build-info
+          fi
+          # Export for later steps; the local copies make this step's own
+          # echo work under set -u (GITHUB_ENV only applies to later steps).
+          echo "BUILD_DIR=$BUILD_DIR" >> "$GITHUB_ENV"
+          echo "BUILD_ARTIFACT=$BUILD_ARTIFACT" >> "$GITHUB_ENV"
+          echo "Using $BUILD_ARTIFACT extracted to $BUILD_DIR"
+      - name: Download prebuilt bpftime
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BUILD_ARTIFACT }}
+          path: ${{ env.BUILD_DIR }}
+      - name: Verify downloaded libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Checking built libraries in $BUILD_DIR:"
+          ls -la "$BUILD_DIR"/runtime/agent/
+          ls -la "$BUILD_DIR"/runtime/syscall-server/
+          ls -la "$BUILD_DIR"/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
+
+      - name: Find all necessary libraries
+        run: |
+          echo "=== Finding all necessary libraries ==="
+
+          find "$BUILD_DIR" -name "*.so" | sort
+
+          AGENT_LIB="$BUILD_DIR/runtime/agent/libbpftime-agent.so"
+          SERVER_LIB="$BUILD_DIR/runtime/syscall-server/libbpftime-syscall-server.so"
+          TRANSFORMER_LIB="$BUILD_DIR/attach/text_segment_transformer/libbpftime-agent-transformer.so"
+
+          if [ ! -f "$AGENT_LIB" ]; then
+            AGENT_LIB=$(find "$BUILD_DIR" -name "libbpftime-agent.so" | head -1)
+            if [ -z "$AGENT_LIB" ]; then
+              echo "ERROR: Agent library not found anywhere"
+              exit 1
+            fi
+          fi
+
+          if [ ! -f "$SERVER_LIB" ]; then
+            SERVER_LIB=$(find "$BUILD_DIR" -name "libbpftime-syscall-server.so" | head -1)
+            if [ -z "$SERVER_LIB" ]; then
+              echo "ERROR: Syscall server library not found anywhere"
+              exit 1
+            fi
+          fi
+
+          if [ ! -f "$TRANSFORMER_LIB" ]; then
+            echo "WARNING: Transformer library not found, will proceed without it"
+            TRANSFORMER_LIB=""
+          fi
+
+          echo "AGENT_LIB=$AGENT_LIB" >> $GITHUB_ENV
+          echo "SERVER_LIB=$SERVER_LIB" >> $GITHUB_ENV
+          echo "TRANSFORMER_LIB=$TRANSFORMER_LIB" >> $GITHUB_ENV
+
+      - name: Run the one-liners from example/tracing/bpftrace README
+        run: |
+          echo "=== Running bpftrace one-liner tests ==="
+
+          mkdir -p logs
+          export BPFTIME_USED=1
+          export SPDLOG_LEVEL=error
+
+          AGENT_LIB="${{ env.AGENT_LIB }}"
+          SERVER_LIB="${{ env.SERVER_LIB }}"
+          TRANSFORMER_LIB="${{ env.TRANSFORMER_LIB }}"
+
+          # Same LD_PRELOAD arrangement as the other jobs: the victim process
+          # gets the agent (and transformer), the bpftrace server gets the
+          # syscall-server library.
+          if [ -n "$TRANSFORMER_LIB" ]; then
+            LD_PRELOAD_CMD="env AGENT_SO=$AGENT_LIB LD_PRELOAD=$TRANSFORMER_LIB"
+          else
+            LD_PRELOAD_CMD="env LD_PRELOAD=$AGENT_LIB"
+          fi
+          echo "Victim preload command: $LD_PRELOAD_CMD"
+
+          FAILED_CASES=""
+
+          # run_case NAME PROGRAM VICTIM_CMD EXPECT_PATTERN
+          # Starts bpftrace under the syscall server, waits for attach, runs
+          # the victim under the agent, then checks the server log for the
+          # expected output. Success is decided only on positive markers, so
+          # runtime warnings on stderr of old bpftrace versions cannot flip
+          # the result. Map-based programs are dumped by stopping bpftrace
+          # with SIGINT, which makes it print all aggregates before exiting;
+          # interval:s:1 probes cannot be used here because the userspace
+          # runtime does not support attaching BPF programs to the software
+          # perf events behind them.
+          run_case() {
+            local name="$1"; shift
+            local program="$1"; shift
+            local victim="$1"; shift
+            local expect="$1"; shift
+            local log="logs/${name}_server.log"
+
+            rm -rf "${BPFTIME_SHARED_MEMORY_PATH:?}"/bpftime* 2>/dev/null || true
+            rm -f "$log"
+
+            echo "--- CASE $name: starting bpftrace server ---"
+            env LD_PRELOAD="$SERVER_LIB" bpftrace -e "$program" > "$log" 2>&1 &
+            local server_pid=$!
+
+            local i
+            for i in $(seq 1 40); do
+              if grep -q "Attaching" "$log"; then
+                echo "CASE $name: server initialized after $i second(s)"
+                break
+              fi
+              if ! ps -p $server_pid > /dev/null; then
+                echo "CASE $name: FAILURE - server died during init"
+                cat "$log"
+                FAILED_CASES="$FAILED_CASES $name"
+                wait "$server_pid" 2>/dev/null || true
+                return 0
+              fi
+              if [ $i -eq 40 ]; then
+                echo "CASE $name: FAILURE - server did not initialize in 40s"
+                cat "$log"
+                FAILED_CASES="$FAILED_CASES $name"
+                kill -9 "$server_pid" 2>/dev/null || true
+                wait "$server_pid" 2>/dev/null || true
+                return 0
+              fi
+              sleep 1
+            done
+
+            echo "CASE $name: running victim ($victim)"
+            # The step shell runs with `set -e`: capture the status instead
+            # of aborting. 0 and timeout's 124 are the accepted outcomes;
+            # anything else (ECHILD-driven 125, SIGSEGV 139, ...) fails the
+            # case instead of being swallowed.
+            local victim_rc=0
+            $LD_PRELOAD_CMD $victim || victim_rc=$?
+            if [ $victim_rc -ne 0 ] && [ $victim_rc -ne 124 ]; then
+              echo "CASE $name: FAILURE - victim abnormal exit $victim_rc"
+              FAILED_CASES="$FAILED_CASES $name"
+            fi
+            echo "CASE $name: draining events"
+            sleep 4
+
+            # Stop the server gracefully so bpftrace prints all aggregated
+            # maps on exit, then check the log
+            kill -INT "$server_pid" 2>/dev/null || true
+            for i in $(seq 1 15); do
+              if ! ps -p $server_pid > /dev/null; then
+                echo "CASE $name: server exited $i second(s) after SIGINT"
+                break
+              fi
+              sleep 1
+            done
+            if ps -p $server_pid > /dev/null; then
+              echo "CASE $name: server did not exit after SIGINT, killing it"
+              kill -9 "$server_pid" 2>/dev/null || true
+            fi
+            wait "$server_pid" 2>/dev/null || true
+
+            echo "Server log for $name:"
+            cat "$log"
+
+            if grep -qE "$expect" "$log"; then
+              echo "CASE $name: SUCCESS"
+            else
+              echo "CASE $name: FAILURE - missing pattern '$expect'"
+              FAILED_CASES="$FAILED_CASES $name"
+            fi
+          }
+
+          # 1. Files opened by process
+          run_case oneliner_openat \
+            'tracepoint:syscalls:sys_enter_openat { printf("ONELINER_OPENAT %s %s\n", comm, str(args->filename)); }' \
+            "cat build/install_manifest.txt" \
+            "ONELINER_OPENAT[[:space:]]+cat"
+
+          # 2. Syscall count by program (dumped at exit; upstream prints it
+          #    every second via interval:s:1, which cannot attach in
+          #    userspace)
+          run_case oneliner_count_by_comm \
+            'tracepoint:raw_syscalls:sys_enter { @[comm] = count(); }' \
+            "timeout 8s dd if=/dev/zero of=/dev/null bs=1024" \
+            "@\[dd\]"
+
+          # 3. Read bytes by process (dumped at exit)
+          run_case oneliner_read_sum \
+            'tracepoint:syscalls:sys_exit_read /args->ret/ { @[comm] = sum(args->ret); }' \
+            "timeout 8s dd if=/dev/zero of=/dev/null bs=1024" \
+            "@\[dd\]"
+
+          # 4. Read size distribution by process (dumped at exit)
+          run_case oneliner_read_hist \
+            'tracepoint:syscalls:sys_exit_read { @[comm] = hist(args->ret); }' \
+            "timeout 8s dd if=/dev/zero of=/dev/null bs=1024" \
+            "@\[dd\]"
+
+          # 5. Syscall count (upstream clears and prints per-second rates;
+          #    interval:s:1 cannot attach in userspace, so the total is
+          #    checked at exit)
+          run_case oneliner_rate \
+            'tracepoint:raw_syscalls:sys_enter { @ = count(); }' \
+            "timeout 8s dd if=/dev/zero of=/dev/null bs=1024" \
+            "@[[:space:]]*:"
+
+          rm -rf "${BPFTIME_SHARED_MEMORY_PATH:?}"/bpftime* 2>/dev/null || true
+
+          echo "=== One-liner test summary ==="
+          if [ -n "$FAILED_CASES" ]; then
+            echo "FAILED cases:$FAILED_CASES"
+            exit 1
+          fi
+          echo "All one-liner cases passed"
+
+      - name: Upload one-liner server logs
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oneliner-server-logs-${{ runner.os }}-${{ matrix.log_level }}
+          include-hidden-files: false
+          path: |
+            ./logs
+
   # New job to combine coverage reports
   combine-coverage:
     needs:
       [
         build-and-run-syscall-tracing-load-start-test,
         build-and-run-malloc-example-test,
+        build-and-run-one-liners-test,
       ]
     runs-on: ubuntu-22.04
-    if: always()
+    # Only syscall-tracing and malloc publish coverage-* artifacts; the
+    # one-liners job uploads server logs and is not a coverage input. Combine
+    # runs only when both coverage producers succeed, so a failed/cancelled
+    # producer (e.g. a self-hosted runner losing communication) yields an
+    # honest skip and its own red job stays the gate. When both are green but
+    # no artifacts exist, the guard below fails loudly as a real workflow or
+    # path regression instead of crashing on a bare `find` or uploading empty
+    # coverage. The one-liners job stays in needs so its result still gates the
+    # overall workflow, but its status does not block coverage combination.
+    if: >-
+      always() &&
+      needs.build-and-run-syscall-tracing-load-start-test.result == 'success' &&
+      needs.build-and-run-malloc-example-test.result == 'success'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -743,6 +1183,23 @@ jobs:
         with:
           pattern: coverage-*
           path: coverage-reports
+
+      - name: Fail explicitly when producers left no coverage artifacts
+        run: |
+          if [ ! -d coverage-reports ]; then
+            echo "::error::Both coverage producer jobs succeeded, but download-artifact matched no coverage-* artifacts and created no coverage-reports directory. The upload paths or the download pattern regressed."
+            exit 1
+          fi
+          info_reports=()
+          while IFS= read -r report; do
+            info_reports+=("$report")
+          done < <(find coverage-reports -type f -name '*.info' | sort)
+          if [ "${#info_reports[@]}" -eq 0 ]; then
+            echo "::error::Both coverage producer jobs succeeded, but coverage-reports contains no *.info files."
+            exit 1
+          fi
+          echo "Found ${#info_reports[@]} coverage report(s):"
+          printf '  %s\n' "${info_reports[@]}"
 
       - name: List downloaded reports
         run: find coverage-reports -type f -name "*.info" | sort
@@ -786,8 +1243,10 @@ jobs:
             # Show summary
             lcov --list combined/combined-coverage.info || echo "Warning: Failed to list combined coverage"
           else
-            echo "No valid coverage reports found"
-            echo "# Empty combined coverage file - no valid input reports" > combined/combined-coverage.info
+            # Reaching here with all producers green means every downloaded
+            # *.info is empty; refuse to publish an empty combined report.
+            echo "::error::Producers reported success but every downloaded *.info is empty (<=10 bytes); refusing to upload an empty combined coverage report." >&2
+            exit 1
           fi
 
       - name: Upload combined coverage report
@@ -797,7 +1256,7 @@ jobs:
           path: combined/combined-coverage.info
 
       - name: Upload combined coverage to Codecov
-        if: github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: false # Changed to false to prevent CI failure on upload issues

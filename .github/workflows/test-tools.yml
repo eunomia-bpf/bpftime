@@ -6,6 +6,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-tools.yml"
+      - ".github/actions/ccache/**"
       - "attach/**"
       - "runtime/**"
       - "tools/**"
@@ -18,6 +19,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-tools.yml"
+      - ".github/actions/ccache/**"
       - "attach/**"
       - "runtime/**"
       - "tools/**"
@@ -26,17 +28,35 @@ on:
       - "third_party/**"
       - "CMakeLists.txt"
       - ".gitmodules"
+
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 jobs:
+  pick-runner:
+    uses: ./.github/workflows/pick-runner.yml
+    permissions:
+      actions: read
+    with:
+      hosted: ubuntu-latest
+      jobs: 2
+
   build:
+    needs: pick-runner
     strategy:
+      # Keep every matrix leg independent: one flaky leg must not cancel
+      # the others and hide their real results (GitHub defaults to true).
+      fail-fast: false
       matrix:
         container:
           - ubuntu-2204
           - fedora-39
-    runs-on: ubuntu-latest
+    # The VM runners or GitHub's, whichever is picked for this run; job
+    # containers on a VM runner run --privileged against that VM's own kernel.
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-latest"') }}
     container:
       image: "manjusakalza/bpftime-base-image:${{matrix.container}}"
       options: --privileged
@@ -44,6 +64,10 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: "recursive"
+      - name: Enable ccache
+        uses: ./.github/actions/ccache
+        with:
+          variant: ${{ matrix.container }}
 
       - name: Configure tool build
         run: |
@@ -54,7 +78,15 @@ jobs:
       - name: Build tool targets
         run: |
           cmake --build build --config RelWithDebInfo --target bpftime-cli-cpp bpftime-aot-cli bpftimetool -j$(nproc)
-    # TODO: add test for the tools
-    # - name: Run the test scripts
-    #   run: |
-    #     export PATH=$PATH:~/.bpftime
+      - name: Test AOT runner
+        run: |
+          python3 tools/aot/test_run.py build/tools/aot/bpftime-aot cc
+      - name: Test bpftimetool load
+        run: |
+          python3 tools/bpftimetool/test_load.py build/tools/bpftimetool/bpftimetool
+      - name: Test bpftimetool run
+        run: |
+          python3 tools/bpftimetool/test_run.py build/tools/bpftimetool/bpftimetool
+      - name: Test bpftimetool arguments
+        run: |
+          python3 tools/bpftimetool/test_arguments.py build/tools/bpftimetool/bpftimetool c++

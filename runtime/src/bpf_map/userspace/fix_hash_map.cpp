@@ -6,9 +6,17 @@
 #include "spdlog/spdlog.h"
 #include <bpf_map/userspace/fix_hash_map.hpp>
 #include <algorithm>
+#include <cerrno>
+#include <cstring>
 #include <functional>
+#include <linux/bpf.h>
 #include <unistd.h>
 #include <unordered_map>
+
+static bool is_good_update_flag(uint64_t flags)
+{
+	return flags == BPF_ANY || flags == BPF_EXIST || flags == BPF_NOEXIST;
+}
 
 namespace bpftime
 {
@@ -19,7 +27,7 @@ fix_size_hash_map_impl::fix_size_hash_map_impl(managed_shared_memory &memory,
 					       size_t value_size)
 	: map_impl(memory, num_buckets, key_size, value_size),
 	  _key_size(key_size), _value_size(value_size),
-	  _num_buckets(num_buckets)
+	  _num_buckets(bpftime_hasher::next_prime(num_buckets))
 {
 }
 
@@ -34,13 +42,60 @@ void *fix_size_hash_map_impl::elem_lookup(const void *key)
 long fix_size_hash_map_impl::elem_update(const void *key, const void *value,
 					 uint64_t flags)
 {
-	map_impl.elem_update(key, value);
+	if (!is_good_update_flag(flags)) {
+		errno = EINVAL;
+		return -1;
+	}
+	// Only the existence-checked flags need a preliminary lookup;
+	// BPF_ANY goes straight to the underlying upsert.
+	if (flags != BPF_ANY) {
+		bool element_exists = map_impl.elem_lookup(key) != nullptr;
+		if (flags == BPF_NOEXIST && element_exists) {
+			errno = EEXIST;
+			return -1;
+		}
+		if (flags == BPF_EXIST && !element_exists) {
+			errno = ENOENT;
+			return -1;
+		}
+	}
+	if (!map_impl.elem_update(key, value)) {
+		// The underlying fixed-size map rejects insertion once it
+		// reaches its capacity
+		errno = E2BIG;
+		return -1;
+	}
 	return 0;
 }
 
 long fix_size_hash_map_impl::elem_delete(const void *key)
 {
-	map_impl.elem_delete(key);
+	if (!map_impl.elem_delete(key)) {
+		errno = ENOENT;
+		return -1;
+	}
+	return 0;
+}
+
+// BPF_MAP_LOOKUP_AND_DELETE_ELEM on BPF_MAP_TYPE_HASH. The fixed-size
+// backend stores keys and values in one bucket, so the value is copied out
+// before the bucket is released; the caller's pointer would otherwise be
+// stale storage.
+int fix_size_hash_map_impl::lookup_and_delete(const void *key, void *value_out,
+					      bool from_syscall)
+{
+	void *stored = map_impl.elem_lookup(key);
+	if (stored == nullptr) {
+		errno = ENOENT;
+		return -1;
+	}
+	memcpy(value_out, stored, _value_size);
+	if (!map_impl.elem_delete(key)) {
+		// Unreachable while map_lock is held: the lookup above found the
+		// key. Keep the kernel errno rather than reporting success.
+		errno = ENOENT;
+		return -1;
+	}
 	return 0;
 }
 

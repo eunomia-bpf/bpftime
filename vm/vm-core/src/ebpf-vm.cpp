@@ -6,6 +6,7 @@
 extern "C" ebpf_vm *ebpf_create(const char *vm_name_str)
 {
 	auto vm = new ebpf_vm;
+	vm->vm_name = vm_name_str;
 	vm->vm_instance = bpftime::vm::compat::create_vm_instance(std::string(vm_name_str));
 	return vm;
 }
@@ -36,6 +37,13 @@ extern "C" int ebpf_register(struct ebpf_vm *vm, unsigned int index,
 			     const char *name, void *fn)
 {
 	return vm->vm_instance->register_external_function(index, name, fn);
+}
+
+extern "C" int ebpf_register_data_bounds_check(
+	struct ebpf_vm *vm,
+	bool (*fn)(void *context, uint64_t addr, uint64_t size), void *context)
+{
+	return vm->vm_instance->register_data_bounds_check(fn, context);
 }
 
 extern "C" int ebpf_load(struct ebpf_vm *vm, const void *code,

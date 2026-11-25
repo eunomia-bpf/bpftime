@@ -4,9 +4,11 @@
  * All rights reserved.
  */
 #include "bpftime_driver.hpp"
+#include "bpf_prog_insns.hpp"
 #include "bpftime_config.hpp"
 #include <linux/bpf.h>
 #include <bpf/bpf.h>
+#include <boost/scope_exit.hpp>
 #include "ebpf_inst.h"
 #include <spdlog/spdlog.h>
 #include "bpftime_shm.hpp"
@@ -24,25 +26,6 @@ int bpftime_driver::find_minimal_unused_id()
 	int id = bpftime_find_minimal_unused_fd();
 	SPDLOG_DEBUG("find minimal unused id {}", id);
 	return id;
-}
-
-static int get_kernel_bpf_prog_insns(int fd, const bpf_prog_info *info,
-				     std::vector<ebpf_inst> &insns)
-{
-	insns.resize(info->xlated_prog_len / sizeof(ebpf_inst));
-	bpf_prog_info new_info = {};
-	uint32_t info_len = sizeof(bpf_prog_info);
-
-	new_info.xlated_prog_len = info->xlated_prog_len;
-	new_info.xlated_prog_insns =
-		(unsigned long long)(uintptr_t)insns.data();
-
-	int res = bpf_obj_get_info_by_fd(fd, &new_info, &info_len);
-	if (res < 0) {
-		SPDLOG_ERROR("Failed to get prog info for fd {}", fd);
-		return -1;
-	}
-	return 0;
 }
 
 struct bpf_insn_data insn_data;
@@ -84,12 +67,15 @@ static int relocate_bpf_prog_insns(std::vector<ebpf_inst> &insns,
 	}
 	SPDLOG_DEBUG("relocate bpf prog insns for id {}, cnt {}", id,
 		      insn_data.code_len);
-	// resize the insns
-	insns.resize(insn_data.code_len);
-	const ebpf_inst *orignal_insns = (const ebpf_inst *)insn_data.code;
-	insns.assign(orignal_insns, orignal_insns + insn_data.code_len);
+	res = bpftime::detail::copy_captured_bpf_prog_insns(insns, insn_data);
+	if (res < 0) {
+		SPDLOG_ERROR(
+			"BPF program {} has {} instructions, exceeding capture capacity {}",
+			id, insn_data.code_len, BPF_COMPLEXITY_LIMIT_INSNS);
+		return res;
+	}
 	for (size_t i = 0; i < insn_data.code_len; i++) {
-		const struct ebpf_inst inst = orignal_insns[i];
+		const struct ebpf_inst inst = insns[i];
 		bool store = false;
 
 		switch (inst.code) {
@@ -163,6 +149,12 @@ int bpftime_driver::bpftime_progs_create_server(int kernel_id, int server_pid)
 			      kernel_id, errno);
 		return -1;
 	}
+	BOOST_SCOPE_EXIT_ALL(=)
+	{
+		const int saved_errno = errno;
+		close(fd);
+		errno = saved_errno;
+	};
 	SPDLOG_DEBUG("get prog fd {} for id {}", fd, kernel_id);
 	bpf_prog_info info = {};
 	uint32_t info_len = sizeof(info);
@@ -197,7 +189,6 @@ int bpftime_driver::bpftime_progs_create_server(int kernel_id, int server_pid)
 			      kernel_id);
 		return -1;
 	}
-	close(fd);
 	return kernel_id;
 }
 
@@ -208,6 +199,12 @@ int bpftime_driver::bpftime_maps_create_server(int kernel_id)
 		SPDLOG_ERROR("Failed to get map fd for id {}", kernel_id);
 		return -1;
 	}
+	BOOST_SCOPE_EXIT_ALL(=)
+	{
+		const int saved_errno = errno;
+		close(map_fd);
+		errno = saved_errno;
+	};
 	bpf_map_info info = {};
 	uint32_t info_len = sizeof(info);
 	int res = bpf_obj_get_info_by_fd(map_fd, &info, &info_len);
@@ -364,19 +361,6 @@ void bpftime_driver::bpftime_close_server(int server_pid, int fd)
 	pid_fd_to_id_map.erase(get_pid_fd_key(server_pid, fd));
 	bpftime_close(fd_id);
 	SPDLOG_INFO("close id {} for pid {} fd {}", fd_id, server_pid, fd);
-}
-
-int bpftime_driver::bpftime_btf_load_server(int server_pid, int fd)
-{
-	int id = find_minimal_unused_id();
-	if (id < 0) {
-		SPDLOG_ERROR("Failed to find minimal unused id");
-		return -1;
-	}
-	pid_fd_to_id_map[get_pid_fd_key(server_pid, fd)] = id;
-	// TODO: handle kernel BTF in our system
-	SPDLOG_INFO("create btf {} for pid {} fd {}", id, server_pid, fd);
-	return 0;
 }
 
 bpftime_driver::bpftime_driver(daemon_config cfg, struct bpf_tracer_bpf *obj)

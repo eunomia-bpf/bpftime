@@ -4,6 +4,7 @@
 #include <spdlog/spdlog.h>
 #include <string>
 #include <string_view>
+#include <utility>
 using namespace bpftime::attach;
 
 int frida_attach_private_data::initialize_from_string(const std::string_view &sv)
@@ -25,10 +26,16 @@ int frida_attach_private_data::initialize_from_string(const std::string_view &sv
 		auto offset_part = std::string(sv.substr(pos + 1));
 		SPDLOG_DEBUG("Module part is `{}`, offset part is `{}`",
 			     module_part, offset_part);
+		auto resolved_module = resolve_mapped_module_path(module_part);
+		if (!resolved_module) {
+			SPDLOG_ERROR("Unable to resolve mapped module path `{}`",
+				     module_part);
+			return -ENOENT;
+		}
 		addr = (uintptr_t)resolve_function_addr_by_module_offset(
-			module_part, std::stoul(offset_part));
+			*resolved_module, std::stoul(offset_part));
 		SPDLOG_DEBUG("Resolved address: {:x} from string {}", addr, sv);
-		this->module_name = module_part;
+		this->module_name = std::move(*resolved_module);
 	}
 
 	return 0;

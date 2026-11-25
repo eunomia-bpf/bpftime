@@ -15,6 +15,7 @@
 #include <memory>
 #include <optional>
 #include <vector>
+#include <boost/core/demangle.hpp>
 #include "nv_attach_impl.hpp"
 #include <stdexcept>
 using namespace bpftime;
@@ -262,14 +263,17 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 	return original(func, grid_dim, block_dim, args, shared_mem, stream);
 }
 
-static void example_listener_on_enter(GumInvocationListener *listener,
-				      GumInvocationContext *ic)
+static void example_listener_on_enter_impl(GumInvocationContext *ic)
 {
 	auto gum_ctx = gum_interceptor_get_current_invocation();
 	auto context =
 		GUM_IC_GET_FUNC_DATA(ic, CUDARuntimeFunctionHookerContext *);
+	if (context == nullptr || context->impl == nullptr ||
+	    !context->impl->is_enabled())
+		return;
 	if (context->to_function == AttachedToFunction::RegisterFatbin) {
 		SPDLOG_DEBUG("Entering __cudaRegisterFatBinary..");
+		context->impl->current_fatbin = nullptr;
 
 		auto header = (__fatBinC_Wrapper_t *)
 			gum_invocation_context_get_nth_argument(gum_ctx, 0);
@@ -302,15 +306,18 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		fatbin_record->module_pool = context->impl->module_pool;
 		fatbin_record->ptx_pool = context->impl->ptx_pool;
 
-		context->impl->current_fatbin = fatbin_record.get();
 		context->impl->fatbin_records.emplace_back(
 			std::move(fatbin_record));
+		context->impl->current_fatbin =
+			context->impl->fatbin_records.back().get();
 
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterFunction) {
 		SPDLOG_DEBUG("Entering __cudaRegisterFunction..");
 		auto &impl = *context->impl;
 		auto current_fatbin = context->impl->current_fatbin;
+		if (current_fatbin == nullptr)
+			return;
 		current_fatbin->try_loading_ptxs(*context->impl);
 
 		auto func_addr =
@@ -343,6 +350,8 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		   AttachedToFunction::RegisterVariable) {
 		SPDLOG_DEBUG("Entering __cudaRegisterVar");
 		auto current_fatbin = context->impl->current_fatbin;
+		if (current_fatbin == nullptr)
+			return;
 		current_fatbin->try_loading_ptxs(*context->impl);
 		auto fatbin_handle =
 			gum_invocation_context_get_nth_argument(gum_ctx, 0);
@@ -372,8 +381,6 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		auto &current_fatbin = context->impl->current_fatbin;
 
 		current_fatbin = nullptr;
-	} else if (context->to_function == AttachedToFunction::CudaMalloc) {
-		SPDLOG_DEBUG("Entering cudaMalloc..");
 	} else if (context->to_function ==
 			   AttachedToFunction::CudaMemcpyToSymbol ||
 		   context->to_function ==
@@ -405,12 +412,35 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 	}
 }
 
-static void example_listener_on_leave(GumInvocationListener *listener,
+// Frida-Gum invokes these listeners through a C frame. A C++ exception
+// escaping across that frame is undefined behavior and surfaces as a glib
+// assertion (SIGTRAP with a core dump), the host crash reported in issue
+// #409. The wrappers contain every failure so the original CUDA runtime
+// call continues untouched when instrumentation cannot proceed.
+static void example_listener_on_enter(GumInvocationListener *listener,
 				      GumInvocationContext *ic)
+{
+	try {
+		if (ic != nullptr)
+			example_listener_on_enter_impl(ic);
+	} catch (const std::exception &ex) {
+		SPDLOG_ERROR(
+			"CUDA attach on_enter failed, continuing without instrumentation: {}",
+			ex.what());
+	} catch (...) {
+		SPDLOG_ERROR(
+			"CUDA attach on_enter failed with an unknown error, continuing without instrumentation");
+	}
+}
+
+static void example_listener_on_leave_impl(GumInvocationContext *ic)
 {
 	auto gum_ctx = gum_interceptor_get_current_invocation();
 	auto context =
 		GUM_IC_GET_FUNC_DATA(ic, CUDARuntimeFunctionHookerContext *);
+	if (context == nullptr || context->impl == nullptr ||
+	    !context->impl->is_enabled())
+		return;
 	if (context->to_function == AttachedToFunction::RegisterFatbin) {
 		SPDLOG_DEBUG("Leaving RegisterFatbin");
 	} else if (context->to_function ==
@@ -422,6 +452,22 @@ static void example_listener_on_leave(GumInvocationListener *listener,
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterFatbinEnd) {
 		SPDLOG_DEBUG("Leaving __cudaRegisterFatBinaryEnd..");
+	}
+}
+
+static void example_listener_on_leave(GumInvocationListener *listener,
+				      GumInvocationContext *ic)
+{
+	try {
+		if (ic != nullptr)
+			example_listener_on_leave_impl(ic);
+	} catch (const std::exception &ex) {
+		SPDLOG_ERROR(
+			"CUDA attach on_leave failed, continuing without instrumentation: {}",
+			ex.what());
+	} catch (...) {
+		SPDLOG_ERROR(
+			"CUDA attach on_leave failed with an unknown error, continuing without instrumentation");
 	}
 }
 
@@ -820,6 +866,11 @@ static cudaError_t mirror_cuda_memcpy_from_symbol(
 		if (auto name =
 			    impl->resolve_host_function_symbol((void *)symbol);
 		    name) {
+			// Host stubs are name-mangled; also probe the demangled name.
+			std::string demangled =
+				boost::core::demangle(name->c_str());
+			if (demangled.empty() || demangled == *name)
+				demangled.clear();
 			for (const auto &rec_uptr : impl->fatbin_records) {
 				auto *rec = rec_uptr.get();
 				if (rec == nullptr)
@@ -830,6 +881,12 @@ static cudaError_t mirror_cuda_memcpy_from_symbol(
 					auto err = cuModuleGetGlobal(
 						&dptr, &sz, ptx->module_ptr,
 						name->c_str());
+					if (err != CUDA_SUCCESS && !demangled.empty()) {
+						err = cuModuleGetGlobal(
+							&dptr, &sz,
+							ptx->module_ptr,
+							demangled.c_str());
+					}
 					if (err != CUDA_SUCCESS)
 						continue;
 					if (offset >= sz) {

@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dlfcn.h>
 #include "./.output/threadscheduling.skel.h"
 #include <inttypes.h>
 
@@ -49,6 +50,49 @@ static void print_header(void)
 	printf("╔════════════════════════════════════════════════════════════════════╗\n");
 	printf("║              SM / Warp / Lane Mapping Report                       ║\n");
 	printf("╚════════════════════════════════════════════════════════════════════╝\n");
+}
+
+/* Number of SMs the device physically has, or a negative value when the CUDA
+ * driver cannot be reached. The kernel-side histogram only ever records SMs
+ * that ran at least one sampled thread, so the observed id range cannot stand
+ * in for the device width: a single-SM run would otherwise look perfect.
+ * Resolved through dlopen so this loader keeps working without CUDA. */
+static int query_physical_sm_count(void)
+{
+	static int cached = -2;
+	if (cached != -2)
+		return cached;
+	cached = -1;
+
+	void *lib = dlopen("libcuda.so.1", RTLD_NOW | RTLD_LOCAL);
+	if (!lib)
+		lib = dlopen("libcuda.so", RTLD_NOW | RTLD_LOCAL);
+	if (!lib)
+		return cached;
+
+	typedef int (*cu_init_fn)(unsigned int);
+	typedef int (*cu_device_get_fn)(int *, int);
+	typedef int (*cu_device_get_attr_fn)(int *, int, int);
+	cu_init_fn cu_init = (cu_init_fn)dlsym(lib, "cuInit");
+	cu_device_get_fn cu_device_get =
+		(cu_device_get_fn)dlsym(lib, "cuDeviceGet");
+	cu_device_get_attr_fn cu_device_get_attr =
+		(cu_device_get_attr_fn)dlsym(lib, "cuDeviceGetAttribute");
+
+	/* CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, CUDA_SUCCESS == 0. */
+	const int cuda_success = 0;
+	const int attr_sm_count = 16;
+	int device = 0;
+	int count = 0;
+
+	if (cu_init && cu_device_get && cu_device_get_attr &&
+	    cu_init(0) == cuda_success && cu_device_get(&device, 0) == cuda_success &&
+	    cu_device_get_attr(&count, attr_sm_count, device) == cuda_success &&
+	    count > 0)
+		cached = count;
+
+	dlclose(lib);
+	return cached;
 }
 
 static void print_sm_histogram(struct threadscheduling_bpf *obj)
@@ -113,22 +157,45 @@ static void print_sm_histogram(struct threadscheduling_bpf *obj)
 	}
 
 	printf("│                                                                    │\n");
-	printf("│  Total threads: %-8" PRIu64 "  Active SMs: %-3d                          │\n",
-	       total_threads, max_sm + 1);
+	int active_sms = 0;
+	for (int i = 0; i <= max_sm; i++)
+		if (sm_counts[i] > 0)
+			active_sms++;
+
+	const int physical_sms = query_physical_sm_count();
+	int sm_total = physical_sms > 0 ? physical_sms : max_sm + 1;
+	// The histogram map holds MAX_SMS entries, so a wider device is measured
+	// over the range the map can record rather than over an unpopulated tail.
+	if (sm_total > MAX_SMS)
+		sm_total = MAX_SMS;
+	printf("│  Total threads: %-8" PRIu64 "  Active SMs: %-3d of %-3d      │\n",
+	       total_threads, active_sms, sm_total);
 	printf("└────────────────────────────────────────────────────────────────────┘\n");
 
-	// Calculate load balance score
-	if (max_sm >= 0 && total_threads > 0) {
-		uint64_t ideal_per_sm = total_threads / (max_sm + 1);
-		uint64_t total_deviation = 0;
+	// Calculate load balance score against the physical SM count. An SM that
+	// ran no sampled thread counts as fully idle, which is what makes a
+	// single-SM run score low instead of perfect. The per-SM ideal is kept in
+	// floating point: with fewer threads than SMs the integer division used
+	// to floor it to zero and pin the score at a fixed 50%.
+	if (total_threads > 0) {
+		double ideal_per_sm = (double)total_threads / (double)sm_total;
+		// SM identifiers need not be contiguous. Count idle physical SMs,
+		// not the unused identifiers between sampled SMs.
+		double total_deviation = ideal_per_sm * (sm_total - active_sms);
 		for (int i = 0; i <= max_sm; i++) {
-			if (sm_counts[i] > ideal_per_sm)
-				total_deviation += sm_counts[i] - ideal_per_sm;
-			else
-				total_deviation += ideal_per_sm - sm_counts[i];
+			if (sm_counts[i] == 0)
+				continue;
+			double diff = (double)sm_counts[i] - ideal_per_sm;
+			total_deviation += diff < 0 ? -diff : diff;
 		}
-		double balance_score = 100.0 * (1.0 - (double)total_deviation / (2.0 * total_threads));
-		printf("\n  Load Balance Score: %.1f%% (100%% = perfect distribution)\n", balance_score);
+		double balance_score =
+			100.0 * (1.0 - total_deviation / (2.0 * (double)total_threads));
+		if (balance_score < 0)
+			balance_score = 0;
+		printf("\n  Load Balance Score: %.1f%% (100%% = perfect distribution%s)\n",
+		       balance_score,
+		       physical_sms > MAX_SMS ? ", over histogram SM range" :
+		       physical_sms > 0 ? ", over all physical SMs" : ", over observed SMs");
 	}
 }
 

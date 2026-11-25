@@ -193,12 +193,9 @@ int bpftime::start_daemon(struct daemon_config env)
 	obj->rodata->target_pid = env.pid;
 	obj->rodata->enable_replace_prog = env.enable_replace_prog;
 
-	// strncpy(obj->rodata->new_uprobe_path, env.new_uprobe_path,
-	// PATH_LENTH);
-	// TODO: currently using `/a` as the replacing executable path to uprobe
-	// perf event in the kernel, since long strings (such as bpftime_daemon
-	// it self) may break userspace memory. Find a better way to solve this
-	// in the future
+	// The replacement executable path for the uprobe perf event is fixed:
+	// long strings (such as the daemon's own path) can break userspace
+	// memory, so the kernel side always reads "/a" from its rodata.
 	strncpy(obj->rodata->new_uprobe_path, "/a", PATH_LENTH);
 	std::filesystem::path elf_path("/a");
 	if (!std::filesystem::exists(elf_path)) {

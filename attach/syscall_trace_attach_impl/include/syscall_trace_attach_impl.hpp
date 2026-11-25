@@ -1,7 +1,9 @@
 #ifndef _BPFTIME_SYSCALL_TRACE_ATTACH_IMPL_HPP
 #define _BPFTIME_SYSCALL_TRACE_ATTACH_IMPL_HPP
 #include <base_attach_impl.hpp>
+#include <syscall_trace_attach_private_data.hpp>
 #include <memory>
+#include <atomic>
 #include <set>
 #include <unordered_map>
 namespace bpftime
@@ -12,7 +14,8 @@ namespace attach
 using syscall_hooker_func_t = int64_t (*)(int64_t sys_nr, int64_t arg1,
 					  int64_t arg2, int64_t arg3,
 					  int64_t arg4, int64_t arg5,
-					  int64_t arg6);
+					  int64_t arg6, int64_t user_ip,
+					  int64_t user_sp, int64_t user_bp);
 
 struct trace_entry {
 	short unsigned int type;
@@ -35,26 +38,39 @@ struct trace_event_raw_sys_exit {
 	char __data[0];
 };
 
+struct trace_event_raw_sched_process_fork {
+	struct trace_entry ent;
+	char parent_comm[16];
+	int parent_pid;
+	char child_comm[16];
+	int child_pid;
+};
+
 // Attach type id of syscall trace
 constexpr size_t ATTACH_SYSCALL_TRACE = 2;
+constexpr size_t ATTACH_SYSCALL_KPROBE = 8;
+constexpr size_t ATTACH_SYSCALL_KRETPROBE = 9;
 
 // An attach entry of syscall trace
 struct syscall_trace_attach_entry {
 	ebpf_run_callback cb;
 	int sys_nr;
 	bool is_enter;
+	int attach_type;
+	syscall_kprobe_abi kprobe_abi;
+	syscall_trace_event event;
 };
-// The global syscall trace instance. This one could be accessed by text segment
-// transformer
-extern std::optional<class syscall_trace_attach_impl *>
+// The global syscall trace instance. It is read from the injected process's
+// syscall trampoline, which keeps running after the instance is published and
+// after a teardown clears it. An atomic pointer, not a std::optional: the
+// trampoline loads it once, so a concurrent reset can neither tear the read nor
+// throw std::bad_optional_access inside the host process.
+extern std::atomic<class syscall_trace_attach_impl *>
 	global_syscall_trace_attach_impl;
-
-// Used by text segment transformer to setup syscall callback
-// Text segment transformer should provide a pointer to its syscall executor
-// function. syscall trace attach impl will save the original syscall function,
-// and replace it with one that was handled by syscall trace attach impl
-extern "C" void
-_bpftime__setup_syscall_hooker_callback(syscall_hooker_func_t *hooker);
+// The original syscall entry the trampoline falls back to while the instance
+// is published nowhere. The instance keeps its own copy; this one outlives it,
+// because teardown clears the instance before the host's last syscalls run.
+extern std::atomic<syscall_hooker_func_t> global_orig_syscall;
 
 // Attach implementation of syscall trace
 // It provides a callback to receive original syscall calls, and dispatch the
@@ -64,7 +80,10 @@ class syscall_trace_attach_impl final : public base_attach_impl {
 	// Dispatch a syscall from text transformer
 	int64_t dispatch_syscall(int64_t sys_nr, int64_t arg1, int64_t arg2,
 				 int64_t arg3, int64_t arg4, int64_t arg5,
-				 int64_t arg6);
+				 int64_t arg6, int64_t user_ip = 0,
+				 int64_t user_sp = 0, int64_t user_bp = 0);
+	void dispatch_process_exec();
+	void dispatch_process_exit();
 	// Set the function of calling original syscall
 	void set_original_syscall_function(syscall_hooker_func_t func)
 	{
@@ -74,7 +93,17 @@ class syscall_trace_attach_impl final : public base_attach_impl {
 	// could be accessed by text segment transformer
 	void set_to_global()
 	{
-		global_syscall_trace_attach_impl = this;
+		global_orig_syscall.store(orig_syscall,
+					  std::memory_order_relaxed);
+		global_syscall_trace_attach_impl.store(
+			this, std::memory_order_release);
+	}
+	// Publish the original syscall entry along with the instance, so the
+	// trampoline can still run it after the instance is cleared
+	void publish_original_syscall(syscall_hooker_func_t func)
+	{
+		orig_syscall = func;
+		global_orig_syscall.store(func, std::memory_order_relaxed);
 	}
 	int detach_by_id(int id);
 	int create_attach_with_ebpf_callback(
@@ -94,8 +123,13 @@ class syscall_trace_attach_impl final : public base_attach_impl {
 		global_exit_callbacks;
 	std::set<syscall_trace_attach_entry *> sys_enter_callbacks[512],
 		sys_exit_callbacks[512];
+	std::set<syscall_trace_attach_entry *> process_fork_callbacks,
+		process_exec_callbacks, process_exit_callbacks;
 	std::unordered_map<int, std::unique_ptr<syscall_trace_attach_entry> >
 		attach_entries;
+	void run_process_fork_callbacks(int parent_pid, int child_pid) noexcept;
+	void run_process_callbacks(
+		const std::set<syscall_trace_attach_entry *> &callbacks) noexcept;
 };
 
 } // namespace attach

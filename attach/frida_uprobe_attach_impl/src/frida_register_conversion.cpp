@@ -3,9 +3,25 @@
 namespace bpftime
 {
 #if defined(__x86_64__) || defined(_M_X64)
+namespace
+{
+// Linux user-mode segment selectors (arch/x86/include/asm/segment.h):
+// __USER_CS / __USER_DS carry Requested Privilege Level 3. A userspace probe
+// context must report these so an eBPF program's user-mode check, such as
+// ptregs_is_usermode() comparing regs->ss against __USER_DS, classifies the
+// context correctly instead of entering kernel-only helper paths that do not
+// exist in a userspace runtime.
+constexpr uint64_t X86_USER_CS = 0x33;
+constexpr uint64_t X86_USER_DS = 0x2b;
+} // namespace
+
 void convert_gum_cpu_context_to_pt_regs(const ::_GumX64CpuContext &context,
 					pt_regs &regs)
 {
+	// Gum only exposes the general-purpose register subset. Clear fields such
+	// as orig_ax, cs, flags, and ss instead of leaking uninitialized stack data
+	// into the BPF pt_regs context.
+	regs = {};
 	regs.ip = context.rip;
 	regs.r15 = context.r15;
 	regs.r14 = context.r14;
@@ -23,6 +39,11 @@ void convert_gum_cpu_context_to_pt_regs(const ::_GumX64CpuContext &context,
 	regs.dx = context.rdx;
 	regs.cx = context.rcx;
 	regs.ax = context.rax;
+	// Frida only observes user-space execution, so the interrupted context is
+	// always user mode. Synthesize the user selectors instead of leaving them
+	// zero so user-mode tests in eBPF programs pass.
+	regs.cs = X86_USER_CS;
+	regs.ss = X86_USER_DS;
 }
 
 void convert_pt_regs_to_gum_cpu_context(const pt_regs &regs,
@@ -48,15 +69,26 @@ void convert_pt_regs_to_gum_cpu_context(const pt_regs &regs,
 }
 
 #elif defined(__aarch64__) || defined(_M_ARM64)
+namespace
+{
+// ARM64 program status register mode field (arch/arm64/include/asm/ptrace.h).
+// PSR_MODE_EL0t is 0 and PSR_MODE_MASK selects the low four bits; a userspace
+// probe context must report EL0 so eBPF user-mode checks classify it the same
+// way the kernel pt_regs for a user interrupt would.
+constexpr uint64_t ARM64_PSR_MODE_MASK = 0xf;
+} // namespace
+
 void convert_gum_cpu_context_to_pt_regs(const ::_GumArm64CpuContext &context,
 					pt_regs &regs)
 {
+	regs = {};
 	memcpy(&regs.regs, &context.x, sizeof(context.x));
 	regs.regs[29] = context.fp;
 	regs.regs[30] = context.lr;
 	regs.sp = context.sp;
 	regs.pc = context.pc;
-	regs.pstate = context.nzcv;
+	// Keep the condition flags from Gum but force the mode field to EL0t.
+	regs.pstate = context.nzcv & ~ARM64_PSR_MODE_MASK;
 }
 
 void convert_pt_regs_to_gum_cpu_context(const pt_regs &regs,

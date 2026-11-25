@@ -1,10 +1,18 @@
 #include "attach_private_data.hpp"
 #include "bpf_attach_ctx.hpp"
 #include "bpftime_shm_internal.hpp"
+#if BPFTIME_HAVE_FRIDA_ATTACH
 #include "frida_attach_private_data.hpp"
 #include "frida_uprobe_attach_impl.hpp"
+#endif
+#if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
+#include "trap_attach_private_data.hpp"
+#include "trap_uprobe_attach_impl.hpp"
+#endif
+#include "process_filter.hpp"
 
 #include "spdlog/common.h"
+#include "bpftime_config.hpp"
 #include "bpftime_logger.hpp"
 #include <chrono>
 #include <csignal>
@@ -23,7 +31,14 @@
 #include <string_view>
 #include <thread>
 #include <unistd.h>
+#if BPFTIME_HAVE_FRIDA_ATTACH
 #include <frida-gum.h>
+#else
+typedef char gchar;
+typedef int gboolean;
+#define TRUE 1
+#define FALSE 0
+#endif
 #include <cstdint>
 #include <dlfcn.h>
 #include <link.h>
@@ -51,7 +66,12 @@ using main_func_t = int (*)(int, char **, char **);
 
 static main_func_t orig_main_func = nullptr;
 
-static int initialized = 0;
+enum agent_init_state {
+	AGENT_UNINITIALIZED = 0,
+	AGENT_INITIALIZING = 1,
+	AGENT_READY = 2,
+};
+static int initialized = AGENT_UNINITIALIZED;
 
 using agent_control_fn_t = void (*)(const gchar *);
 
@@ -61,11 +81,6 @@ using agent_control_fn_t = void (*)(const gchar *);
 // by text-transformer
 bool injected_with_frida = true;
 
-static std::atomic<uint64_t> auto_refresh_epoch{ 0 };
-static std::mutex auto_refresh_thread_mutex;
-static std::thread auto_refresh_thread;
-static std::atomic<pid_t> auto_refresh_loader_pid{ -1 };
-
 static std::once_flag agent_ipc_once;
 static std::atomic<bool> agent_ipc_stop{ false };
 #ifdef __linux__
@@ -73,8 +88,6 @@ static int agent_ipc_fd = -1;
 static std::thread agent_ipc_thread;
 #endif
 
-static int detach_pipe_fds[2] = { -1, -1 };
-static std::atomic<bool> detach_thread_started{ false };
 static std::mutex detach_mutex;
 static std::atomic<bool> global_ctx_constructed{ false };
 
@@ -106,12 +119,42 @@ static void apply_injected_kv_overrides(const gchar *data);
 static int refresh_attach_session(const gchar *data);
 static int perform_detach();
 
+static void install_agent_bootstrap_logger() noexcept
+{
+	if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) !=
+	    AGENT_UNINITIALIZED)
+		return;
+	const char *logger_target = getenv("BPFTIME_LOG_OUTPUT");
+	bpftime_set_logger(logger_target == nullptr ? DEFAULT_LOGGER_OUTPUT_PATH :
+						     logger_target);
+}
+
+static void reset_syscall_trace_global() noexcept
+{
+#if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
+	try {
+		// Clear the instance first and keep the original syscall entry
+		// published: the text-segment trampoline can still dispatch a
+		// syscall after this, and must run the original one then
+		// rather than throw or dereference the freed instance.
+		bpftime::attach::global_syscall_trace_attach_impl.store(
+			nullptr, std::memory_order_release);
+	} catch (...) {
+	}
+#endif
+}
+
 extern "C" __attribute__((visibility("default"))) void
 bpftime_agent_control(const gchar *data)
 {
+	injected_with_frida = true;
 	// External control entrypoint used to avoid loading multiple agent copies
 	// into the same target process (Frida typically loads via /proc/self/fd/*).
-	(void)refresh_attach_session(data);
+	install_agent_bootstrap_logger();
+	try {
+		(void)refresh_attach_session(data);
+	} catch (...) {
+	}
 }
 
 static void start_agent_ipc_server_once();
@@ -228,6 +271,11 @@ static bool try_forward_to_existing_agent(const gchar *data)
 static void start_agent_ipc_server_once()
 {
 #ifdef __linux__
+	const char *enable_ipc = getenv("BPFTIME_ENABLE_AGENT_IPC");
+	if (!injected_with_frida &&
+	    (enable_ipc == nullptr || enable_ipc[0] == '\0' ||
+	     strcmp(enable_ipc, "0") == 0))
+		return;
 	std::call_once(agent_ipc_once, []() {
 		sockaddr_un addr {};
 		socklen_t len = 0;
@@ -252,7 +300,8 @@ static void start_agent_ipc_server_once()
 		}
 		agent_ipc_fd = fd;
 		agent_ipc_stop.store(false, std::memory_order_release);
-		agent_ipc_thread = std::thread([]() {
+		try {
+			agent_ipc_thread = std::thread([]() {
 			for (;;) {
 				if (agent_ipc_stop.load(std::memory_order_acquire))
 					return;
@@ -345,7 +394,13 @@ static void start_agent_ipc_server_once()
 				}
 				::close(cfd);
 			}
-		});
+			});
+		} catch (...) {
+			agent_ipc_stop.store(true, std::memory_order_release);
+			::close(fd);
+			agent_ipc_fd = -1;
+			return;
+		}
 		std::atexit([]() {
 			agent_ipc_stop.store(true, std::memory_order_release);
 			if (agent_ipc_fd >= 0) {
@@ -355,7 +410,11 @@ static void start_agent_ipc_server_once()
 			if (agent_ipc_thread.joinable())
 				agent_ipc_thread.detach();
 		});
-		SPDLOG_INFO("agent ipc: listening (abstract) for pid {}", (int)getpid());
+		try {
+			SPDLOG_INFO("agent ipc: listening (abstract) for pid {}",
+				    (int)getpid());
+		} catch (...) {
+		}
 	});
 #else
 	(void)0;
@@ -365,19 +424,13 @@ static void start_agent_ipc_server_once()
 static int perform_detach()
 {
 	std::lock_guard<std::mutex> detach_guard(detach_mutex);
+	attach_callback_suppression_scope suppress_callbacks;
 	if (!global_ctx_constructed.load(std::memory_order_acquire)) {
-		__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
+		__atomic_store_n(&initialized, AGENT_UNINITIALIZED,
+				 __ATOMIC_SEQ_CST);
 		return 0;
 	}
 	SPDLOG_INFO("Detaching..");
-
-	// Stop auto-refresh first to avoid racing re-instantiation with teardown.
-	auto_refresh_epoch.fetch_add(1, std::memory_order_acq_rel);
-	{
-		std::lock_guard<std::mutex> guard(auto_refresh_thread_mutex);
-		if (auto_refresh_thread.joinable())
-			auto_refresh_thread.join();
-	}
 
 	// Detach all instantiated links so GPU code stops using loader-owned
 	// resources (CUDA IPC buffers) before the loader exits.
@@ -389,69 +442,57 @@ static int perform_detach()
 	// destroying the whole attach context (which may block inside driver
 	// teardown while kernels are still running).
 	ctx_holder.ctx.reset_instantiated_state();
+	if (detach_err >= 0) {
+		shm_holder.global_shared_memory.remove_pid_from_alive_agent_set(
+			getpid());
+	}
 	SPDLOG_DEBUG("Detaching done");
 	bpftime_logger_flush();
 	return detach_err < 0 ? detach_err : 0;
 }
 
-static void stop_auto_refresh_at_exit()
+static void stop_syscall_dispatch_at_exit() noexcept
 {
-	auto_refresh_epoch.fetch_add(1, std::memory_order_acq_rel);
-	std::lock_guard<std::mutex> guard(auto_refresh_thread_mutex);
-	if (auto_refresh_thread.joinable())
-		auto_refresh_thread.join();
-}
-
-static void ensure_detach_worker_started()
-{
-	bool expected = false;
-	if (!detach_thread_started.compare_exchange_strong(
-		    expected, true, std::memory_order_acq_rel,
-		    std::memory_order_acquire)) {
-		return;
-	}
-	int fds[2];
-#ifdef __linux__
-	if (pipe2(fds, O_CLOEXEC) != 0) {
-		SPDLOG_WARN("pipe2 failed, detach by SIGUSR1 will be disabled");
-		detach_thread_started.store(false, std::memory_order_release);
-		return;
-	}
-#else
-	if (pipe(fds) != 0) {
-		SPDLOG_WARN("pipe failed, detach by SIGUSR1 will be disabled");
-		detach_thread_started.store(false, std::memory_order_release);
-		return;
+#if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
+	try {
+		auto *impl =
+			bpftime::attach::global_syscall_trace_attach_impl.load(
+				std::memory_order_acquire);
+		if (impl != nullptr)
+			impl->dispatch_process_exit();
+	} catch (...) {
 	}
 #endif
-	detach_pipe_fds[0] = fds[0];
-	detach_pipe_fds[1] = fds[1];
-	std::thread([]() {
-		for (;;) {
-			uint8_t buf[16];
-			ssize_t n = read(detach_pipe_fds[0], buf, sizeof(buf));
-			if (n <= 0) {
-				return;
-			}
-			if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) != 1) {
-				continue;
-			}
-			perform_detach();
-		}
-	}).detach();
+	// libc and DSO teardown may issue mmap/munmap after the runtime shared
+	// memory has been destroyed. Stop dispatching BPF programs before those
+	// destructors run so their map helpers cannot access an unmapped manager.
+	reset_syscall_trace_global();
 }
 
 syscall_hooker_func_t orig_hooker;
 
+static void bpftime_agent_main_impl(const gchar *data,
+				    gboolean *stay_resident);
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
 
-extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
+static void detach_agent_at_process_exit()
+{
+	(void)perform_detach();
+}
+
+static void initialize_preloaded_agent()
 {
 	int stay_resident = 0;
 	injected_with_frida = false;
-	bpftime_agent_main("", &stay_resident);
-	int ret = orig_main_func(argc, argv, envp);
-	return ret;
+	bpftime_agent_main_impl("", &stay_resident);
+	if (std::atexit(detach_agent_at_process_exit) != 0)
+		SPDLOG_WARN("Unable to register bpftime process-exit cleanup");
+}
+
+extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
+{
+	initialize_preloaded_agent();
+	return orig_main_func(argc, argv, envp);
 }
 
 extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
@@ -463,212 +504,22 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 	orig_main_func = main;
 	using this_func_t = decltype(&__libc_start_main);
 	this_func_t orig = (this_func_t)dlsym(RTLD_NEXT, "__libc_start_main");
-
+	// musl sets its program-name symbol only in the libc entry below; use argv[0].
+	const char *argv0 = (argc > 0 && argv != nullptr) ? argv[0] : nullptr;
+	if (argv0 != nullptr) {
+		const char *slash = strrchr(argv0, '/');
+		argv0 = slash != nullptr ? slash + 1 : argv0;
+	}
+	if (agent::should_skip_agent_process(argv0))
+		return orig(main, argc, argv, init, fini, rtld_fini, stack_end);
 	return orig(bpftime_hooked_main, argc, argv, init, fini, rtld_fini,
 		    stack_end);
 }
-static void sig_handler_sigusr1_detach(int sig)
-{
-	(void)sig;
-	// Async-signal-safe: do not call spdlog / malloc / locks here.
-	auto_refresh_epoch.fetch_add(1, std::memory_order_acq_rel);
-	int fd = detach_pipe_fds[1];
-	if (fd >= 0) {
-		uint8_t one = 1;
-		ssize_t ignored = write(fd, &one, 1);
-		(void)ignored;
-	}
-}
-
-static int parse_auto_refresh_ms(const gchar *data)
-{
-	if (data == nullptr || data[0] == '\0')
-		return 0;
-	std::string_view sv(data);
-	// Simple "k=v" pairs separated by ';' or whitespace.
-	for (size_t pos = 0; pos < sv.size();) {
-		while (pos < sv.size() &&
-		       (sv[pos] == ' ' || sv[pos] == '\t' || sv[pos] == ';'))
-			pos++;
-		if (pos >= sv.size())
-			break;
-		size_t end = pos;
-		while (end < sv.size() && sv[end] != ';' && sv[end] != ' ' &&
-		       sv[end] != '\t')
-			end++;
-		auto item = sv.substr(pos, end - pos);
-		pos = end;
-		auto eq = item.find('=');
-		if (eq == std::string_view::npos)
-			continue;
-		auto key = item.substr(0, eq);
-		auto val = item.substr(eq + 1);
-		if (key != "auto_refresh_ms")
-			continue;
-		int out = 0;
-		try {
-			out = std::stoi(std::string(val));
-		} catch (...) {
-			return 0;
-		}
-		if (out < 0)
-			return 0;
-		return out;
-	}
-	return 0;
-}
-
-static pid_t parse_loader_pid(const gchar *data)
-{
-	if (data == nullptr || data[0] == '\0')
-		return -1;
-	std::string_view sv(data);
-	// Simple "k=v" pairs separated by ';' or whitespace.
-	for (size_t pos = 0; pos < sv.size();) {
-		while (pos < sv.size() &&
-		       (sv[pos] == ' ' || sv[pos] == '\t' || sv[pos] == ';'))
-			pos++;
-		if (pos >= sv.size())
-			break;
-		size_t end = pos;
-		while (end < sv.size() && sv[end] != ';' && sv[end] != ' ' &&
-		       sv[end] != '\t')
-			end++;
-		auto item = sv.substr(pos, end - pos);
-		pos = end;
-		auto eq = item.find('=');
-		if (eq == std::string_view::npos)
-			continue;
-		auto key = item.substr(0, eq);
-		auto val = item.substr(eq + 1);
-		if (key != "loader_pid")
-			continue;
-		try {
-			long long out = std::stoll(std::string(val));
-			if (out <= 0)
-				return -1;
-			if (out > std::numeric_limits<pid_t>::max())
-				return -1;
-			return (pid_t)out;
-		} catch (...) {
-			return -1;
-		}
-	}
-	return -1;
-}
-
-static bool parse_force_reinit(const gchar *data)
-{
-	if (data == nullptr || data[0] == '\0')
-		return false;
-	std::string_view sv(data);
-	for (size_t pos = 0; pos < sv.size();) {
-		while (pos < sv.size() &&
-		       (sv[pos] == ' ' || sv[pos] == '\t' || sv[pos] == ';'))
-			pos++;
-		if (pos >= sv.size())
-			break;
-		size_t end = pos;
-		while (end < sv.size() && sv[end] != ';' && sv[end] != ' ' &&
-		       sv[end] != '\t')
-			end++;
-		auto item = sv.substr(pos, end - pos);
-		pos = end;
-		auto eq = item.find('=');
-		if (eq == std::string_view::npos)
-			continue;
-		auto key = item.substr(0, eq);
-		auto val = item.substr(eq + 1);
-		if (key != "force_reinit")
-			continue;
-		return val == "1" || val == "true" || val == "yes";
-	}
-	return false;
-}
-
-static int refresh_attach_session(const gchar *data)
-{
-	if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) != 1) {
-		SPDLOG_WARN("agent_control: agent not initialized");
-		return -EINVAL;
-	}
-	if (!global_ctx_constructed.load(std::memory_order_acquire)) {
-		SPDLOG_WARN("agent_control: global ctx not constructed");
-		return -EINVAL;
-	}
-
-	std::lock_guard<std::mutex> guard(detach_mutex);
-	apply_injected_kv_overrides(data);
-	auto_refresh_epoch.fetch_add(1, std::memory_order_acq_rel);
-	{
-		std::lock_guard<std::mutex> tguard(auto_refresh_thread_mutex);
-		if (auto_refresh_thread.joinable())
-			auto_refresh_thread.join();
-	}
-	(void)ctx_holder.ctx.destroy_all_attach_links();
-	ctx_holder.ctx.reset_instantiated_state();
-
-	int res =
-		ctx_holder.ctx.init_attach_ctx_from_handlers(bpftime_get_runtime_config());
-	if (res != 0) {
-		SPDLOG_ERROR(
-			"agent_control: init_attach_ctx_from_handlers failed: {}",
-			res);
-		return res < 0 ? res : -EINVAL;
-	}
-
-	int auto_refresh_ms = parse_auto_refresh_ms(data);
-	pid_t loader_pid = parse_loader_pid(data);
-	if (auto_refresh_ms > 0) {
-		auto_refresh_loader_pid.store(loader_pid,
-					      std::memory_order_release);
-		SPDLOG_INFO("Starting auto-refresh thread ({} ms, loader_pid={})",
-			    auto_refresh_ms, (int)loader_pid);
-		uint64_t epoch =
-			auto_refresh_epoch.fetch_add(1, std::memory_order_acq_rel) + 1;
-		std::lock_guard<std::mutex> tguard(auto_refresh_thread_mutex);
-		if (auto_refresh_thread.joinable())
-			auto_refresh_thread.join();
-		auto_refresh_thread = std::thread([auto_refresh_ms, epoch]() {
-			for (;;) {
-				if (auto_refresh_epoch.load(
-					    std::memory_order_acquire) != epoch) {
-					return;
-				}
-#if __linux__
-				pid_t lp = auto_refresh_loader_pid.load(
-					std::memory_order_acquire);
-				if (lp > 0) {
-					if (::kill(lp, 0) != 0 &&
-					    errno == ESRCH) {
-						SPDLOG_INFO(
-							"Auto-refresh: loader pid {} is gone; stopping",
-							(int)lp);
-						return;
-					}
-				}
-#endif
-				std::this_thread::sleep_for(
-					std::chrono::milliseconds(auto_refresh_ms));
-				try {
-					ctx_holder.ctx.init_attach_ctx_from_handlers(
-						bpftime_get_runtime_config());
-				} catch (const std::exception &ex) {
-					SPDLOG_DEBUG(
-						"Auto-refresh: init_attach_ctx_from_handlers failed: {}",
-						ex.what());
-				}
-			}
-		});
-		std::atexit(stop_auto_refresh_at_exit);
-	}
-
-	SPDLOG_INFO("Attach successfully");
-	start_agent_ipc_server_once();
-	return 0;
-}
-
-static void apply_injected_kv_overrides(const gchar *data)
+// Simple "k=v" pairs separated by ';', space or tab. Each pair is split at
+// the first '=' and passed to the callback in original order; a callback
+// returning false stops the iteration.
+template <typename Fn>
+static void for_each_kv(const gchar *data, Fn &&fn)
 {
 	if (data == nullptr || data[0] == '\0')
 		return;
@@ -688,8 +539,73 @@ static void apply_injected_kv_overrides(const gchar *data)
 		auto eq = item.find('=');
 		if (eq == std::string_view::npos)
 			continue;
-		auto key = item.substr(0, eq);
-		auto val = item.substr(eq + 1);
+		if (!fn(item.substr(0, eq), item.substr(eq + 1)))
+			return;
+	}
+}
+
+static bool parse_force_reinit(const gchar *data)
+{
+	bool result = false;
+	for_each_kv(data, [&](std::string_view key,
+			      std::string_view val) -> bool {
+		if (key != "force_reinit")
+			return true;
+		result = val == "1" || val == "true" || val == "yes";
+		return false;
+	});
+	return result;
+}
+
+static int refresh_attach_session(const gchar *data)
+{
+	if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) != AGENT_READY) {
+		SPDLOG_WARN("agent_control: agent not initialized");
+		return -EINVAL;
+	}
+	if (!global_ctx_constructed.load(std::memory_order_acquire)) {
+		SPDLOG_WARN("agent_control: global ctx not constructed");
+		return -EINVAL;
+	}
+
+	std::lock_guard<std::mutex> guard(detach_mutex);
+	attach_callback_suppression_scope suppress_callbacks;
+	apply_injected_kv_overrides(data);
+	(void)ctx_holder.ctx.destroy_all_attach_links();
+	ctx_holder.ctx.reset_instantiated_state();
+
+	int failed_handlers = 0;
+	int res = ctx_holder.ctx.init_attach_ctx_from_handlers(
+		bpftime_get_runtime_config(), &failed_handlers);
+	if (res != 0) {
+		SPDLOG_ERROR(
+			"agent_control: init_attach_ctx_from_handlers failed: {}",
+			res);
+		return res < 0 ? res : -EINVAL;
+	}
+	if (!shm_holder.global_shared_memory.add_pid_into_alive_agent_set(
+		    getpid())) {
+		SPDLOG_ERROR("agent_control: unable to record alive agent pid");
+		(void)ctx_holder.ctx.destroy_all_attach_links();
+		ctx_holder.ctx.reset_instantiated_state();
+		return -EAGAIN;
+	}
+
+	if (failed_handlers > 0) {
+		SPDLOG_WARN(
+			"Attach finished with {} handler(s) not instantiated",
+			failed_handlers);
+	} else {
+		SPDLOG_INFO("Attach successfully");
+	}
+	start_agent_ipc_server_once();
+	return 0;
+}
+
+static void apply_injected_kv_overrides(const gchar *data)
+{
+	for_each_kv(data, [](std::string_view key,
+			     std::string_view val) -> bool {
 		if (key == "cuda_late_ptx_dir") {
 			std::string v(val);
 			setenv("BPFTIME_CUDA_LATE_PTX_DIR", v.c_str(), 1);
@@ -702,7 +618,8 @@ static void apply_injected_kv_overrides(const gchar *data)
 				"bpftime-agent: BPFTIME_CUDA_DISABLE_CUOBJDUMP={}",
 				v);
 		}
-	}
+		return true;
+	});
 }
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
@@ -720,23 +637,58 @@ extern "C" void **__cudaRegisterFatBinary(void *fatbin)
 	try {
 		auto orig = try_get_original_func("__cudaRegisterFatBinary",
 						 original___cudaRegisterFatBinary);
+		if (orig == nullptr)
+			return nullptr;
 		// We have to register llvmbpf manually, since this function
 		// (__cudaRegisterFatBinary) might be called before llvm is registered
 		bpftime::vm::compat::llvm::register_llvm_vm_factory();
 		return orig(fatbin);
-	} catch (const std::exception &ex) {
-		fprintf(stderr,
-			"bpftime-agent: __cudaRegisterFatBinary wrapper failed: %s\n",
-			ex.what());
 	} catch (...) {
-		fprintf(stderr,
-			"bpftime-agent: __cudaRegisterFatBinary wrapper failed: unknown error\n");
+		if (original___cudaRegisterFatBinary != nullptr)
+			return original___cudaRegisterFatBinary(fatbin);
 	}
 	return nullptr;
 }
 #endif
-extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
+static void bpftime_agent_main_impl(const gchar *data,
+				    gboolean *stay_resident)
 {
+	if (agent::should_skip_agent_process()) {
+		*stay_resident = FALSE;
+		return;
+	}
+	install_agent_bootstrap_logger();
+	bool force_reinit = false;
+	bool recorded_alive_pid = false;
+	bool ctx_constructed = false;
+	bool claimed_initialization = false;
+	auto init_fail = [&]() noexcept {
+		if (!claimed_initialization)
+			return;
+		try {
+			reset_syscall_trace_global();
+		} catch (...) {
+		}
+		if (ctx_constructed) {
+			try {
+				ctx_holder.destroy();
+			} catch (...) {
+			}
+			ctx_constructed = false;
+		}
+		global_ctx_constructed.store(false, std::memory_order_release);
+		if (recorded_alive_pid) {
+			try {
+				shm_holder.global_shared_memory
+					.remove_pid_from_alive_agent_set(
+						getpid());
+			} catch (...) {
+			}
+			recorded_alive_pid = false;
+		}
+		__atomic_store_n(&initialized, AGENT_UNINITIALIZED,
+				 __ATOMIC_SEQ_CST);
+	};
 	try {
 #ifdef __linux__
 			// If an agent IPC server is already present in this process,
@@ -756,31 +708,18 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				return;
 			}
 
-			bool force_reinit = parse_force_reinit(data);
-			bool recorded_alive_pid = false;
-			bool ctx_constructed = false;
-			auto init_fail = [&]() {
-				if (ctx_constructed) {
-					ctx_holder.destroy();
-					ctx_constructed = false;
-				}
-				global_ctx_constructed.store(false,
-							     std::memory_order_release);
-				if (recorded_alive_pid) {
-					shm_holder.global_shared_memory
-						.remove_pid_from_alive_agent_set(
-							getpid());
-					recorded_alive_pid = false;
-				}
-				__atomic_store_n(&initialized, 0,
-						 __ATOMIC_SEQ_CST);
-			};
+			force_reinit = parse_force_reinit(data);
 			{
-				int expected = 0;
+				int expected = AGENT_UNINITIALIZED;
 				if (!__atomic_compare_exchange_n(
-					    &initialized, &expected, 1, false,
+					    &initialized, &expected,
+					    AGENT_INITIALIZING, false,
 					    __ATOMIC_SEQ_CST,
 					    __ATOMIC_SEQ_CST)) {
+					if (expected != AGENT_READY) {
+						*stay_resident = FALSE;
+						return;
+					}
 					if (!force_reinit) {
 						SPDLOG_INFO(
 							"Agent already initialized, skipping re-initializing..");
@@ -793,28 +732,28 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 					*stay_resident = TRUE;
 					return;
 				}
+				claimed_initialization = true;
 			}
 
 			SPDLOG_DEBUG("Entered bpftime_agent_main");
-			SPDLOG_DEBUG("Registering signal handler");
-
-			srand(std::random_device()());
-			// We use SIGUSR1 to indicate the detaching.
-			ensure_detach_worker_started();
-			signal(SIGUSR1, sig_handler_sigusr1_detach);
 
 			// SHM can race with the loader process; retry a bit to avoid
 			// flakiness in "spawn loader then inject agent" workflows.
 			std::string last_err;
 			bool shm_ok = false;
+			std::unique_ptr<shm_lifecycle_lock> shm_lock;
 			for (int attempt = 0; attempt < 60; attempt++) {
 				try {
+					shm_lock =
+						std::make_unique<shm_lifecycle_lock>(
+							get_global_shm_name());
 					bpftime_initialize_global_shm(
 						shm_open_type::SHM_OPEN_ONLY);
 					shm_ok = true;
 					break;
 				} catch (const std::exception &ex) {
 					last_err = ex.what();
+					shm_lock.reset();
 					std::this_thread::sleep_for(
 						std::chrono::milliseconds(
 							50));
@@ -831,13 +770,6 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			bpftime_set_logger(std::string(
 				runtime_config.get_logger_output_path()));
 			apply_injected_kv_overrides(data);
-			// Only agents injected through frida could be detached.
-			if (injected_with_frida) {
-				// Record the pid
-				shm_holder.global_shared_memory
-					.add_pid_into_alive_agent_set(getpid());
-				recorded_alive_pid = true;
-			}
 			ctx_holder.init();
 			ctx_constructed = true;
 			global_ctx_constructed.store(
@@ -848,9 +780,10 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				std::make_unique<syscall_trace_attach_impl>();
 			syscall_trace_impl->set_original_syscall_function(
 				orig_hooker);
-			syscall_trace_impl->set_to_global();
+			auto *syscall_trace_impl_ptr = syscall_trace_impl.get();
 			ctx_holder.ctx.register_attach_impl(
-				{ ATTACH_SYSCALL_TRACE },
+				{ ATTACH_SYSCALL_TRACE, ATTACH_SYSCALL_KPROBE,
+				  ATTACH_SYSCALL_KRETPROBE },
 				std::move(syscall_trace_impl),
 				[](const std::string_view &sv, int &err) {
 					std::unique_ptr<attach_private_data>
@@ -869,15 +802,18 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				});
 #endif
 			// Register uprobe attach impl
+#if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
+			SPDLOG_INFO("Using the trap (breakpoint) uprobe backend");
 			ctx_holder.ctx.register_attach_impl(
-				{ ATTACH_UPROBE, ATTACH_URETPROBE,
-				  ATTACH_UPROBE_OVERRIDE, ATTACH_UREPLACE },
-				std::make_unique<attach::frida_attach_impl>(),
-				[](const std::string_view &sv, int &err) {
-					std::unique_ptr<attach_private_data>
-						priv_data =
-							std::make_unique<
-								frida_attach_private_data>();
+				{ trap::ATTACH_UPROBE,
+				  trap::ATTACH_URETPROBE,
+				  trap::ATTACH_UPROBE_OVERRIDE,
+				  trap::ATTACH_UREPLACE },
+				std::make_unique<trap::trap_attach_impl>(),
+				[](const std::string_view &sv, int &err)
+					-> std::unique_ptr<attach_private_data> {
+					auto priv_data = std::make_unique<
+						trap::trap_attach_private_data>();
 					if (int e =
 						    priv_data->initialize_from_string(
 							    sv);
@@ -888,6 +824,29 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 					}
 					return priv_data;
 				});
+#elif BPFTIME_HAVE_FRIDA_ATTACH
+			ctx_holder.ctx.register_attach_impl(
+				{ ATTACH_UPROBE, ATTACH_URETPROBE,
+				  ATTACH_UPROBE_OVERRIDE, ATTACH_UREPLACE },
+				std::make_unique<attach::frida_attach_impl>(
+					runtime_config.enable_frida_fuzzy_backtracer),
+				[](const std::string_view &sv, int &err)
+					-> std::unique_ptr<attach_private_data> {
+					auto priv_data = std::make_unique<
+						frida_attach_private_data>();
+					if (int e =
+						    priv_data->initialize_from_string(
+							    sv);
+					    e < 0) {
+						err = e;
+						return std::unique_ptr<
+							attach_private_data>();
+					}
+					return priv_data;
+				});
+#else
+			SPDLOG_WARN("No uprobe attach backend available");
+#endif
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 			// Register cuda attach impl
@@ -910,16 +869,18 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 					return priv_data;
 				});
 #endif
+#if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
+			syscall_trace_impl_ptr->set_to_global();
+#endif
 			SPDLOG_INFO("Initializing agent..");
-			/* We don't want our library to be unloaded after we return. */
-			*stay_resident = TRUE;
 
-			setenv("BPFTIME_USED", "1", 0);
-			SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
+			int failed_handlers = 0;
 			try {
+				attach_callback_suppression_scope suppress_callbacks;
 				int res = ctx_holder.ctx
 						  .init_attach_ctx_from_handlers(
-							  runtime_config);
+							  runtime_config,
+							  &failed_handlers);
 				if (res != 0) {
 					SPDLOG_INFO(
 						"Failed to initialize attach context, exiting..");
@@ -933,78 +894,51 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				init_fail();
 				return;
 			}
-
-			// Start IPC control plane for repeat attach/refresh (used by
-			// `bpftime trace`).
-			start_agent_ipc_server_once();
-
-			int auto_refresh_ms = parse_auto_refresh_ms(data);
-			pid_t loader_pid = parse_loader_pid(data);
-			if (auto_refresh_ms > 0) {
-				auto_refresh_loader_pid.store(
-					loader_pid,
-					std::memory_order_release);
-				SPDLOG_INFO(
-					"Starting auto-refresh thread ({} ms, loader_pid={})",
-					auto_refresh_ms, (int)loader_pid);
-				uint64_t epoch =
-					auto_refresh_epoch.fetch_add(
-						1, std::memory_order_acq_rel) +
-					1;
-				std::lock_guard<std::mutex> guard(
-					auto_refresh_thread_mutex);
-				if (auto_refresh_thread.joinable())
-					auto_refresh_thread.join();
-				auto_refresh_thread = std::thread(
-					[auto_refresh_ms, epoch]() {
-						for (;;) {
-							if (auto_refresh_epoch.load(
-								    std::memory_order_acquire) !=
-							    epoch) {
-								return;
-							}
-#if __linux__
-							pid_t lp =
-								auto_refresh_loader_pid.load(
-									std::memory_order_acquire);
-							if (lp > 0) {
-								if (::kill(lp, 0) != 0 &&
-								    errno == ESRCH) {
-									SPDLOG_INFO(
-										"Auto-refresh: loader pid {} is gone; stopping",
-										(int)lp);
-									return;
-								}
-							}
+#if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
+			syscall_trace_impl_ptr->dispatch_process_exec();
 #endif
-							std::this_thread::sleep_for(
-								std::chrono::milliseconds(
-									auto_refresh_ms));
-							try {
-								ctx_holder.ctx
-									.init_attach_ctx_from_handlers(
-										bpftime_get_runtime_config());
-							} catch (const std::exception &ex) {
-								SPDLOG_DEBUG(
-									"Auto-refresh: init_attach_ctx_from_handlers failed: {}",
-									ex.what());
-							}
-						}
-					});
-				std::atexit(stop_auto_refresh_at_exit);
-			}
+			srand(std::random_device()());
 
-			SPDLOG_INFO("Attach successfully");
-		} catch (const std::exception &ex) {
-			fprintf(stderr,
-				"bpftime-agent: bpftime_agent_main failed: %s\n",
-				ex.what());
-			__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
-	} catch (...) {
-			fprintf(stderr,
-				"bpftime-agent: bpftime_agent_main failed: unknown error\n");
-			__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
+			if (!shm_holder.global_shared_memory
+				     .add_pid_into_alive_agent_set(getpid())) {
+				SPDLOG_ERROR("Unable to record alive agent pid");
+				init_fail();
+				return;
+			}
+			recorded_alive_pid = true;
+			shm_lock.reset();
+			start_agent_ipc_server_once();
+			std::atexit(stop_syscall_dispatch_at_exit);
+			/* We don't want our library to be unloaded after we return. */
+			*stay_resident = TRUE;
+			setenv("BPFTIME_USED", "1", 0);
+			__atomic_store_n(&initialized, AGENT_READY,
+					 __ATOMIC_SEQ_CST);
+			try {
+				SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
+			} catch (...) {
+			}
+			try {
+				if (failed_handlers > 0) {
+					SPDLOG_WARN(
+						"Attach finished with {} handler(s) not instantiated",
+						failed_handlers);
+				} else {
+					SPDLOG_INFO("Attach successfully");
+				}
+			} catch (...) {
+			}
+		} catch (const std::exception &) {
+			init_fail();
+		} catch (...) {
+			init_fail();
 		}
+}
+
+extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
+{
+	injected_with_frida = true;
+	bpftime_agent_main_impl(data, stay_resident);
 }
 
 // using definition for libbpf for syscall issues
@@ -1012,19 +946,42 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 extern "C" int64_t syscall_callback(int64_t sys_nr, int64_t arg1, int64_t arg2,
 				    int64_t arg3, int64_t arg4, int64_t arg5,
-				    int64_t arg6)
+				    int64_t arg6, int64_t user_ip,
+				    int64_t user_sp, int64_t user_bp)
 {
-	return bpftime::attach::global_syscall_trace_attach_impl.value()
-		->dispatch_syscall(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
+	try {
+		auto *impl =
+			bpftime::attach::global_syscall_trace_attach_impl.load(
+				std::memory_order_acquire);
+		if (impl != nullptr) {
+			return impl->dispatch_syscall(
+				sys_nr, arg1, arg2, arg3, arg4, arg5, arg6,
+				user_ip, user_sp, user_bp);
+		}
+	} catch (...) {
+	}
+	if (orig_hooker != nullptr)
+		return orig_hooker(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6,
+				   user_ip, user_sp, user_bp);
+	return -ENOSYS;
 }
 
 extern "C" void
 _bpftime__setup_syscall_trace_callback(syscall_hooker_func_t *hooker)
 {
+	if (hooker == nullptr)
+		return;
+	// Text-transformer entrypoint: a rejected process keeps its original
+	// hook and must not log either, since the bootstrap logger never ran.
+	if (agent::should_skip_agent_process())
+		return;
 	orig_hooker = *hooker;
 	*hooker = &syscall_callback;
-	gboolean val;
-	bpftime_agent_main("", &val);
-	SPDLOG_INFO("Agent syscall trace setup exiting..");
+	gboolean val = FALSE;
+	try {
+		bpftime_agent_main_impl("", &val);
+		SPDLOG_INFO("Agent syscall trace setup exiting..");
+	} catch (...) {
+	}
 }
 #endif

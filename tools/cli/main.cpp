@@ -1,4 +1,5 @@
 #include "bpftime_shm.hpp"
+#include <bpftime_logger.hpp>
 #include <bpftime_shm_internal.hpp>
 #include <cerrno>
 #include <csignal>
@@ -105,7 +106,8 @@ static bool str_starts_with(const char *main, const char *pat)
 
 static int run_command(const char *path, const std::vector<std::string> &argv,
 		       const char *ld_preload, const char *agent_so,
-		       const std::vector<std::string> &env_args)
+		       const std::vector<std::string> &env_args,
+		       bool enable_agent_ipc = false)
 {
 	int pid = fork();
 	if (pid < 0) {
@@ -113,6 +115,10 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 		return 1;
 	}
 	if (pid == 0) {
+#ifdef __linux__
+		if (enable_agent_ipc && setenv("BPFTIME_ENABLE_AGENT_IPC", "1", 0) != 0)
+			_exit(1);
+#endif
 		std::string ld_preload_str("LD_PRELOAD=");
 		std::string agent_so_str("AGENT_SO=");
 		ld_preload_str += ld_preload;
@@ -815,6 +821,10 @@ extract_path_and_args(const argparse::ArgumentParser &parser,
 				env_args.emplace_back(
 					"BPFTIME_ALLOW_EXTERNAL_MAPS=true");
 			}
+			if (parser.get<bool>("--fuzzy-backtracer")) {
+				env_args.emplace_back(
+					"BPFTIME_FRIDA_FUZZY_BACKTRACER=true");
+			}
 			if (parser.is_used("--memory-size")) {
 				env_args.emplace_back(
 					"BPFTIME_SHM_MEMORY_MB=" +
@@ -844,6 +854,9 @@ add_common_runtime_env_cli_options(argparse::ArgumentParser &command)
 	command.add_argument("--allow-external-maps")
 		.help("Same as BPFTIME_ALLOW_EXTERNAL_MAPS, allow loading unsupported external maps with the bpftime syscall-server library.")
 		.flag();
+	command.add_argument("--fuzzy-backtracer")
+		.help("Use Frida's fuzzy backtracer for user stack collection; accurate unwinding remains the default.")
+		.flag();
 	command.add_argument("--memory-size")
 		.help("Same as BPFTIME_SHM_MEMORY_MB, set the shared memory size for bpftime maps in MB.")
 		.nargs(1)
@@ -868,9 +881,14 @@ static void signal_handler(int sig)
 
 int main(int argc, const char **argv)
 {
+	// Resolve the log destination before anything else logs: until this
+	// runs, SPDLOG_* goes to spdlog's default logger, which writes to
+	// stdout regardless of BPFTIME_LOG_OUTPUT.
+	const char *logger_target = getenv("BPFTIME_LOG_OUTPUT");
+	bpftime::bpftime_set_logger(logger_target == nullptr ?
+					    DEFAULT_LOGGER_OUTPUT_PATH :
+					    logger_target);
 	spdlog::cfg::load_env_levels();
-	const auto runtime_config = bpftime::construct_runtime_config_from_env();
-	(void)runtime_config;
 	signal(SIGINT, signal_handler);
 	signal(SIGTSTP, signal_handler);
 	argparse::ArgumentParser program(argv[0]);
@@ -891,10 +909,6 @@ int main(int argc, const char **argv)
 			.required()
 			.nargs(1);
 	}
-
-	program.add_argument("-d", "--dry-run")
-		.help("Run without commiting any modifications")
-		.flag();
 
 	argparse::ArgumentParser load_command("load");
 
@@ -950,10 +964,6 @@ int main(int argc, const char **argv)
 	trace_command.add_argument("--pidof")
 		.help("Resolve PID by /proc/<pid>/comm name (Linux only); must match exactly and be unique")
 		.default_value(std::string());
-	trace_command.add_argument("--auto-refresh-ms")
-		.help("Agent-side auto refresh interval (ms) for discovering late-loaded links")
-		.default_value(500)
-		.scan<'i', int>();
 	trace_command.add_argument("COMMAND")
 		.nargs(argparse::nargs_pattern::at_least_one)
 		.remaining()
@@ -1004,12 +1014,12 @@ int main(int argc, const char **argv)
 			// transformer_path += ":/usr/lib/libclient.so";
 			return run_command(executable_path.c_str(), extra_args,
 					   transformer_path.c_str(),
-					   agent_path.c_str(), env_args);
+					   agent_path.c_str(), env_args, true);
 		} else {
 			// agent_path += ":/usr/lib/libclient.so";
 			return run_command(executable_path.c_str(), extra_args,
 					   agent_path.c_str(), nullptr,
-					   env_args);
+					   env_args, true);
 		}
 	} else if (program.is_subcommand_used("attach")) {
 		auto agent_path = resolve_library_path_or_exit(
@@ -1082,7 +1092,6 @@ int main(int argc, const char **argv)
 		}
 #endif
 
-		auto refresh_ms = trace_command.get<int>("auto-refresh-ms");
 		auto late_ptx_dir = prepare_cuda_late_ptx_dir(pid, drop_to);
 		struct late_ptx_dir_guard {
 			std::optional<std::filesystem::path> dir;
@@ -1138,12 +1147,7 @@ int main(int argc, const char **argv)
 		(void)sigaction(SIGTERM, &sa, &old_term);
 #endif
 
-		std::string agent_arg = "loader_pid=" + std::to_string(child_pid);
-		agent_arg += ";force_reinit=1";
-		if (refresh_ms > 0) {
-			agent_arg +=
-				";auto_refresh_ms=" + std::to_string(refresh_ms);
-		}
+		std::string agent_arg = "force_reinit=1";
 		if (late_ptx_dir) {
 			agent_arg += ";cuda_late_ptx_dir=" + late_ptx_dir->string();
 		} else {
@@ -1193,19 +1197,11 @@ int main(int argc, const char **argv)
 									&detach_resp) &&
 								ipc_response_is_ok(
 									detach_resp);
-							if (!detached &&
-							    !detach_resp
-								     .empty()) {
+							if (!detached) {
+								rc = 1;
 								spdlog::warn(
 									"trace: agent IPC detach failed: {}",
 									detach_resp);
-							}
-							if (!detached) {
-								(void)kill(
-									pid,
-									SIGUSR1);
-								usleep(200 *
-								       1000);
 							}
 						}
 						(void)kill(child_pid, SIGINT);
@@ -1224,16 +1220,11 @@ int main(int argc, const char **argv)
 			bool detached =
 				try_send_agent_ipc(pid, "detach", &detach_resp) &&
 				ipc_response_is_ok(detach_resp);
-			if (!detached && !detach_resp.empty()) {
+			if (!detached) {
+				rc = 1;
 				spdlog::warn(
 					"trace: agent IPC detach failed: {}",
 					detach_resp);
-			}
-			if (!detached) {
-				(void)kill(pid, SIGUSR1);
-				// Give detach a moment to run before we drop the
-				// loader.
-				usleep(200 * 1000);
 			}
 		}
 		(void)sigaction(SIGINT, &old_int, nullptr);
@@ -1252,24 +1243,29 @@ int main(int argc, const char **argv)
 				"Shared memory not created, seems syscall server is not running");
 			return 0;
 		}
-		bool sent = false;
-		bpftime::shm_holder.global_shared_memory
-			.iterate_all_pids_in_alive_agent_set([&](int pid) {
-#if __linux__
-				(void)try_send_agent_ipc(pid, "detach");
-#endif
-				SPDLOG_INFO("Delivering SIGUSR1 to {}", pid);
-				int err = kill(pid, SIGUSR1);
-				if (err < 0) {
-					SPDLOG_WARN(
-						"Unable to signal process {}: {}",
-						pid, strerror(errno));
-				}
-				sent = true;
-			});
-		if (!sent) {
-			SPDLOG_INFO("No process was signaled.");
+#ifdef __linux__
+		std::vector<int> pids;
+		if (!bpftime::shm_holder.global_shared_memory
+			     .iterate_all_pids_in_alive_agent_set(
+				     [&](int pid) { pids.push_back(pid); }))
+			return 1;
+		bool failed = false;
+		for (int pid : pids) {
+			std::string response;
+			if (!try_send_agent_ipc(pid, "detach", &response) ||
+			    !ipc_response_is_ok(response)) {
+				SPDLOG_WARN("Unable to detach process {} via IPC: {}",
+					    pid, response);
+				failed = true;
+			}
 		}
+		if (pids.empty())
+			SPDLOG_INFO("No attached process found.");
+		return failed ? 1 : 0;
+#else
+		SPDLOG_WARN("Agent IPC detach is supported on Linux only.");
+		return 1;
+#endif
 	}
 	return 0;
 }
