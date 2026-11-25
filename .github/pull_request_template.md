@@ -18,4 +18,5 @@ strictly necessary. -->
 - [ ] No over-engineering (no speculative abstractions, unnecessary config knobs, or unrelated refactors)
 - [ ] No over-testing (tests are concise and target the real regression without boilerplate bloat)
 - [ ] Diff is minimal and no new shared library (.so) was added unless strictly necessary
+- [ ] `LD_PRELOAD` / hot-path safety (zero libc heap and dynamic SHM allocation, no non-robust cross-process locks, zero-alloc constructor early-exit, fail-open)
 - [ ] Relevant builds and tests pass

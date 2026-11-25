@@ -223,6 +223,51 @@ the tracking entry and the regression coverage in the same pull request.
    a victim segfault is a hard failure, never a retried flake
    (issue #743).
 
+## `LD_PRELOAD` Production Safety Redlines
+
+The agent is injected into arbitrary host processes, including short-lived
+child utilities (`sh`, `sed`, `grep`, `awk`, `date`, `gcc`, `nvcc`) that
+inherit `LD_PRELOAD`. These redlines extend the host-process safety
+invariants above with hot-path and injection constraints; a change that
+weakens one must update its tracking entry and regression coverage in the
+same pull request.
+
+1. **Zero-allocation early process admission.** Agent constructors must
+   support a fast, zero-allocation early exit before touching shared memory,
+   the logger, or Frida, so inherited injection never slows or breaks
+   unrelated child utilities.
+2. **Hot-path "Three Zeros".** In uprobe/syscall callbacks, BPF helpers,
+   ringbuf/map operations, and constructor early-exit/detach paths: (a) zero
+   libc heap allocations (`malloc`/`new`/STL growth/logging allocations);
+   (b) zero dynamic Boost `segment_manager` shared-memory allocations —
+   preallocate at setup; (c) zero non-robust cross-process locks. Prefer
+   preallocated fixed-size lock-free atomics (e.g. fixed atomic PID arrays);
+   where mutual exclusion is unavoidable on Linux, use `pthread_mutex_t` with
+   `PTHREAD_PROCESS_SHARED | PTHREAD_MUTEX_ROBUST`, and forbid bare
+   `pthread_spinlock_t` or non-robust
+   `boost::interprocess::interprocess_mutex`.
+3. **No hijacking host global resources in constructors.** Never clobber
+   host signal handlers (e.g. `SIGUSR1`); do not spawn unsolicited background
+   threads under `LD_PRELOAD`; preserve `errno`; avoid reentrant `malloc`.
+4. **`fork()`/`exec()` safety.** All internal fds (shared memory, eventfd,
+   sockets) set `O_CLOEXEC`/`SOCK_CLOEXEC`; process-local locks
+   (`ctx_mutex`, `detach_mutex`, logger) must not deadlock the child after a
+   multi-threaded `fork()`.
+5. **Static TLS reentrancy guard.** Uprobe/hook entrypoints use static
+   (`initial-exec`) TLS recursion guards — no dynamic TLS allocation — to
+   block hook->libc->hook recursion and signal-handler reentrancy.
+6. **Strict glibc baseline and hidden visibility.** Keep injected `.so`
+   binaries on a low glibc baseline (e.g. 2.17) and hide internal
+   C++/Boost/spdlog/Frida symbols (`-fvisibility=hidden`) so they never
+   collide with host CUDA/PyTorch/LLVM symbols.
+7. **Silent stdout/stderr by default.** Never emit `[info]` logs to the
+   target process stdout/stderr by default; it breaks `$(cmd)`
+   command-substitution pipelines.
+8. **Fail open, zero blocking.** On unavailable shared memory, a full
+   ringbuf, or an `ENOTRECOVERABLE` mutex, degrade cleanly and skip tracing:
+   never block indefinitely, never `abort()`, never alter the host exit
+   status.
+
 ## Trap and RISC-V backend constraints
 
 Trap callbacks execute inside SIGTRAP. Runtime-managed BPF links must reject
