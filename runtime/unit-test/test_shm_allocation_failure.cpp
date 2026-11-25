@@ -630,4 +630,82 @@ TEST_CASE("Agent preload never blocks on missing or locked shared memory",
 	REQUIRE(WEXITSTATUS(status) == 100);
 	REQUIRE(locked_ms < 500);
 }
+
+TEST_CASE("Client SHM_OPEN_ONLY and agent preload bypass wedged Boost segment_manager mutex",
+	  "[allocation][agent][shm]")
+{
+	const std::string shm_name =
+		"bpftime-root-trailer-test-" + std::to_string(getpid());
+	env_var_guard name_guard("BPFTIME_GLOBAL_SHM_NAME");
+	env_var_guard mb_guard("BPFTIME_SHM_MEMORY_MB");
+	REQUIRE(setenv("BPFTIME_GLOBAL_SHM_NAME", shm_name.c_str(), 1) == 0);
+	REQUIRE(setenv("BPFTIME_SHM_MEMORY_MB", "4", 1) == 0);
+
+	parent_shm_guard memory;
+	bpftime_destroy_global_shm();
+	bpftime_initialize_global_shm(
+		bpftime::shm_open_type::SHM_REMOVE_AND_CREATE);
+	memory.initialized = true;
+	const uint64_t expected_epoch =
+		bpftime::shm_holder.global_shared_memory.begin_new_session();
+	REQUIRE(expected_epoch > 0);
+
+	// Fork a child that permanently wedges Boost's non-robust
+	// segment_manager mutex via SIGKILL inside atomic_func().
+	int ready_pipe[2]{ -1, -1 };
+	REQUIRE(pipe(ready_pipe) == 0);
+	pid_t killer = fork();
+	REQUIRE(killer >= 0);
+	if (killer == 0) {
+		close(ready_pipe[0]);
+		boost::interprocess::managed_shared_memory raw_seg(
+			boost::interprocess::open_only, shm_name.c_str());
+		auto wedge = [&]() {
+			char ok = 1;
+			(void)write(ready_pipe[1], &ok, 1);
+			close(ready_pipe[1]);
+			raise(SIGKILL);
+		};
+		raw_seg.get_segment_manager()->atomic_func(wedge);
+		_exit(99);
+	}
+	close(ready_pipe[1]);
+	char ok = 0;
+	REQUIRE(read(ready_pipe[0], &ok, 1) == 1);
+	close(ready_pipe[0]);
+	int killer_status = 0;
+	REQUIRE(waitpid(killer, &killer_status, 0) == killer);
+	REQUIRE(WIFSIGNALED(killer_status));
+
+	// Both SHM_OPEN_ONLY and LD_PRELOAD agent attach must succeed without
+	// touching segment.find() / Boost's wedged segment_manager lock.
+	pid_t client = fork();
+	REQUIRE(client >= 0);
+	if (client == 0) {
+		alarm(5);
+		bpftime::bpftime_shm attached(
+			shm_name.c_str(), bpftime::shm_open_type::SHM_OPEN_ONLY);
+		if (attached.get_manager() == nullptr ||
+		    attached.read_stable_epoch_seq() != expected_epoch ||
+		    !attached.add_pid_into_alive_agent_set(getpid()))
+			_exit(20);
+		attached.remove_pid_from_alive_agent_set(getpid());
+		unsetenv("BPFTIME_LOG_OUTPUT");
+		unsetenv("SPDLOG_LEVEL");
+		setenv("HOME", "/proc/bpftime-unwritable-home", 1);
+		setenv("BPFTIME_GLOBAL_SHM_NAME", shm_name.c_str(), 1);
+		setenv("LD_PRELOAD", BPFTIME_AGENT_LIBRARY, 1);
+		execl(BPFTIME_SHM_ALLOCATION_TEST_HELPER,
+		      BPFTIME_SHM_ALLOCATION_TEST_HELPER, "check-sigusr1",
+		      nullptr);
+		_exit(127);
+	}
+	int client_status = 0;
+	REQUIRE(waitpid(client, &client_status, 0) == client);
+	REQUIRE(WIFEXITED(client_status));
+	REQUIRE(WEXITSTATUS(client_status) == 100);
+
+	memory.cleanup();
+	boost::interprocess::shared_memory_object::remove(shm_name.c_str());
+}
 #endif
