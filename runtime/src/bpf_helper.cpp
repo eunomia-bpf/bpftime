@@ -1331,7 +1331,10 @@ int64_t bpftime_get_stackid(uint64_t ctx_raw, uint64_t map_raw, uint64_t flags,
 	auto &map_handler = std::get<bpf_map_handler>(
 		shm_holder.global_shared_memory.get_handler(real_map_fd));
 
-	bpftime_lock_guard guard(map_handler.get_raw_spin_lock());
+	robust_shm_lock_guard guard(map_handler.get_map_lock(),
+				    "stack_trace_map");
+	if (!guard.owns_lock())
+		return -EBUSY;
 	auto impl = *shm_holder.global_shared_memory.try_get_stack_trace_impl(
 		real_map_fd);
 	int ret = impl->fill_stack_trace(*result, flags & BPF_F_REUSE_STACKID,

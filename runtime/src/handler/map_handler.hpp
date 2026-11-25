@@ -10,6 +10,7 @@
 #include "bpf_map/userspace/ringbuf_map.hpp"
 #include "bpf_map/userspace/stack_trace_map.hpp"
 #include "bpftime_shm.hpp"
+#include "robust_shm_mutex.hpp"
 #include "spdlog/spdlog.h"
 #include <atomic>
 #include <boost/interprocess/managed_shared_memory.hpp>
@@ -85,7 +86,6 @@ class bpf_map_handler {
 
 	{
 		SPDLOG_DEBUG("Create map with type {}", type);
-		pthread_spin_init(&map_lock, 0);
 		this->id = id;
 		this->name = name;
 	}
@@ -98,7 +98,6 @@ class bpf_map_handler {
 		  max_entries(other.max_entries), flags(other.flags),
 		  key_size(other.key_size), value_size(other.value_size)
 	{
-		pthread_spin_init(&map_lock, 0);
 		other.map_impl_ptr = nullptr;
 		other.map_refcnt_ptr = nullptr;
 	}
@@ -111,7 +110,6 @@ class bpf_map_handler {
 		type = other.type;
 		name = std::move(other.name);
 		id = other.id;
-		pthread_spin_init(&map_lock, 0);
 		map_impl_ptr = other.map_impl_ptr;
 		map_refcnt_ptr = other.map_refcnt_ptr;
 		max_entries = other.max_entries;
@@ -228,7 +226,7 @@ class bpf_map_handler {
 
 	std::optional<stack_trace_map_impl *>
 	try_get_stack_trace_map_impl() const;
-	pthread_spinlock_t &get_raw_spin_lock() const
+	robust_shm_mutex &get_map_lock() const
 	{
 		return map_lock;
 	}
@@ -273,7 +271,7 @@ class bpf_map_handler {
 #endif
     private:
 	int id = 0;
-	mutable pthread_spinlock_t map_lock;
+	mutable robust_shm_mutex map_lock;
 	// The underlying data structure of the map
 	mutable general_map_impl_ptr map_impl_ptr;
 	mutable map_refcount_ptr map_refcnt_ptr = nullptr;
