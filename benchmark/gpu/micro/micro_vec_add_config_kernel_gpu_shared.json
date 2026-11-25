@@ -6,7 +6,6 @@
     "LD_PRELOAD": "build/runtime/syscall-server/libbpftime-syscall-server.so",
     "BPFTIME_SHM_MEMORY_MB": "1024",
     "BPFTIME_RUN_WITH_KERNEL": "true",
-    "BPFTIME_BYPASS_KPROPBE": "true",
     "BPFTIME_NOT_LOAD_PATTERN": "cuda.*"
   },
   "agent_env": {

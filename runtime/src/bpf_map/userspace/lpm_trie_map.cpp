@@ -7,6 +7,7 @@
 #include <boost/interprocess/detail/utilities.hpp>
 #include <spdlog/spdlog.h>
 #include <cerrno>
+#include <cstddef>
 #include <cstring>
 #include <stdexcept>
 #include <algorithm>
@@ -251,16 +252,19 @@ void *lpm_trie_map_impl::elem_lookup(const void *key)
 		return nullptr;
 	}
 
-	// Copy out to thread-local buffer to avoid concurrent invalidation
-	static thread_local std::vector<uint8_t> tl_value;
-	tl_value.resize(_value_size);
-	const uint8_t *src = get_node_value_data(found);
-	if (!src) {
+	// Return the value where it lives in the node. A copy-out buffer aliases
+	// across lookups: one buffer per thread means a second lookup by the
+	// same program overwrites the first result, which the kernel never
+	// does. A per-thread buffer also had to stay clear of the allocator,
+	// because this lookup is reachable from a malloc callback while libc
+	// holds an arena lock. Pointing into the node satisfies both: distinct
+	// storage per key, and no allocation on this path.
+	uint8_t *value_data = get_node_value_data(found);
+	if (!value_data) {
 		errno = ENOENT;
 		return nullptr;
 	}
-	std::memcpy(tl_value.data(), src, _value_size);
-	return tl_value.data();
+	return value_data;
 }
 
 long lpm_trie_map_impl::elem_update(const void *key, const void *value,

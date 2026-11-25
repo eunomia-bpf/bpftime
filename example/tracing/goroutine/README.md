@@ -45,7 +45,7 @@ Reference:
 - <https://groups.google.com/g/golang-nuts/c/H-NTwhQVp-8>
 
 ## LD_PRELOAD and attach
-Go has its strange initializaion of ELF executables, it won't invoke __libc_start_main in glibc so injection through LD_PRELOAD won't work. But remote attach `bpftime attach` works.
+Go has its own ELF executable initialization and does not invoke glibc `__libc_start_main`, so preload logic that only interposes that symbol never runs in a Go process. The rootless syscall-server covers this case by arming its seccomp USER_NOTIF filter from a dynamic-loader constructor as well (when `BPFTIME_GO_SECCOMP=1`), so `LD_PRELOAD=libbpftime-syscall-server.so` works for Go binaries. Uprobe injection through `LD_PRELOAD=libbpftime-agent.so` still does not; remote attach `bpftime attach` works.
 
 Console1:
 ```console

@@ -21,9 +21,10 @@
 #include <cerrno>
 #include <exception>
 #include <limits>
-#include <unordered_map>
+#include <type_traits>
 #include <variant>
 #if __linux__
+#include <pthread.h>
 #include <sys/syscall.h>
 #elif __APPLE__
 #include <pthread.h>
@@ -94,10 +95,56 @@ struct spin_lock_guard {
 	spin_lock_guard &operator=(const spin_lock_guard &) = delete;
 };
 
+#if __linux__
+// gettid() has not been cached by glibc since 2.25, so every software perf
+// output paid a real gettid syscall before the shard cache was even looked
+// up. Cache it in thread-local storage: a cache hit is then a single TLS
+// load, never a syscall, on the hot path. The value is a trivial int64_t, so
+// no destructor is registered (the output path must stay allocation-free,
+// see #726).
+//
+// The storage model is initial-exec, not default global-dynamic: this file is
+// part of the runtime target, which is compiled with
+// `-ftls-model=initial-exec` (runtime/CMakeLists.txt), so the compiler emits
+// a direct %fs-relative access with no __tls_get_addr call. That removes the
+// dynamic-linker lookup from the hot path, at the cost of 8 bytes of static
+// TLS per thread counted against the same surplus budget #726 shrank its shard
+// cache for. Keep this variable small for that reason.
+//
+// Boundaries:
+//  - An initial-exec access is async-signal-safe, but software perf output
+//    (helper 25) is still not in the trap backend's audited helper set
+//    (helper_is_async_signal_safe in bpf_helper.cpp), so it never runs in
+//    SIGTRAP context; admitting it there would require a new audit.
+//  - pthread_atfork covers fork/pthread_create/posix_spawn (the last execs
+//    immediately). A raw clone()/vfork() that bypasses pthread_atfork is not
+//    a supported runtime entry; such a child must not call this helper.
+//  - The -1 sentinel cannot collide with a real tid, which is always
+//    positive.
+
+thread_local int64_t bpftime_cached_tid = -1;
+
+void bpftime_refresh_cached_tid_in_child()
+{
+	// Only the forking thread survives in the child, but its TLS copy still
+	// carries the parent's tid; force the next call to resolve the child's.
+	bpftime_cached_tid = -1;
+}
+
+const int bpftime_tid_atfork_status =
+	pthread_atfork(nullptr, nullptr, bpftime_refresh_cached_tid_in_child);
+#endif
+
 int64_t current_thread_id()
 {
 #if __linux__
-	return (int64_t)syscall(SYS_gettid);
+	// If the fork handler could not be registered, a forked child would keep
+	// the parent's tid, so resolve every call directly.
+	if (bpftime_tid_atfork_status != 0)
+		return (int64_t)syscall(SYS_gettid);
+	if (bpftime_cached_tid == -1)
+		bpftime_cached_tid = (int64_t)syscall(SYS_gettid);
+	return bpftime_cached_tid;
 #elif __APPLE__
 	uint64_t tid = 0;
 	pthread_threadid_np(nullptr, &tid);
@@ -134,16 +181,70 @@ struct software_perf_event_shard_cache_entry {
 	uint64_t buffer_generation;
 	uint64_t shard_generation;
 	software_perf_event_shard *shard;
+	const software_perf_event_data *owner;
 };
 
-constexpr size_t max_software_perf_event_shard_cache_entries = 64;
+// Six entries keep the per-thread initial-exec footprint at 240 bytes. A
+// larger table exhausted the static TLS surplus when this runtime is
+// dlopen()ed after startup: the Nginx attach example failed with
+// "cannot allocate memory in static TLS block". The cache stays
+// allocation-free; exceeding the capacity reuses the bounded eviction path.
+constexpr size_t max_software_perf_event_shard_cache_entries = 6;
+static_assert(
+	sizeof(software_perf_event_shard_cache_entry) *
+			max_software_perf_event_shard_cache_entries <=
+		256,
+	"initial-exec shard cache must fit the late-dlopen static TLS budget");
 constexpr uint64_t software_perf_event_reclaim_drain_interval = 64;
 constexpr size_t software_perf_event_reclaim_shard_threshold = 64;
 
-thread_local std::unordered_map<const software_perf_event_data *,
-				software_perf_event_shard_cache_entry>
-	software_perf_event_shard_cache;
+// Output can be called while libc holds a malloc arena lock. Keep this cache
+// trivial: a TLS container's destructor registration itself calls calloc.
+static_assert(
+	std::is_trivially_destructible_v<
+		software_perf_event_shard_cache_entry>);
+thread_local software_perf_event_shard_cache_entry
+	software_perf_event_shard_cache[
+		max_software_perf_event_shard_cache_entries]
+#if defined(__linux__)
+	__attribute__((tls_model("initial-exec")))
+#endif
+	= {};
+thread_local size_t next_victim_slot
+#if defined(__linux__)
+	__attribute__((tls_model("initial-exec")))
+#endif
+	= 0;
+
+void cache_software_perf_event_shard(
+	software_perf_event_shard_cache_entry value)
+{
+	for (auto &entry : software_perf_event_shard_cache) {
+		if (entry.owner == nullptr || entry.owner == value.owner) {
+			entry = value;
+			return;
+		}
+	}
+	// Every slot holds a different owner. Replace one slot round-robin rather
+	// than clearing the table: with more live events than slots, clearing all
+	// of them evicts every entry on each miss and sends the whole rotation back
+	// to the shard lock.
+	software_perf_event_shard_cache[next_victim_slot++ %
+					 max_software_perf_event_shard_cache_entries] =
+		value;
+}
 } // namespace
+
+#if defined(BPFTIME_UNIT_TESTING)
+size_t cached_software_perf_event_shard_count()
+{
+	size_t cached = 0;
+	for (const auto &entry : software_perf_event_shard_cache)
+		if (entry.owner != nullptr)
+			++cached;
+	return cached;
+}
+#endif
 
 bpf_perf_event_handler::bpf_perf_event_handler(
 	int type, const char *attach_arg,
@@ -497,20 +598,21 @@ software_perf_event_shard &software_perf_event_data::get_current_thread_shard()
 	const int64_t tid = current_thread_id();
 	uint64_t current_buffer_generation =
 		READ_ONCE_U64(producer_buffer_generation);
-	if (auto itr = software_perf_event_shard_cache.find(this);
-	    itr != software_perf_event_shard_cache.end()) {
-		auto &entry = itr->second;
+	for (auto &entry : software_perf_event_shard_cache) {
+		if (entry.owner != this)
+			continue;
 		if (entry.event_generation != event_generation ||
 		    entry.buffer_generation != current_buffer_generation) {
-			software_perf_event_shard_cache.erase(itr);
+			entry.owner = nullptr;
 		} else if (entry.shard->pid == pid && entry.shard->tid == tid &&
 			   entry.shard->generation == entry.shard_generation &&
 			   entry.shard->buffer_generation ==
 				   current_buffer_generation) {
 			return *entry.shard;
 		} else {
-			software_perf_event_shard_cache.erase(itr);
+			entry.owner = nullptr;
 		}
+		break;
 	}
 
 	spin_lock_guard guard(shard_lock);
@@ -522,14 +624,10 @@ software_perf_event_shard &software_perf_event_data::get_current_thread_shard()
 	for (auto &shard : producer_shards) {
 		if (shard.pid == pid && shard.tid == tid &&
 		    shard.buffer_generation == current_buffer_generation) {
-			if (software_perf_event_shard_cache.size() >=
-			    max_software_perf_event_shard_cache_entries) {
-				software_perf_event_shard_cache.clear();
-			}
-			software_perf_event_shard_cache[this] = {
+			cache_software_perf_event_shard({
 				event_generation, current_buffer_generation,
-				shard.generation, &shard
-			};
+				shard.generation, &shard, this
+			});
 			return shard;
 		}
 	}
@@ -540,13 +638,9 @@ software_perf_event_shard &software_perf_event_data::get_current_thread_shard()
 				     manager,
 				     consumer_buffer.mmap_buffer.size());
 	auto &shard = producer_shards.back();
-	if (software_perf_event_shard_cache.size() >=
-	    max_software_perf_event_shard_cache_entries) {
-		software_perf_event_shard_cache.clear();
-	}
-	software_perf_event_shard_cache[this] = { event_generation,
+	cache_software_perf_event_shard({ event_generation,
 						  current_buffer_generation,
-						  shard.generation, &shard };
+						  shard.generation, &shard, this });
 	return shard;
 }
 

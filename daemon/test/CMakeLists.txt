@@ -14,7 +14,6 @@ endif()
 find_package(Boost REQUIRED)
 
 set(TEST_SOURCES
-    test_daemon.cpp
     test_daemon_driver.cpp
     test_daemon_fd.cpp
 )
@@ -45,16 +44,3 @@ target_include_directories(bpftime_daemon_tests
     ${CMAKE_CURRENT_BINARY_DIR}/..
 )
 add_test(NAME bpftime_daemon_tests COMMAND bpftime_daemon_tests)
-
-# These are necessary ebpf program required by the test
-# set(used_ebpf_programs
-# uprobe
-# # replace # Not used now
-# filter)
-foreach(current ${used_ebpf_programs})
-    set(curr_target_name bpftime_test_ebpf_prog_${current})
-    add_ebpf_program_target(${curr_target_name} ${CMAKE_CURRENT_SOURCE_DIR}/assets/${current}.bpf.c ${CMAKE_CURRENT_BINARY_DIR}/${current}.bpf.o)
-    add_dependencies(bpftime_runtime_tests ${curr_target_name})
-    string(TOUPPER ${current} current_name_upper)
-    target_compile_definitions(bpftime_runtime_tests PRIVATE EBPF_PROGRAM_PATH_${current_name_upper}=${CMAKE_CURRENT_BINARY_DIR}/${current}.bpf.o)
-endforeach()

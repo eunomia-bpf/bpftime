@@ -65,19 +65,6 @@ std::string wrap_ptx_with_trampoline_for_sm(std::string input,
 	return rewrite_ptx_target(get_default_trampoline_ptx(), sm_arch) + input;
 }
 
-std::string patch_main_from_func_to_entry(std::string result)
-{
-	const std::string entry_func = ".visible .func bpf_main";
-
-	auto idx = result.find(entry_func);
-	SPDLOG_INFO("entry_func ({}) index {}", entry_func, idx);
-
-	if (idx != result.npos) {
-		result = result.replace(idx, entry_func.size(),
-					".visible .entry bpf_main");
-	}
-	return result;
-}
 std::string sha256(const void *data, size_t length)
 {
 	unsigned char hash[SHA256_DIGEST_LENGTH];

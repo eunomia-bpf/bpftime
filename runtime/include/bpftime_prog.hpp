@@ -8,15 +8,29 @@
 
 #include "bpftime_config.hpp"
 #include <ebpf-vm.h>
+#include <cstddef>
 #include <optional>
 #include <vector>
 #include <string>
 #include <map>
+#include <set>
 namespace bpftime
 {
 
 extern thread_local std::optional<uint64_t> current_thread_bpf_cookie;
 extern thread_local std::optional<uint64_t> current_thread_tail_call_ret;
+// Pointer and size of the context memory passed to the innermost
+// bpftime_prog::bpftime_prog_exec call running on this thread. Helpers
+// (e.g. tail calls) use it to distinguish the host-owned entry context from
+// a replacement context a program builds on its own BPF stack. Unset while
+// no program is executing; nested exec calls restore the outer value on
+// return.
+struct exec_context_info {
+	const void *ptr;
+	size_t size;
+};
+extern thread_local std::optional<exec_context_info>
+	current_thread_exec_ctx;
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 std::optional<std::vector<char>> compile_ptx_to_elf(const std::string &ptx_code,
 						    const char *cpu_target);
@@ -98,6 +112,10 @@ class bpftime_prog {
 	bool signal_ready = false;
 	bool loaded_from_aot = false;
 	std::map<unsigned, bool> signal_safe_helpers;
+	// Indices of all helpers registered into the VM (via
+	// bpftime_prog_register_raw_helper). Used to reject programs calling
+	// helpers that were never registered instead of failing at exec time.
+	std::set<unsigned> registered_helper_ids;
 
 	// used in jit
 	ebpf_jit_fn fn = nullptr;

@@ -11,9 +11,6 @@
 #include <handler/handler_manager.hpp>
 #include <variant>
 #include <algorithm>
-#if __APPLE__
-#include "spinlock_wrapper.hpp"
-#endif
 namespace bpftime
 {
 handler_manager::handler_manager(managed_shared_memory &mem,
@@ -81,7 +78,17 @@ int handler_manager::set_handler(int fd, handler_variant &&handler,
 	if (std::holds_alternative<bpf_map_handler>(handlers[fd])) {
 		auto &map_handler = std::get<bpf_map_handler>(handlers[fd]);
 		if (!map_handler.has_map_impl()) {
-			map_handler.map_init(memory);
+			int init_rc = map_handler.map_init(memory);
+			if (init_rc != 0) {
+				// map_init rejected the configuration (e.g. bad
+				// map-in-map value_size). Roll back the slot so the
+				// failed fd is not left as an empty handler that later
+				// lookups would dereference.
+				SPDLOG_ERROR("map_init failed for fd {}: {}", fd,
+					     init_rc);
+				clear_id_at(fd, memory);
+				return init_rc;
+			}
 		}
 	}
 	return fd;

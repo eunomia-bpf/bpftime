@@ -25,13 +25,18 @@ on:
       - "CMakeLists.txt"
       - ".gitmodules"
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
   test-ptxpass:
-    runs-on: [self-hosted, Linux, X64, gpu]
+    # GPU runners in eunomia-bpf carry self-hosted, linux, x64, gpu, nvidia and
+    # a label naming the card model (rtx5090 on the lab runners).
+    runs-on: [self-hosted, linux, x64, gpu]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,13 +52,22 @@ jobs:
         run: |
           rm -rf third_party/ubpf/external/bpf_conformance
           git submodule update --init --recursive third_party/ubpf
+      - name: Enable ccache
+        uses: ./.github/actions/ccache
+        with:
+          variant: gpu
 
       - name: Check and install required tools
         run: |
+          # GPU runners are shared hosts running several jobs per machine:
+          # wait out a concurrent dpkg run instead of failing on the lock,
+          # keep debconf non-interactive, and retry transient fetch errors.
+          export DEBIAN_FRONTEND=noninteractive
+          APT_OPTS=(-o DPkg::Lock::Timeout=120 -o Acquire::Retries=3)
           echo "Checking installed tools..."
           
-          sudo apt-get update
-          sudo apt-get install -y build-essential llvm-dev llvm-18-dev cmake libboost-all-dev libzstd-dev pkg-config ninja-build
+          sudo -E apt-get "${APT_OPTS[@]}" update
+          sudo -E apt-get "${APT_OPTS[@]}" install -y build-essential llvm-dev llvm-18-dev cmake libboost-all-dev libzstd-dev pkg-config ninja-build
 
           # Check CUDA
           nvcc --version || echo "nvcc not found (CUDA compiler)"
@@ -66,7 +80,7 @@ jobs:
               -DBPFTIME_LLVM_JIT=YES \
               -DBPFTIME_ENABLE_UNIT_TESTING=YES \
               -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
-              -DBPFTIME_CUDA_ROOT="/usr/local/cuda-12.6" \
+              -DBPFTIME_CUDA_ROOT="${BPFTIME_CUDA_ROOT:-/usr/local/cuda}" \
               -DLLVM_DIR="/usr/lib/llvm-18/lib/cmake/llvm/" \
               -G Ninja
           

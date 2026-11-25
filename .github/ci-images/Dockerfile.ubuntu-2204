@@ -1,0 +1,38 @@
+# CI base image for bpftime's ubuntu-22.04 container jobs
+# (test-runtime, test-attach, test-examples, test-bpftrace, test-tools,
+# test-vm). Bakes in every apt package these workflows install at runtime
+# today, so a job only needs checkout + build.
+#
+# Built and pushed only by the manual workflow:
+#   .github/workflows/build-ci-images.yml
+# Target: ghcr.io/eunomia-bpf/ci-ubuntu-2204
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Keep image updates deterministic: pin the distro suite, then install.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        # VCS and basic tooling (openEuler installs git at runtime; keep
+        # parity so the same job steps work everywhere)
+        git ca-certificates sudo curl wget xz-utils file \
+        # Build toolchain used by CMake and the plain Makefile examples
+        build-essential gcc g++ cmake make ninja-build pkg-config \
+        clang llvm llvm-dev \
+        # bpftime link/runtime dependencies
+        libelf-dev zlib1g-dev libzstd-dev libssl-dev \
+        libboost-all-dev libc6-dev libasan8 \
+        # Coverage and debugging used by the test workflows
+        lcov gdb strace tree procps \
+        # bpftrace integration tests and kernel BTF/headers
+        bpftrace linux-headers-generic linux-tools-generic \
+        libtool binutils-dev libyaml-cpp-dev \
+        # GPG tooling the coverage setup historically installed
+        gnupg gnupg-agent pinentry-curses dirmngr \
+        # Python for the test driver scripts
+        python3 python3-pip python3-requests \
+        # Compiler cache consumed by .github/actions/ccache
+        ccache \
+    && rm -rf /var/lib/apt/lists/*
+# CCACHE_DIR is provided at job time by .github/actions/ccache/action.yml
+# (workspace-local, so the same image works on hosted and self-hosted runners).
+

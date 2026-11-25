@@ -77,3 +77,163 @@ TEST_CASE("Test tail calling from userspace to userspace")
 	// object instead of pointers into the unmapped tailcall segment.
 	bpftime_initialize_global_shm(bpftime::shm_open_type::SHM_NO_CREATE);
 }
+
+TEST_CASE("Test tail call bounds entry context copies but preserves replacement contexts")
+{
+	static const int WORD_TARGET_FD = 1003;
+	static const int ZERO_TARGET_FD = 1004;
+	static const int TAIL_TARGET_FD = 1005;
+	static const int ALIAS_ZERO_TARGET_FD = 1006;
+	shm_remove remover("BPFTIME_TAIL_CALL_CTX_BOUNDS_TEST_SHM");
+	bpftime_initialize_global_shm(
+		bpftime::shm_open_type::SHM_REMOVE_AND_CREATE);
+	REQUIRE(bpftime_maps_create(PROG_ARRAY_MAP_FD, "prog_array",
+				    bpftime::bpf_map_attr{
+					    .type = (int)bpftime::bpf_map_type::
+						    BPF_MAP_TYPE_PROG_ARRAY,
+					    .key_size = 4,
+					    .value_size = 4,
+					    .max_ents = 4 }) >= 0);
+	// r0 = *(u32 *)(r1 + 0); exit  -- first bytes must survive the copy
+	struct bpf_insn word_target_insn[] = {
+		BPF_LDX_MEM(BPF_W, 0, 1, 0), BPF_EXIT_INSN(),
+	};
+	// r0 = *(u32 *)(r1 + 8); exit  -- past a 4-byte caller ctx, must be 0
+	struct bpf_insn zero_target_insn[] = {
+		BPF_LDX_MEM(BPF_W, 0, 1, 8), BPF_EXIT_INSN(),
+	};
+	REQUIRE(bpftime_progs_create(WORD_TARGET_FD,
+			(const ebpf_inst *)word_target_insn, 2,
+			"tail_call_word_target",
+			(int)bpftime::bpf_prog_type::
+				BPF_PROG_TYPE_SOCKET_FILTER) >= 0);
+	REQUIRE(bpftime_progs_create(ZERO_TARGET_FD,
+			(const ebpf_inst *)zero_target_insn, 2,
+			"tail_call_zero_target",
+			(int)bpftime::bpf_prog_type::
+				BPF_PROG_TYPE_SOCKET_FILTER) >= 0);
+	// r0 = *(u32 *)(r1 + 60); exit -- last word of a 64-byte replacement ctx
+	struct bpf_insn tail_target_insn[] = {
+		BPF_LDX_MEM(BPF_W, 0, 1, 60), BPF_EXIT_INSN(),
+	};
+	struct bpf_insn caller_insn[] = {
+		BPF_LD_IMM64_RAW_FULL(2, 0, 0, 0, PROG_ARRAY_MAP_FD, 0),
+		BPF_MOV64_IMM(3, 0), BPF_EMIT_CALL(0x0c),
+		BPF_MOV64_IMM(0, 0xdead), BPF_EXIT_INSN(),
+	};
+	bpftime_prog prog((const ebpf_inst *)caller_insn,
+			  sizeof(caller_insn) / sizeof(caller_insn[0]),
+			  "tail_call_caller");
+	REQUIRE(bpftime_helper_group::get_kernel_utils_helper_group()
+			.add_helper_group_to_prog(&prog) == 0);
+	REQUIRE(prog.bpftime_prog_load(false) == 0);
+	REQUIRE(bpftime_progs_create(TAIL_TARGET_FD,
+			(const ebpf_inst *)tail_target_insn, 2,
+			"tail_call_tail_target",
+			(int)bpftime::bpf_prog_type::
+				BPF_PROG_TYPE_SOCKET_FILTER) >= 0);
+	// Caller that ignores the entry ctx and tail-calls with a 64-byte
+	// replacement context built on its own BPF stack (r1 = r10 - 0x40).
+	struct bpf_insn replacement_caller_insn[] = {
+		BPF_MOV64_IMM(6, 0x41424344),
+		BPF_STX_MEM(BPF_W, 10, 6, -0x40),
+		BPF_STX_MEM(BPF_W, 10, 6, -0x4),
+		BPF_MOV64_REG(1, 10),
+		BPF_ALU64_IMM(BPF_ADD, 1, -0x40),
+		BPF_LD_IMM64_RAW_FULL(2, 0, 0, 0, PROG_ARRAY_MAP_FD, 0),
+		BPF_MOV64_IMM(3, 0), BPF_EMIT_CALL(0x0c),
+		BPF_MOV64_IMM(0, 0xdead), BPF_EXIT_INSN(),
+	};
+	bpftime_prog replacement_prog(
+		(const ebpf_inst *)replacement_caller_insn,
+		sizeof(replacement_caller_insn) /
+			sizeof(replacement_caller_insn[0]),
+		"tail_call_replacement_caller");
+	REQUIRE(bpftime_helper_group::get_kernel_utils_helper_group()
+			.add_helper_group_to_prog(&replacement_prog) == 0);
+	REQUIRE(replacement_prog.bpftime_prog_load(false) == 0);
+	// r0 = *(u32 *)(r1 + 4); exit -- one word past a 4-byte alias copy, 0
+	struct bpf_insn alias_zero_target_insn[] = {
+		BPF_LDX_MEM(BPF_W, 0, 1, 4), BPF_EXIT_INSN(),
+	};
+	REQUIRE(bpftime_progs_create(ALIAS_ZERO_TARGET_FD,
+			(const ebpf_inst *)alias_zero_target_insn, 2,
+			"tail_call_alias_zero_target",
+			(int)bpftime::bpf_prog_type::
+				BPF_PROG_TYPE_SOCKET_FILTER) >= 0);
+	// Caller that tail-calls with an interior alias r1 = entry + 4.
+	struct bpf_insn alias_caller_insn[] = {
+		BPF_MOV64_REG(1, 1),
+		BPF_ALU64_IMM(BPF_ADD, 1, 4),
+		BPF_LD_IMM64_RAW_FULL(2, 0, 0, 0, PROG_ARRAY_MAP_FD, 0),
+		BPF_MOV64_IMM(3, 0), BPF_EMIT_CALL(0x0c),
+		BPF_MOV64_IMM(0, 0xdead), BPF_EXIT_INSN(),
+	};
+	bpftime_prog alias_prog((const ebpf_inst *)alias_caller_insn,
+				sizeof(alias_caller_insn) /
+					sizeof(alias_caller_insn[0]),
+				"tail_call_alias_caller");
+	REQUIRE(bpftime_helper_group::get_kernel_utils_helper_group()
+			.add_helper_group_to_prog(&alias_prog) == 0);
+	REQUIRE(alias_prog.bpftime_prog_load(false) == 0);
+
+	int key = 0;
+	int value = WORD_TARGET_FD;
+	REQUIRE(bpftime_map_update_elem(PROG_ARRAY_MAP_FD, &key, &value,
+					0) >= 0);
+	// Exact 4-byte heap block: ASan poisons every byte past the fourth, so
+	// the old unconditional 64-byte memcpy aborts here.
+	int *small_ctx = new int(0x2a);
+	uint64_t ret = 0;
+	REQUIRE(prog.bpftime_prog_exec(small_ctx, sizeof(int), &ret) >= 0);
+	REQUIRE(ret == 0x2a);
+	delete small_ctx;
+
+	// Repoint at the target reading beyond the caller ctx: the tail of the
+	// assembled 64-byte context must be zero-filled.
+	value = ZERO_TARGET_FD;
+	REQUIRE(bpftime_map_update_elem(PROG_ARRAY_MAP_FD, &key, &value,
+					0) >= 0);
+	int stack_ctx = 0x2a;
+	REQUIRE(prog.bpftime_prog_exec(&stack_ctx, sizeof(stack_ctx), &ret) >=
+		0);
+	REQUIRE(ret == 0);
+
+	// A program-built replacement context is not the host entry buffer,
+	// so none of its 64 bytes may be truncated to the 4-byte entry size.
+	value = TAIL_TARGET_FD;
+	REQUIRE(bpftime_map_update_elem(PROG_ARRAY_MAP_FD, &key, &value,
+					0) >= 0);
+	int entry_ctx = 0x2a;
+	REQUIRE(replacement_prog.bpftime_prog_exec(&entry_ctx,
+						    sizeof(entry_ctx),
+						    &ret) >= 0);
+	REQUIRE(ret == 0x41424344);
+	value = WORD_TARGET_FD;
+	REQUIRE(bpftime_map_update_elem(PROG_ARRAY_MAP_FD, &key, &value,
+					0) >= 0);
+	REQUIRE(replacement_prog.bpftime_prog_exec(&entry_ctx,
+						    sizeof(entry_ctx),
+						    &ret) >= 0);
+	REQUIRE(ret == 0x41424344);
+
+	// Interior alias r1 = entry + 4 is still host-owned memory: the copy
+	// is bounded to the remaining 4 bytes and the tail zero-filled. The
+	// exact 8-byte heap block makes any read past it an ASan error.
+	int *entry8 = new int[2]{ 0x11111111, 0x22222222 };
+	value = WORD_TARGET_FD;
+	REQUIRE(bpftime_map_update_elem(PROG_ARRAY_MAP_FD, &key, &value,
+					0) >= 0);
+	REQUIRE(alias_prog.bpftime_prog_exec(entry8, 2 * sizeof(int),
+					      &ret) >= 0);
+	REQUIRE(ret == 0x22222222);
+	value = ALIAS_ZERO_TARGET_FD;
+	REQUIRE(bpftime_map_update_elem(PROG_ARRAY_MAP_FD, &key, &value,
+					0) >= 0);
+	REQUIRE(alias_prog.bpftime_prog_exec(entry8, 2 * sizeof(int),
+					      &ret) >= 0);
+	REQUIRE(ret == 0);
+	delete[] entry8;
+	bpftime_destroy_global_shm();
+	bpftime_initialize_global_shm(bpftime::shm_open_type::SHM_NO_CREATE);
+}

@@ -22,18 +22,12 @@
 #include <boost/interprocess/smart_ptr/unique_ptr.hpp>
 #include <boost/interprocess/containers/string.hpp>
 #include <bpftime_shm.hpp>
-#include <boost/interprocess/sync/interprocess_sharable_mutex.hpp>
-#include <boost/interprocess/sync/sharable_lock.hpp>
-#include <boost/interprocess/sync/scoped_lock.hpp>
 #include <boost/interprocess/containers/set.hpp>
 #include <handler/link_handler.hpp>
 #include <handler/prog_handler.hpp>
 #include <handler/map_handler.hpp>
 #include <handler/perf_event_handler.hpp>
 
-#ifdef ENABLE_BPFTIME_VERIFIER
-#include <bpftime-verifier.hpp>
-#endif
 namespace bpftime
 {
 using managed_shared_memory = boost::interprocess::managed_shared_memory;
@@ -50,7 +44,6 @@ using boost::interprocess::vector;
 
 constexpr const char *DEFAULT_GLOBAL_SHM_NAME = "bpftime_maps_shm";
 constexpr const char *DEFAULT_GLOBAL_HANDLER_NAME = "bpftime_handler";
-constexpr const char *DEFAULT_SYSCALL_PID_SET_NAME = "bpftime_syscall_pid_set";
 constexpr const char *DEFAULT_AGENT_CONFIG_NAME = "bpftime_runtime_config";
 constexpr const char *DEFAULT_ALIVE_AGENT_PIDS_NAME =
 	"bpftime_alive_agent_pids";

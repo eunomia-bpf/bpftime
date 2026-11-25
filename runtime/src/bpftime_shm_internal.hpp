@@ -54,10 +54,11 @@ struct bpftime_global_epoch_state {
 	std::uint64_t epoch_seq = 0;
 };
 
-using syscall_pid_set_allocator = boost::interprocess::allocator<
-	int, boost::interprocess::managed_shared_memory::segment_manager>;
-using syscall_pid_set =
-	boost::interprocess::set<int, std::less<int>, syscall_pid_set_allocator>;
+static constexpr int BPFTIME_MAX_CPU_COUNT = 1024;
+
+struct bpftime_cpu_exec_locks {
+	boost::interprocess::interprocess_mutex locks[BPFTIME_MAX_CPU_COUNT];
+};
 
 using alive_agent_pid_set_allocator = boost::interprocess::allocator<
 	int, boost::interprocess::managed_shared_memory::segment_manager>;
@@ -85,9 +86,6 @@ class bpftime_shm {
 	// manage the bpf fds in the shared memory
 	bpftime::handler_manager *manager = nullptr;
 
-	// A set to record whether a process was setted up with syscall tracer
-	syscall_pid_set *syscall_installed_pids = nullptr;
-
 	// Configuration for the agent. e.g, which helpers are enabled
 	struct bpftime::runtime_config *runtime_config = nullptr;
 
@@ -101,6 +99,7 @@ class bpftime_shm {
 	boost::interprocess::interprocess_mutex *pid_set_lock = nullptr;
 
 	bpftime_global_epoch_state *epoch_state = nullptr;
+	bpftime_cpu_exec_locks *cpu_exec_locks = nullptr;
 
 	// local agent config can be used for test or local process
 	std::optional<struct runtime_config> local_runtime_config;
@@ -117,9 +116,23 @@ class bpftime_shm {
 #endif
 
     public:
-	shm_open_type get_shm_open_type() const
+	// True when the fully-contained [addr, addr+size) range lies inside the
+	// mapped SHM segment. Backends with runtime memory safety checks
+	// (uBPF) use this to admit BPF map/context accesses that the kernel
+	// verifier would normally allow. Includes an overflow guard.
+	bool is_within_shm_segment(uint64_t addr, uint64_t size) const
 	{
-		return open_type;
+		if (size == 0) {
+			return true;
+		}
+		const auto base = reinterpret_cast<uint64_t>(
+			segment.get_address());
+		const uint64_t seg_size = segment.get_size();
+		if (addr < base || size > seg_size) {
+			return false;
+		}
+		const uint64_t offset = addr - base;
+		return offset <= seg_size - size;
 	}
 	void set_enable_mock(bool flag)
 	{
@@ -135,12 +148,6 @@ class bpftime_shm {
 	const struct runtime_config &get_runtime_config();
 	// Set the configuration object
 	void set_runtime_config(struct runtime_config &&config);
-	// Check whether a certain pid was already equipped with syscall tracer
-	// Using a set stored in the shared memory
-	bool check_syscall_trace_setup(int pid);
-	// Set whether a certain pid was already equipped with syscall tracer
-	// Using a set stored in the shared memory
-	void set_syscall_trace_setup(int pid, bool whether);
 
 		// Add a pid into alive agent set
 		bool add_pid_into_alive_agent_set(int pid);
@@ -171,6 +178,15 @@ class bpftime_shm {
 	// Returns 0 if the epoch object isn't available.
 	// Returns UINT64_MAX if the epoch couldn't be stabilized within max_tries.
 	std::uint64_t read_stable_epoch_seq(int max_tries = 200) const;
+	void lock_bpf_cpu(int cpu);
+	void unlock_bpf_cpu(int cpu);
+	// Blocking, exception-safe per-CPU lock used on the BPF hot path. It
+	// preserves the serialization semantics of lock() (waits through normal
+	// contention) but catches locking exceptions, returning false instead of
+	// letting one propagate through the Frida C trampoline into
+	// std::terminate. The caller skips BPF execution only on a locking
+	// error, never on ordinary contention.
+	bool acquire_bpf_cpu(int cpu);
 
 	const handler_variant &get_handler(int fd) const;
 	bool is_epoll_fd(int fd) const;
@@ -207,7 +223,9 @@ public:
 
 	std::optional<array_map_impl *> try_get_array_map_impl(int fd) const;
 	bool is_prog_fd(int fd) const;
-
+	// Whether a loaded program references map `fd` through an LDDW map
+	// pseudo instruction (BPF_PSEUDO_MAP_FD or BPF_PSEUDO_MAP_VALUE).
+	bool is_map_referenced_by_prog(int fd) const;
 	bool is_perf_fd(int fd) const;
 
 	bool is_prog_array_map_fd(int fd) const;
@@ -239,6 +257,9 @@ public:
 			       bool from_syscall) const;
 
 	long bpf_map_pop_elem(int fd, void *value, bool from_syscall) const;
+
+	long bpf_map_lookup_and_delete_elem(int fd, const void *key, void *value,
+					    bool from_syscall) const;
 
 	long bpf_map_peek_elem(int fd, void *value, bool from_syscall) const;
 
@@ -287,12 +308,14 @@ public:
 					     epoll_data_t extra_data);
 
 	int epoll_create();
+	int epoll_create_at(int fd);
 	// remove a fake fd from the manager.
 	// The fake fd should be closed by the caller.
 	void close_fd(int fd);
 	bool is_exist_fake_fd(int fd) const;
 
 	int add_memfd_handler(const char *name, int flags);
+	int add_memfd_handler_at_fd(int fd, const char *name, int flags);
 
 	int translate_shared_map_type_to_kernel_map_type(int type);
 

@@ -6,11 +6,15 @@
 using syscall_hooker_func_t = int64_t (*)(int64_t sys_nr, int64_t arg1,
 					  int64_t arg2, int64_t arg3,
 					  int64_t arg4, int64_t arg5,
-					  int64_t arg6);
+					  int64_t arg6, int64_t user_ip,
+					  int64_t user_sp, int64_t user_bp);
 namespace bpftime
 {
-	// Setup userspace syscall trace
-void setup_syscall_tracer();
+	// Setup userspace syscall trace. Returns false when the tracer cannot be
+	// installed (for example a denied low-address mapping). Callers must fail
+	// open: leave the host process running with its original, untraced
+	// behavior instead of terminating it.
+bool setup_syscall_tracer();
 // Get current callback function when a syscall was invoked. Default to be a function that directly calls the syscall
 syscall_hooker_func_t get_call_hook();
 // Set the syscall callback function

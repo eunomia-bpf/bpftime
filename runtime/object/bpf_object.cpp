@@ -41,7 +41,6 @@ class bpftime_object {
 	void create_programs();
 	void create_programs(runtime_config cfg);
 	bpftime_prog *find_program_by_name(std::string_view name) const;
-	bpftime_prog *find_program_by_secname(std::string_view name) const;
 	bpftime_prog *next_program(bpftime_prog *prog) const;
 };
 
@@ -111,29 +110,6 @@ void bpftime_object::create_programs(runtime_config cfg)
 	}
 }
 
-bpftime_prog *
-bpftime_object::find_program_by_secname(std::string_view name) const
-{
-	const char *sec_name;
-	struct bpf_program *prog = NULL;
-	bpftime_prog *time_prog = progs.front().get();
-	// iterate through the bpftime_prog from prog and bpf_program
-	bpf_object__for_each_program(prog, obj.get())
-	{
-		if (!prog) {
-			continue;
-		}
-		sec_name = bpf_program__section_name(prog);
-		if (!sec_name)
-			continue;
-		if (strcmp(sec_name, name.data()) == 0) {
-			return time_prog;
-		}
-		time_prog = next_program(time_prog);
-	}
-	return NULL;
-}
-
 bpftime_prog *bpftime_object::find_program_by_name(std::string_view name) const
 {
 	const char *sec_name;
@@ -195,18 +171,8 @@ void bpftime_object_close(bpftime_object *obj)
 	return;
 }
 
-static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
-			   va_list args)
-{
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wformat-nonliteral"
-	return vfprintf(stderr, format, args);
-#pragma clang diagnostic pop
-}
-
 // The execution unit or bpf function.
 class bpftime_prog;
-// find the program by section name
 bpftime_prog *bpftime_object_find_program_by_name(bpftime_object *obj,
 							const char *name)
 {
@@ -214,15 +180,6 @@ bpftime_prog *bpftime_object_find_program_by_name(bpftime_object *obj,
 		return NULL;
 	}
 	return obj->find_program_by_name(name);
-}
-
-bpftime_prog *bpftime_object_find_program_by_secname(bpftime_object *obj,
-							   const char *secname)
-{
-	if (!obj || !secname) {
-		return NULL;
-	}
-	return obj->find_program_by_secname(secname);
 }
 
 bpftime_prog *bpftime_object__next_program(const bpftime_object *obj,

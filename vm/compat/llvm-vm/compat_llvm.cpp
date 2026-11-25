@@ -69,17 +69,19 @@ void bpftime_llvm_vm::set_lddw_helpers(uint64_t (*map_by_fd)(uint32_t),
 	bpftime::llvmbpf_vm::set_lddw_helpers(map_by_fd, map_by_idx, map_val,
 					      var_addr, code_addr);
 }
-std::optional<std::string> bpftime_llvm_vm::generate_ptx(const char *target_cpu)
-{
-	return bpftime::llvmbpf_vm::generate_ptx(target_cpu);
-}
 } // namespace bpftime::vm::llvm
 
 namespace bpftime::vm::compat
 {
 namespace llvm
 {
-__attribute__((constructor(0))) void register_llvm_vm_factory()
+// Priorities 0-100 are reserved for the implementation/toolchain, so use a
+// normal constructor. The factory registry is constructed lazily on first
+// access and backends register under distinct keys, so default constructor
+// ordering is sufficient. This also removes -Wprio-ctor-dtor and avoids the
+// toolchain-reserved init window (a candidate contributor to an early ASAN
+// interceptor CHECK observed on some gcc versions; not yet root-caused).
+__attribute__((constructor)) void register_llvm_vm_factory()
 {
 	register_vm_factory("llvm", create_llvm_vm_instance);
 	SPDLOG_DEBUG("llvm register vm factory\n");

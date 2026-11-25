@@ -180,7 +180,11 @@ static uint32_t number(std::string_view text)
 
 static size_t open_fd_count()
 {
+#ifdef __APPLE__
+	auto entries = std::filesystem::directory_iterator("/dev/fd");
+#else
 	auto entries = std::filesystem::directory_iterator("/proc/self/fd");
+#endif
 	return std::distance(begin(entries), end(entries));
 }
 
@@ -205,8 +209,16 @@ int main(int argc, char **argv)
 		for (uint32_t i = 0; i < cycles; ++i) {
 			uint64_t count = run_lifecycle(events, mode == "jit");
 			require(open_fd_count() == fds, "file descriptors leaked");
+#ifdef __APPLE__
+			// Boost.Interprocess falls back to files under
+			// /tmp/boost_interprocess on Darwin.
+			require(!std::filesystem::exists(
+					"/tmp/boost_interprocess/" + name),
+				"shared memory leaked");
+#else
 			require(!std::filesystem::exists("/dev/shm/" + name),
 				"shared memory leaked");
+#endif
 			std::cout << "cycle=" << i + 1 << " events=" << events
 				  << " count=" << count << " detached_count="
 				  << count << '\n';

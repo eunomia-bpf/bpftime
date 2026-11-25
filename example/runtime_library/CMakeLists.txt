@@ -1,6 +1,6 @@
 # The example uses uBPF directly; no injected agent or syscall server.
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT BPFTIME_UBPF_JIT)
-  message(FATAL_ERROR "runtime_library requires Linux and BPFTIME_UBPF_JIT=ON")
+if(NOT (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR APPLE) OR NOT BPFTIME_UBPF_JIT)
+  message(FATAL_ERROR "runtime_library requires Linux or macOS and BPFTIME_UBPF_JIT=ON")
 endif()
 if(BPFTIME_ENABLE_CUDA_ATTACH)
   message(FATAL_ERROR "runtime_library is a CPU example; disable CUDA attach")

@@ -32,7 +32,7 @@ static int global_shm_exists(void)
 	return access(path, F_OK) == 0;
 }
 
-static int fd_is_unlinked_mock_tmp_file(int fd)
+static int fd_is_cached_synthetic_file(int fd)
 {
 	char proc_path[64];
 	int written = snprintf(proc_path, sizeof(proc_path), "/proc/self/fd/%d",
@@ -48,9 +48,13 @@ static int fd_is_unlinked_mock_tmp_file(int fd)
 		return 0;
 	}
 	target[len] = '\0';
-	const char *prefix = "/tmp/bpftime-mock.";
-	return strncmp(target, prefix, strlen(prefix)) == 0 &&
-	       strstr(target, " (deleted)") != NULL;
+	/* Synthetic files are materialized once as regular 0400 files in a
+	 * private per-process directory and stay linked for the process
+	 * lifetime (cleanup runs at exit), so the fd must name a live file
+	 * inside that directory rather than an unlinked temp fd.
+	 */
+	return strstr(target, "/bpftime-synthetic-fs-") != NULL &&
+	       strstr(target, " (deleted)") == NULL;
 }
 
 static int trigger_startup(void)
@@ -123,7 +127,7 @@ static int trigger_startup_wait(void)
 	return 105;
 }
 
-static int trigger_mock_tmp_files(void)
+static int trigger_synthetic_file_caching(void)
 {
 	int fd = open("/sys/bus/event_source/devices/uprobe/type",
 		      O_RDONLY | O_CLOEXEC, 0);
@@ -131,7 +135,7 @@ static int trigger_mock_tmp_files(void)
 		perror("open");
 		return 11;
 	}
-	if (!fd_is_unlinked_mock_tmp_file(fd)) {
+	if (!fd_is_cached_synthetic_file(fd)) {
 		close(fd);
 		return 12;
 	}
@@ -154,7 +158,7 @@ static int trigger_mock_tmp_files(void)
 		return 15;
 	}
 	fd = fileno(fp);
-	if (!fd_is_unlinked_mock_tmp_file(fd)) {
+	if (!fd_is_cached_synthetic_file(fd)) {
 		fclose(fp);
 		return 16;
 	}
@@ -241,8 +245,8 @@ int main(int argc, char **argv)
 	if (strcmp(argv[1], "startup-wait") == 0) {
 		return trigger_startup_wait();
 	}
-	if (strcmp(argv[1], "mock-tmp") == 0) {
-		return trigger_mock_tmp_files();
+	if (strcmp(argv[1], "synthetic-fs") == 0) {
+		return trigger_synthetic_file_caching();
 	}
 	if (strcmp(argv[1], "perf-mmap") == 0) {
 		return trigger_perf_mmap();

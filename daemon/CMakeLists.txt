@@ -54,20 +54,11 @@ target_link_libraries(libbpftime_daemon PRIVATE
     rt
 )
 
-if(${BPFTIME_ENABLE_CUDA_ATTACH})
-    include(../cmake/cuda.cmake)
-    find_cuda()
-    target_link_directories(libbpftime_daemon PUBLIC ${CUDA_LIBRARY_PATH})
-    target_link_libraries(libbpftime_daemon PRIVATE ${CUDA_LIBS})
+if(BPFTIME_ENABLE_ROCM_ATTACH)
+    # Propagate ROCm's library paths and LLVM symbol visibility through this
+    # static library to the daemon executable, as for other runtime consumers.
+    target_link_libraries(libbpftime_daemon PUBLIC bpftime_rocm_attach_impl)
 endif()
-
-if(${BPFTIME_ENABLE_ROCM_ATTACH})
-    include(../cmake/rocm.cmake)
-    find_rocm()
-    target_link_directories(libbpftime_daemon PUBLIC ${ROCM_LIBRARY_PATH})
-    target_link_libraries(libbpftime_daemon PRIVATE ${ROCM_LIBS})
-endif()
-
 
 set_property(TARGET libbpftime_daemon PROPERTY CXX_STANDARD 20)
 

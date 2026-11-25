@@ -9,6 +9,7 @@
   - [Use docker image](#use-docker-image)
   - [Install Dependencies](#install-dependencies)
     - [Build and install all things](#build-and-install-all-things)
+    - [Build on macOS (Apple Silicon)](#build-on-macos-apple-silicon)
   - [Detailed things about building](#detailed-things-about-building)
     - [build options](#build-options)
     - [Build and install the complete runtime in release mode(With ubpf jit)](#build-and-install-the-complete-runtime-in-release-modewith-ubpf-jit)
@@ -93,6 +94,36 @@ Usage: bpftime [OPTIONS] <COMMAND>
 
 See the [Makefile](https://github.com/eunomia-bpf/bpftime/blob/master/Makefile) for some common commands.
 
+### Build on macOS (Apple Silicon)
+
+The cross-platform core of bpftime builds on macOS `arm64` (Apple Silicon), using the same configuration as the `Build on macOS` GitHub Actions workflow. Components that depend on the Linux kernel UAPI, `seccomp` or `LD_PRELOAD` — libbpf support, `bpftime-syscall-server` and `bpftime_daemon` — are not available on macOS.
+
+Install the build tools and initialize the submodules:
+
+```bash
+brew install cmake ninja boost
+git submodule update --init --recursive
+```
+
+Configure and build the runtime with the uBPF interpreter and its ARM64 JIT:
+
+```bash
+cmake -S . -B build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBPFTIME_BUILD_WITH_LIBBPF=OFF \
+  -DBPFTIME_LLVM_JIT=OFF \
+  -DBPFTIME_UBPF_JIT=ON \
+  -DBUILD_BPFTIME_DAEMON=OFF \
+  -DBPFTIME_ENABLE_FRIDA=OFF \
+  -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
+  -DENABLE_EBPF_VERIFIER=OFF
+cmake --build build --target runtime
+```
+
+`BPFTIME_ENABLE_FRIDA` defaults to `ON` on non-RISC-V platforms; the configuration above sets it `OFF` to match the CI gate and avoid any Frida devkit download. To build the Frida-based userspace uprobe backend, pass `-DBPFTIME_ENABLE_FRIDA=ON` instead: CMake then downloads the pinned Frida Core and Frida Gum `macos-arm64` devkits into `third_party/frida/` and builds the `bpftime_frida_uprobe_attach_impl` target together with the runtime.
+
+On macOS `arm64` the supported scope is the `runtime` library (shared-memory maps, helpers and handler management), the `ubpf` VM (interpreter and JIT) and the optional `bpftime_frida_uprobe_attach_impl` Frida backend. Everything requiring the Linux kernel UAPI, `seccomp` or `LD_PRELOAD` — libbpf, the syscall server and the daemon — remains Linux-only.
+
 ## Detailed things about building
 
 We use cmake as build system.
@@ -104,15 +135,14 @@ You may be interested in the following cmake options:
 - `CMAKE_BUILD_TYPE`: Specify the build type. It could be `Debug`, `Release`, `MinSizeRel` or `RelWithDebInfo`. If you are not going to debug bpftime, you just need to set it to `Release`. Default to `Debug`.
 - `BPFTIME_ENABLE_UNIT_TESTING`: Whether to build unit test targets. See `Testing targets` for details. Default to `NO`.
 - `BPFTIME_ENABLE_LTO`: Whether to enable Link Time Optimization. Enabling this may increase the compile time, but it may lead to a better performance. Default to `No`.
-- `BPFTIME_ENABLE_CCACHE`: Enable the usage of Ccache to speed up rebuild times. Default to `OFF`.
+- Ccache is used automatically when it is found on the system; there is no build option to toggle it.
 - `BPFTIME_ENABLE_ASAN`: Enable Address Sanitizer to detect memory errors. Default to `OFF`.
 - `ENABLE_EBPF_VERIFIER`: Whether to enable userspace eBPF verifier. Default to `OFF`.
 - `BPFTIME_LLVM_JIT`: Whether to use LLVM JIT as the ebpf runtime. Requires LLVM >= 15. It's recommended to enable this, since the ubpf intepreter is no longer maintained. Default to `ON`.
 - `BPFTIME_UBPF_JIT`: Whether to use uBPF JIT backend. Default to `ON`.
 - `LLVM_DIR`: Specify the installing directory of LLVM. CMake may not discover the LLVM installation by default. Set this option to the directory that contains `LLVMConfig.cmake`, such as `/usr/lib/llvm-15/cmake` on Ubuntu
-- `BUILD_BPFTIME_DAEMON`: Build with the daemon for load the eBPF program into hkernel and se kernel verifier. Default to `ON`.
+- `BUILD_BPFTIME_DAEMON`: Build with the daemon for loading the eBPF program into the kernel and using the kernel verifier. Default to `ON`.
 - `BPFTIME_BUILD_WITH_LIBBPF`: Build bpftime with libbpf. When disabled, it can only be run in userspace but can be easily ported to other platforms, e.g. macOS. Default to `ON`.
-- `BPFTIME_BUILD_KERNEL_BPF`: Whether to build with bpf share maps. Default to `ON`.
 - `BPFTIME_BUILD_STATIC_LIB`: Build bpftime runtime into a whole static libraries. It can be easily linked into other programs. Default to `OFF`.
 - `BPFTIME_ENABLE_MPK`: Enable Memory Protection Keys for the shared memory. Default to `OFF`.
 - `BPFTIME_ENABLE_IOURING_EXT`: Enable iouring helpers extensions. Default to `OFF`.
@@ -121,7 +151,6 @@ You may be interested in the following cmake options:
 - `BPFTIME_ENABLE_CUDA_ATTACH`: Enable CUDA/GPU attach support. Requires `BPFTIME_CUDA_ROOT` to be set to the CUDA installation directory (e.g., `/usr/local/cuda-12.8`). Default to `OFF`.
 - `BPFTIME_CUDA_ROOT`: Specify the root directory of CUDA installation. Required when `BPFTIME_ENABLE_CUDA_ATTACH=1`.
 - `BPFTIME_WARNINGS_AS_ERRORS`: Treat compiler warnings as errors. Default to `OFF`.
-- `BPFTIME_VERBOSE_OUTPUT`: Enable verbose output, allowing for a better understanding of each step taken. Default to `ON`.
 
 Please see <https://github.com/eunomia-bpf/bpftime/blob/master/cmake/StandardSettings.cmake> forall the build options.
 
@@ -171,7 +200,7 @@ cmake --build build --config Release --target install
 This flag can be used to compile `bpftime` on macOS. It will disable all the libbpf related libraries and features that are used in bpftime.
 
 ```sh
-cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DBPFTIME_BUILD_WITH_LIBBPF=OFF -DBPFTIME_BUILD_KERNEL_BPF=OFF
+cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DBPFTIME_BUILD_WITH_LIBBPF=OFF
 cmake --build build --config RelWithDebInfo  --target install -j$(JOBS)
 ```
 

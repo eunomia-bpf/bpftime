@@ -158,18 +158,32 @@ class bpftime_prog;
 using syscall_hooker_func_t = int64_t (*)(int64_t sys_nr, int64_t arg1,
 					  int64_t arg2, int64_t arg3,
 					  int64_t arg4, int64_t arg5,
-					  int64_t arg6);
+					  int64_t arg6, int64_t user_ip,
+					  int64_t user_sp, int64_t user_bp);
 
 class bpf_attach_ctx {
 public:
 	bpf_attach_ctx();
 	~bpf_attach_ctx();
 
-	// create bpf_attach_ctx from handler_manager in shared memory
+	// Create a bpf_attach_ctx from a handler manager, instantiating every
+	// handler in it. Returns 0 once the scanned handlers are confirmed
+	// stable, or -EAGAIN when the shm epoch kept moving. A handler that
+	// fails to instantiate does not abort the other handlers: when the
+	// scan is confirmed stable, the failures are reported as one
+	// SPDLOG_WARN and the number of distinct handlers that still are not
+	// instantiated at the end of the stable scan is written to
+	// failed_count (when non-null). failed_count is set to zero on entry
+	// and stays zero on a non-zero return, so it is meaningful only when
+	// the call returns 0. The added parameter has a default argument, so
+	// existing callers stay source-compatible and the class layout is
+	// unchanged.
 	int init_attach_ctx_from_handlers(const handler_manager *manager,
-					  const runtime_config &config);
-	// create bpf_attach_ctx from handler_manager in global_shared_memory
-	int init_attach_ctx_from_handlers(const runtime_config &config);
+					  const runtime_config &config,
+					  int *failed_count = nullptr);
+	// Same, using the handler manager of the global shared memory.
+	int init_attach_ctx_from_handlers(const runtime_config &config,
+					  int *failed_count = nullptr);
 	// Register an attach implementation. Attach manager will take its
 	// ownership. The third argument is a function that initializes a
 	// corresponding attach private data with the given string.
