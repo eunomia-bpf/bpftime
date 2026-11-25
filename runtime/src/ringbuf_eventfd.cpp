@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <mutex>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/un.h>
 #include <unistd.h>
 #include <unordered_map>
@@ -50,7 +51,7 @@ bool write_all(int fd, const void *buf, size_t len)
 {
 	const auto *p = static_cast<const uint8_t *>(buf);
 	while (len > 0) {
-		ssize_t n = ::write(fd, p, len);
+		ssize_t n = ::send(fd, p, len, MSG_NOSIGNAL);
 		if (n < 0) {
 			if (errno == EINTR)
 				continue;
@@ -96,8 +97,9 @@ void send_eventfd(int client, int eventfd)
 	cmsg->cmsg_type = SCM_RIGHTS;
 	cmsg->cmsg_len = CMSG_LEN(sizeof(int));
 	std::memcpy(CMSG_DATA(cmsg), &eventfd, sizeof(int));
-	// SCM_RIGHTS transfers a dup; the server keeps owning its original fd.
-	if (sendmsg(client, &msg, 0) < 0)
+	// MSG_NOSIGNAL: a client that timed out and closed must not kill the
+	// exporter with SIGPIPE when the late SCM_RIGHTS reply reaches it.
+	if (sendmsg(client, &msg, MSG_NOSIGNAL) < 0)
 		SPDLOG_DEBUG("ringbuf eventfd export sendmsg failed: {}",
 			     errno);
 }
@@ -130,12 +132,20 @@ int receive_eventfd(int sock)
 	return -1;
 }
 
+constexpr timeval ipc_timeout{ .tv_sec = 0, .tv_usec = 200 * 1000 };
+
 int request_eventfd_dup(int map_fd, const std::string &shm_name)
 {
 	int sock = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (sock < 0)
 		return -1;
 	auto [addr, len] = make_mapfd_addr(shm_name);
+	// Bound every blocking step so a stopped or wedged exporter degrades
+	// to the userspace polling fallback instead of hanging the host.
+	setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &ipc_timeout,
+		   sizeof(ipc_timeout));
+	setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &ipc_timeout,
+		   sizeof(ipc_timeout));
 	int rc = -1;
 	if (connect(sock, reinterpret_cast<struct sockaddr *>(&addr), len) ==
 		    0 &&
@@ -223,6 +233,10 @@ void ringbuf_eventfd_exporter::run()
 				continue;
 			return;
 		}
+		setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &ipc_timeout,
+			   sizeof(ipc_timeout));
+		setsockopt(client, SOL_SOCKET, SO_SNDTIMEO, &ipc_timeout,
+			   sizeof(ipc_timeout));
 		int32_t map_fd = -1;
 		if (read_full(client, &map_fd, sizeof(map_fd))) {
 			int eventfd = lookup_creator_eventfd(map_fd);
@@ -256,10 +270,11 @@ extern "C" int bpftime_ringbuf_get_local_eventfd(int ringbuf_map_fd)
 					      bpftime::get_global_shm_name());
 		dup_owned = true;
 	}
-	if (eventfd < 0)
+	if (eventfd < 0) {
+		cache.emplace(ringbuf_map_fd, cached_entry{ -1, false });
 		return -1;
-	cache.emplace(ringbuf_map_fd, cached_entry{ .eventfd = eventfd,
-						    .dup_owned = dup_owned });
+	}
+	cache.emplace(ringbuf_map_fd, cached_entry{ eventfd, dup_owned });
 	return eventfd;
 }
 

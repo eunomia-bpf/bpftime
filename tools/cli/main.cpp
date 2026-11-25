@@ -1,4 +1,5 @@
 #include "bpftime_shm.hpp"
+#include "bpftime_agent_ipc.hpp"
 #include <bpftime_logger.hpp>
 #include <bpftime_shm_internal.hpp>
 #include <cerrno>
@@ -10,7 +11,6 @@
 #include <argparse/argparse.hpp>
 #include <filesystem>
 #include <stdexcept>
-#include <string_view>
 #include <unistd.h>
 #include <vector>
 #include <string>
@@ -30,9 +30,6 @@
 #if __linux__
 #include <grp.h>
 #include <spawn.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <sys/uio.h>
 #include <sys/stat.h>
 #endif
 #ifdef __APPLE__
@@ -303,63 +300,9 @@ static int inject_by_frida(int pid, const char *inject_path, const char *arg)
 }
 
 #if __linux__
-static bool make_agent_ipc_addr(int pid, sockaddr_un &addr, socklen_t &len)
-{
-	memset(&addr, 0, sizeof(addr));
-	addr.sun_family = AF_UNIX;
-	std::string name = "bpftime-agent-" + std::to_string(pid);
-	if (name.size() + 1 > sizeof(addr.sun_path))
-		return false;
-	addr.sun_path[0] = '\0'; // abstract namespace
-	memcpy(addr.sun_path + 1, name.data(), name.size());
-	len = (socklen_t)(offsetof(sockaddr_un, sun_path) + 1 + name.size());
-	return true;
-}
-
-static bool try_send_agent_ipc(int pid, const std::string &request,
-			       std::string *response_out = nullptr)
-{
-	int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-	if (fd < 0)
-		return false;
-	sockaddr_un addr {};
-	socklen_t len = 0;
-	if (!make_agent_ipc_addr(pid, addr, len)) {
-		::close(fd);
-		return false;
-	}
-	if (::connect(fd, (sockaddr *)&addr, len) != 0) {
-		::close(fd);
-		return false;
-	}
-	// Best-effort write full request.
-	const char *buf = request.data();
-	size_t left = request.size();
-	while (left > 0) {
-		ssize_t n = ::send(fd, buf, left, MSG_NOSIGNAL);
-		if (n < 0) {
-			::close(fd);
-			return false;
-		}
-		buf += (size_t)n;
-		left -= (size_t)n;
-	}
-	(void)::shutdown(fd, SHUT_WR);
-	if (response_out) {
-		std::string resp;
-		char rbuf[4096];
-		for (;;) {
-			ssize_t n = ::recv(fd, rbuf, sizeof(rbuf), 0);
-			if (n <= 0)
-				break;
-			resp.append(rbuf, rbuf + n);
-		}
-		*response_out = std::move(resp);
-	}
-	::close(fd);
-	return true;
-}
-
+// Detach joins the auto-refresh worker and may wait up to 2 s for patched
+// CUDA kernels, so it legitimately outlasts the 1 s default IPC timeout.
+constexpr int agent_detach_timeout_ms = 10000;
 static bool ipc_response_is_ok(const std::string &resp)
 {
 	return resp.rfind("ok", 0) == 0;
@@ -1173,7 +1116,8 @@ int main(int argc, const char **argv)
 		// process; fall back to Frida injection otherwise.
 		std::string req = "refresh " + agent_arg;
 		std::string refresh_resp;
-		if (try_send_agent_ipc(pid, req, &refresh_resp) &&
+		if (bpftime::try_send_agent_ipc(pid, req, &refresh_resp,
+						agent_detach_timeout_ms) &&
 		    ipc_response_is_ok(refresh_resp)) {
 			spdlog::info("trace: refreshed existing agent via IPC");
 			agent_attached = true;
@@ -1203,10 +1147,11 @@ int main(int argc, const char **argv)
 						if (agent_attached) {
 							std::string detach_resp;
 							bool detached =
-								try_send_agent_ipc(
+								bpftime::try_send_agent_ipc(
 									pid,
 									"detach",
-									&detach_resp) &&
+									&detach_resp,
+									agent_detach_timeout_ms) &&
 								ipc_response_is_ok(
 									detach_resp);
 							if (!detached) {
@@ -1230,7 +1175,9 @@ int main(int argc, const char **argv)
 		if (agent_attached) {
 			std::string detach_resp;
 			bool detached =
-				try_send_agent_ipc(pid, "detach", &detach_resp) &&
+				bpftime::try_send_agent_ipc(pid, "detach",
+							     &detach_resp,
+							     agent_detach_timeout_ms) &&
 				ipc_response_is_ok(detach_resp);
 			if (!detached) {
 				rc = 1;
@@ -1264,7 +1211,9 @@ int main(int argc, const char **argv)
 		bool failed = false;
 		for (int pid : pids) {
 			std::string response;
-			if (!try_send_agent_ipc(pid, "detach", &response) ||
+			if (!bpftime::try_send_agent_ipc(pid, "detach",
+							 &response,
+							 agent_detach_timeout_ms) ||
 			    !ipc_response_is_ok(response)) {
 				SPDLOG_WARN("Unable to detach process {} via IPC: {}",
 					    pid, response);
