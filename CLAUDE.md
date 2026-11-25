@@ -280,7 +280,7 @@ Cross-layer coupling is allowed only through the existing function-pointer
 seam (`get_call_hook`/`set_call_hook`). No new link dependency or `#include`
 may cross the syscall-server / attach boundary.
 
-## Change Size and Scope Discipline
+## Minimal Change, Anti-Over-Engineering & Anti-Over-Testing
 
 - Make the smallest change that satisfies the task. Prefer deleting dead or
   duplicated code over adding new code.
@@ -291,3 +291,22 @@ may cross the syscall-server / attach boundary.
   particular, never keep a second fd/mmap ledger outside `syscall-server`.
 - Before introducing a structure, enum, or register-layout type, check for an
   existing shared definition and reuse it instead of declaring a parallel one.
+
+- Target single-purpose diffs of roughly 50-100 lines of production code where
+  feasible. If a fix genuinely needs a larger diff, state the reason and the
+  minimal scope in the pull request description.
+- Do not introduce speculative abstractions, configuration or environment
+  variable matrices, new shared-memory data structures, or new shared libraries
+  (`.so`) unless a reproduced problem strictly requires them. Every new
+  component must trace to a concrete failure mode or requirement.
+- Do not over-test. Add concise, high-signal regression tests that exercise the
+  real failure mode; avoid large mock or scaffolding setups, and do not re-test
+  wiring, incidental defaults, or behavior that already has coverage.
+
+Before opening or updating a pull request, self-review against this checklist:
+
+1. Is there any over-engineering (speculative abstractions, unused config knobs,
+   unrelated refactors)?
+2. Is there any over-testing (boilerplate, mocks, or duplicated coverage)?
+3. Can more than half of the diff be cut while still fixing the root cause?
+4. Are any new shared libraries or cross-process state strictly necessary?
