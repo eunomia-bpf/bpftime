@@ -17,7 +17,7 @@
 #define DEFAULT_LOGGER_OUTPUT_PATH "~/.bpftime/runtime.log"
 #endif
 
-using main_func_t =int (*)(int, char **, char **);
+using main_func_t = int (*)(int, char **, char **);
 
 static main_func_t orig_main_func = nullptr;
 
