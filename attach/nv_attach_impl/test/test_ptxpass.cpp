@@ -579,6 +579,7 @@ TEST_CASE("PTX pass runner path survives relocation", "[ptxpass_runner]")
 	REQUIRE(bpftime::attach::pick_ptxpass_runner_path_for_test(
 			"", {}, root / "absent") == fallback);
 	std::filesystem::remove_all(root);
+}
 
 // The pass libraries and the PTX compiler library carry the same baked
 // build-tree paths as the runner, so the resolution that keeps a relocated

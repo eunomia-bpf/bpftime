@@ -732,7 +732,7 @@ nv_attach_impl::nv_attach_impl()
 		}
 	}
 	auto paths = split_by_colon(ptx_pass_libraries);
-	const std::error_code ec;
+	std::error_code ec;
 	const std::filesystem::path self_exec =
 		std::filesystem::read_symlink("/proc/self/exe", ec);
 	for (auto &path : paths) {
@@ -779,7 +779,7 @@ nv_attach_impl::nv_attach_impl()
 				compiler_lib);
 		}
 		auto compiler = load_nv_attach_impl_ptx_compiler(
-			compiler_lib, this->ptx_compiler_dl_handle);
+			compiler_lib.c_str(), this->ptx_compiler_dl_handle);
 		if (!compiler)
 			throw std::runtime_error("Unable to load PTX compiler");
 		this->ptx_compiler = *compiler;
