@@ -747,6 +747,8 @@ static void bpftime_agent_main_impl(const gchar *data,
 					shm_lock =
 						std::make_unique<shm_lifecycle_lock>(
 							get_global_shm_name());
+					if (!shm_lock->owns_lock())
+						throw std::runtime_error("Unable to lock shared memory lifecycle");
 					bpftime_initialize_global_shm(
 						shm_open_type::SHM_OPEN_ONLY);
 					shm_ok = true;
