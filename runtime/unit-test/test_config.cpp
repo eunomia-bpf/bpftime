@@ -13,7 +13,7 @@ static std::string test_string_2 = "aaaassssbbb";
 
 TEST_CASE("Test bpftime runtime_config")
 {
-	shm_remove remover(SHM_NAME);
+	::shm_remove remover(SHM_NAME);
 	managed_shared_memory mem(create_only, SHM_NAME, 20 << 20);
 
 	runtime_config cfg;
