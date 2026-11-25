@@ -964,10 +964,6 @@ int main(int argc, const char **argv)
 	trace_command.add_argument("--pidof")
 		.help("Resolve PID by /proc/<pid>/comm name (Linux only); must match exactly and be unique")
 		.default_value(std::string());
-	trace_command.add_argument("--auto-refresh-ms")
-		.help("Agent-side auto refresh interval (ms) for discovering late-loaded links")
-		.default_value(500)
-		.scan<'i', int>();
 	trace_command.add_argument("COMMAND")
 		.nargs(argparse::nargs_pattern::at_least_one)
 		.remaining()
@@ -1096,7 +1092,6 @@ int main(int argc, const char **argv)
 		}
 #endif
 
-		auto refresh_ms = trace_command.get<int>("auto-refresh-ms");
 		auto late_ptx_dir = prepare_cuda_late_ptx_dir(pid, drop_to);
 		struct late_ptx_dir_guard {
 			std::optional<std::filesystem::path> dir;
@@ -1152,12 +1147,7 @@ int main(int argc, const char **argv)
 		(void)sigaction(SIGTERM, &sa, &old_term);
 #endif
 
-		std::string agent_arg = "loader_pid=" + std::to_string(child_pid);
-		agent_arg += ";force_reinit=1";
-		if (refresh_ms > 0) {
-			agent_arg +=
-				";auto_refresh_ms=" + std::to_string(refresh_ms);
-		}
+		std::string agent_arg = "force_reinit=1";
 		if (late_ptx_dir) {
 			agent_arg += ";cuda_late_ptx_dir=" + late_ptx_dir->string();
 		} else {
