@@ -81,11 +81,6 @@ using agent_control_fn_t = void (*)(const gchar *);
 // by text-transformer
 bool injected_with_frida = true;
 
-static std::atomic<uint64_t> auto_refresh_epoch{ 0 };
-static std::mutex auto_refresh_thread_mutex;
-static std::thread auto_refresh_thread;
-static std::atomic<pid_t> auto_refresh_loader_pid{ -1 };
-
 static std::once_flag agent_ipc_once;
 static std::atomic<bool> agent_ipc_stop{ false };
 #ifdef __linux__
@@ -437,14 +432,6 @@ static int perform_detach()
 	}
 	SPDLOG_INFO("Detaching..");
 
-	// Stop auto-refresh first to avoid racing re-instantiation with teardown.
-	auto_refresh_epoch.fetch_add(1, std::memory_order_acq_rel);
-	{
-		std::lock_guard<std::mutex> guard(auto_refresh_thread_mutex);
-		if (auto_refresh_thread.joinable())
-			auto_refresh_thread.join();
-	}
-
 	// Detach all instantiated links so GPU code stops using loader-owned
 	// resources (CUDA IPC buffers) before the loader exits.
 	int detach_err = ctx_holder.ctx.destroy_all_attach_links();
@@ -462,14 +449,6 @@ static int perform_detach()
 	SPDLOG_DEBUG("Detaching done");
 	bpftime_logger_flush();
 	return detach_err < 0 ? detach_err : 0;
-}
-
-static void stop_auto_refresh_at_exit()
-{
-	auto_refresh_epoch.fetch_add(1, std::memory_order_acq_rel);
-	std::lock_guard<std::mutex> guard(auto_refresh_thread_mutex);
-	if (auto_refresh_thread.joinable())
-		auto_refresh_thread.join();
 }
 
 static void stop_syscall_dispatch_at_exit() noexcept
@@ -536,12 +515,15 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 	return orig(bpftime_hooked_main, argc, argv, init, fini, rtld_fini,
 		    stack_end);
 }
-static int parse_auto_refresh_ms(const gchar *data)
+// Simple "k=v" pairs separated by ';', space or tab. Each pair is split at
+// the first '=' and passed to the callback in original order; a callback
+// returning false stops the iteration.
+template <typename Fn>
+static void for_each_kv(const gchar *data, Fn &&fn)
 {
 	if (data == nullptr || data[0] == '\0')
-		return 0;
+		return;
 	std::string_view sv(data);
-	// Simple "k=v" pairs separated by ';' or whitespace.
 	for (size_t pos = 0; pos < sv.size();) {
 		while (pos < sv.size() &&
 		       (sv[pos] == ' ' || sv[pos] == '\t' || sv[pos] == ';'))
@@ -557,89 +539,22 @@ static int parse_auto_refresh_ms(const gchar *data)
 		auto eq = item.find('=');
 		if (eq == std::string_view::npos)
 			continue;
-		auto key = item.substr(0, eq);
-		auto val = item.substr(eq + 1);
-		if (key != "auto_refresh_ms")
-			continue;
-		int out = 0;
-		try {
-			out = std::stoi(std::string(val));
-		} catch (...) {
-			return 0;
-		}
-		if (out < 0)
-			return 0;
-		return out;
+		if (!fn(item.substr(0, eq), item.substr(eq + 1)))
+			return;
 	}
-	return 0;
-}
-
-static pid_t parse_loader_pid(const gchar *data)
-{
-	if (data == nullptr || data[0] == '\0')
-		return -1;
-	std::string_view sv(data);
-	// Simple "k=v" pairs separated by ';' or whitespace.
-	for (size_t pos = 0; pos < sv.size();) {
-		while (pos < sv.size() &&
-		       (sv[pos] == ' ' || sv[pos] == '\t' || sv[pos] == ';'))
-			pos++;
-		if (pos >= sv.size())
-			break;
-		size_t end = pos;
-		while (end < sv.size() && sv[end] != ';' && sv[end] != ' ' &&
-		       sv[end] != '\t')
-			end++;
-		auto item = sv.substr(pos, end - pos);
-		pos = end;
-		auto eq = item.find('=');
-		if (eq == std::string_view::npos)
-			continue;
-		auto key = item.substr(0, eq);
-		auto val = item.substr(eq + 1);
-		if (key != "loader_pid")
-			continue;
-		try {
-			long long out = std::stoll(std::string(val));
-			if (out <= 0)
-				return -1;
-			if (out > std::numeric_limits<pid_t>::max())
-				return -1;
-			return (pid_t)out;
-		} catch (...) {
-			return -1;
-		}
-	}
-	return -1;
 }
 
 static bool parse_force_reinit(const gchar *data)
 {
-	if (data == nullptr || data[0] == '\0')
-		return false;
-	std::string_view sv(data);
-	for (size_t pos = 0; pos < sv.size();) {
-		while (pos < sv.size() &&
-		       (sv[pos] == ' ' || sv[pos] == '\t' || sv[pos] == ';'))
-			pos++;
-		if (pos >= sv.size())
-			break;
-		size_t end = pos;
-		while (end < sv.size() && sv[end] != ';' && sv[end] != ' ' &&
-		       sv[end] != '\t')
-			end++;
-		auto item = sv.substr(pos, end - pos);
-		pos = end;
-		auto eq = item.find('=');
-		if (eq == std::string_view::npos)
-			continue;
-		auto key = item.substr(0, eq);
-		auto val = item.substr(eq + 1);
+	bool result = false;
+	for_each_kv(data, [&](std::string_view key,
+			      std::string_view val) -> bool {
 		if (key != "force_reinit")
-			continue;
-		return val == "1" || val == "true" || val == "yes";
-	}
-	return false;
+			return true;
+		result = val == "1" || val == "true" || val == "yes";
+		return false;
+	});
+	return result;
 }
 
 static int refresh_attach_session(const gchar *data)
@@ -656,12 +571,6 @@ static int refresh_attach_session(const gchar *data)
 	std::lock_guard<std::mutex> guard(detach_mutex);
 	attach_callback_suppression_scope suppress_callbacks;
 	apply_injected_kv_overrides(data);
-	auto_refresh_epoch.fetch_add(1, std::memory_order_acq_rel);
-	{
-		std::lock_guard<std::mutex> tguard(auto_refresh_thread_mutex);
-		if (auto_refresh_thread.joinable())
-			auto_refresh_thread.join();
-	}
 	(void)ctx_holder.ctx.destroy_all_attach_links();
 	ctx_holder.ctx.reset_instantiated_state();
 
@@ -682,55 +591,6 @@ static int refresh_attach_session(const gchar *data)
 		return -EAGAIN;
 	}
 
-	int auto_refresh_ms = parse_auto_refresh_ms(data);
-	pid_t loader_pid = parse_loader_pid(data);
-	if (auto_refresh_ms > 0) {
-		auto_refresh_loader_pid.store(loader_pid,
-					      std::memory_order_release);
-		SPDLOG_INFO("Starting auto-refresh thread ({} ms, loader_pid={})",
-			    auto_refresh_ms, (int)loader_pid);
-		uint64_t epoch =
-			auto_refresh_epoch.fetch_add(1, std::memory_order_acq_rel) + 1;
-		std::lock_guard<std::mutex> tguard(auto_refresh_thread_mutex);
-		if (auto_refresh_thread.joinable())
-			auto_refresh_thread.join();
-		auto_refresh_thread = std::thread([auto_refresh_ms, epoch]() {
-			attach_callback_suppression_scope suppress_callbacks;
-			for (;;) {
-				if (auto_refresh_epoch.load(
-					    std::memory_order_acquire) != epoch) {
-					return;
-				}
-#if __linux__
-				pid_t lp = auto_refresh_loader_pid.load(
-					std::memory_order_acquire);
-				if (lp > 0) {
-					if (::kill(lp, 0) != 0 &&
-					    errno == ESRCH) {
-						SPDLOG_INFO(
-							"Auto-refresh: loader pid {} is gone; stopping",
-							(int)lp);
-						return;
-					}
-				}
-#endif
-				std::this_thread::sleep_for(
-					std::chrono::milliseconds(auto_refresh_ms));
-				try {
-					ctx_holder.ctx.init_attach_ctx_from_handlers(
-						bpftime_get_runtime_config());
-				} catch (const std::exception &ex) {
-					SPDLOG_DEBUG(
-						"Auto-refresh: init_attach_ctx_from_handlers failed: {}",
-						ex.what());
-				}
-			}
-		});
-		std::atexit(stop_auto_refresh_at_exit);
-	}
-
-	// Consume the count returned by this scan: no second lock or shared
-	// state read, so the auto-refresh thread cannot race this check.
 	if (failed_handlers > 0) {
 		SPDLOG_WARN(
 			"Attach finished with {} handler(s) not instantiated",
@@ -744,26 +604,8 @@ static int refresh_attach_session(const gchar *data)
 
 static void apply_injected_kv_overrides(const gchar *data)
 {
-	if (data == nullptr || data[0] == '\0')
-		return;
-	std::string_view sv(data);
-	for (size_t pos = 0; pos < sv.size();) {
-		while (pos < sv.size() &&
-		       (sv[pos] == ' ' || sv[pos] == '\t' || sv[pos] == ';'))
-			pos++;
-		if (pos >= sv.size())
-			break;
-		size_t end = pos;
-		while (end < sv.size() && sv[end] != ';' && sv[end] != ' ' &&
-		       sv[end] != '\t')
-			end++;
-		auto item = sv.substr(pos, end - pos);
-		pos = end;
-		auto eq = item.find('=');
-		if (eq == std::string_view::npos)
-			continue;
-		auto key = item.substr(0, eq);
-		auto val = item.substr(eq + 1);
+	for_each_kv(data, [](std::string_view key,
+			     std::string_view val) -> bool {
 		if (key == "cuda_late_ptx_dir") {
 			std::string v(val);
 			setenv("BPFTIME_CUDA_LATE_PTX_DIR", v.c_str(), 1);
@@ -776,7 +618,8 @@ static void apply_injected_kv_overrides(const gchar *data)
 				"bpftime-agent: BPFTIME_CUDA_DISABLE_CUOBJDUMP={}",
 				v);
 		}
-	}
+		return true;
+	});
 }
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
@@ -824,14 +667,6 @@ static void bpftime_agent_main_impl(const gchar *data,
 			return;
 		try {
 			reset_syscall_trace_global();
-		} catch (...) {
-		}
-		try {
-			auto_refresh_epoch.fetch_add(1, std::memory_order_acq_rel);
-			std::lock_guard<std::mutex> guard(
-				auto_refresh_thread_mutex);
-			if (auto_refresh_thread.joinable())
-				auto_refresh_thread.join();
 		} catch (...) {
 		}
 		if (ctx_constructed) {
@@ -1063,64 +898,6 @@ static void bpftime_agent_main_impl(const gchar *data,
 			syscall_trace_impl_ptr->dispatch_process_exec();
 #endif
 			srand(std::random_device()());
-
-			int auto_refresh_ms = parse_auto_refresh_ms(data);
-			pid_t loader_pid = parse_loader_pid(data);
-			if (auto_refresh_ms > 0) {
-				auto_refresh_loader_pid.store(
-					loader_pid,
-					std::memory_order_release);
-				SPDLOG_INFO(
-					"Starting auto-refresh thread ({} ms, loader_pid={})",
-					auto_refresh_ms, (int)loader_pid);
-				uint64_t epoch =
-					auto_refresh_epoch.fetch_add(
-						1, std::memory_order_acq_rel) +
-					1;
-				std::lock_guard<std::mutex> guard(
-					auto_refresh_thread_mutex);
-				if (auto_refresh_thread.joinable())
-					auto_refresh_thread.join();
-				auto_refresh_thread = std::thread(
-					[auto_refresh_ms, epoch]() {
-						attach_callback_suppression_scope
-							suppress_callbacks;
-						for (;;) {
-							if (auto_refresh_epoch.load(
-								    std::memory_order_acquire) !=
-							    epoch) {
-								return;
-							}
-#if __linux__
-							pid_t lp =
-								auto_refresh_loader_pid.load(
-									std::memory_order_acquire);
-							if (lp > 0) {
-								if (::kill(lp, 0) != 0 &&
-								    errno == ESRCH) {
-									SPDLOG_INFO(
-										"Auto-refresh: loader pid {} is gone; stopping",
-										(int)lp);
-									return;
-								}
-							}
-#endif
-							std::this_thread::sleep_for(
-								std::chrono::milliseconds(
-									auto_refresh_ms));
-							try {
-								ctx_holder.ctx
-									.init_attach_ctx_from_handlers(
-										bpftime_get_runtime_config());
-							} catch (const std::exception &ex) {
-								SPDLOG_DEBUG(
-									"Auto-refresh: init_attach_ctx_from_handlers failed: {}",
-									ex.what());
-							}
-						}
-					});
-				std::atexit(stop_auto_refresh_at_exit);
-			}
 
 			if (!shm_holder.global_shared_memory
 				     .add_pid_into_alive_agent_set(getpid())) {

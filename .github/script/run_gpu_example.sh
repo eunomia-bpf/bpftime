@@ -143,7 +143,7 @@ elif [ "$EXAMPLE_MODE" = "dynamic-attach" ]; then
   pushd "$EXAMPLE_DIR" >/dev/null
   echo "Launching bpftime trace (late attach): $EXE_REL (target pid=$VICTIM_PID)"
   env BPFTIME_SHM_MEMORY_MB=$SHM_MB BPFTIME_LOG_OUTPUT=console \
-    "$BPFTIME_CLI" trace --pid "$VICTIM_PID" --auto-refresh-ms 500 \
+    "$BPFTIME_CLI" trace --pid "$VICTIM_PID" \
     $EXE_REL > "$ROOT_DIR/server.log" 2>&1 &
   SERVER_PID=$!
   popd >/dev/null

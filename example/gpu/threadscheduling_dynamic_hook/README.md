@@ -88,7 +88,6 @@ This mode demonstrates "late attach":
 - Start the probe, which will:
   - Run the loader (`threadscheduling`) with `bpftime-server` injected
   - Dynamically inject `bpftime-agent` into the already running `vec_add` process
-  - Discover links incrementally (`--auto-refresh-ms`) so load/attach ordering isn't fragile
 
 #### Terminal 1: Start the target (no preload)
 
@@ -105,7 +104,7 @@ pidof vec_add
 #### Terminal 2: Start probing late
 
 ```bash
-sudo BPFTIME_LOG_OUTPUT=console ./build/tools/cli/bpftime trace --pidof vec_add --auto-refresh-ms 500 \
+sudo BPFTIME_LOG_OUTPUT=console ./build/tools/cli/bpftime trace --pidof vec_add \
   example/gpu/threadscheduling_dynamic_hook/threadscheduling
 ```
 
