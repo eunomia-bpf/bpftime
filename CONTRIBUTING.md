@@ -57,6 +57,11 @@ changes as small as possible.
 
 * **DO** include corresponding tests whenever possible.
 
+* **DO** include a benchmark and a performance impact analysis in every pull
+request: master vs. your change on the same machine, plus which hot paths the
+change touches and what it adds or removes there. The Pull Request Template has
+a section for it.
+
 * **DO** check for additional occurrences of the same problem in other parts of the
 codebase before submitting your PR.
 
