@@ -1356,28 +1356,25 @@ int64_t bpftime_get_stackid(uint64_t ctx_raw, uint64_t map_raw, uint64_t flags,
 			"Unable to get stack id: frida_uprobe_attach_impl not registered");
 		return -ENOTSUP;
 	}
-	auto raw_ptr = (*attach_impl)
-			       ->call_attach_specific_function("generate_stack",
-							       nullptr);
+	attach::stack_walk_data walk;
+	(void)(*attach_impl)
+		->call_attach_specific_function("generate_stack", &walk);
 	// No frames is normal when the probe has no unwinding context, such as a
 	// syscall-trace or tracepoint program whose pt_regs was synthesized:
-	// treat it as an empty stack rather than an error.
-	std::unique_ptr<std::vector<uint64_t>> result(
-		raw_ptr != nullptr ? (std::vector<uint64_t> *)raw_ptr :
-				     new std::vector<uint64_t>());
+	// treat it as an empty stack without allocating on the host heap (which
+	// can deadlock if the syscall fired while libc malloc held its arena lock).
+	const uint64_t *frames = walk.frames;
+	size_t frame_count = walk.count;
 
-	auto frames_to_skip = flags & BPF_F_SKIP_FIELD_MASK;
+	auto frames_to_skip = static_cast<size_t>(flags & BPF_F_SKIP_FIELD_MASK);
 	SPDLOG_DEBUG("Skipping {} frames", frames_to_skip);
-	if (frames_to_skip >= result->size()) {
-		result->resize(0);
+	if (frames_to_skip >= frame_count) {
+		frame_count = 0;
 	} else {
-		std::vector<uint64_t> new_data;
-		new_data.resize(result->size() - frames_to_skip);
-		std::copy(result->begin() + frames_to_skip, result->end(),
-			  new_data.begin());
-		*result = new_data;
+		frames += frames_to_skip;
+		frame_count -= frames_to_skip;
 	}
-	SPDLOG_DEBUG("After skipping, collected {} frames", result->size());
+	SPDLOG_DEBUG("After skipping, collected {} frames", frame_count);
 	int real_map_fd = (int)map_raw;
 	auto &map_handler = std::get<bpf_map_handler>(
 		shm_holder.global_shared_memory.get_handler(real_map_fd));
@@ -1387,7 +1384,8 @@ int64_t bpftime_get_stackid(uint64_t ctx_raw, uint64_t map_raw, uint64_t flags,
 		return -EBUSY;
 	auto impl = *shm_holder.global_shared_memory.try_get_stack_trace_impl(
 		real_map_fd);
-	int ret = impl->fill_stack_trace(*result, flags & BPF_F_REUSE_STACKID,
+	int ret = impl->fill_stack_trace(frames, frame_count,
+					 flags & BPF_F_REUSE_STACKID,
 					 flags & BPF_F_FAST_STACK_CMP);
 
 	SPDLOG_DEBUG("Got stackid {}", ret);
@@ -1427,10 +1425,11 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 			"Unable to get stack id: frida_uprobe_attach_impl not registered");
 		return -ENOTSUP;
 	}
+	attach::stack_walk_data walk;
 	auto raw_ptr = (*attach_impl)
 			       ->call_attach_specific_function("generate_stack",
-							       nullptr);
-	if (raw_ptr == nullptr) {
+							       &walk);
+	if (raw_ptr == nullptr || walk.count == 0) {
 		// No frames: the probe ran where no userspace stack can be
 		// unwound, such as a syscall-trace or tracepoint program
 		// whose pt_regs was synthesized. The kernel reports that as
@@ -1441,12 +1440,12 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 			memset(buffer, 0, size);
 		return 0;
 	}
-	std::unique_ptr<std::vector<uint64_t>> result(
-		(std::vector<uint64_t> *)raw_ptr);
+	const uint64_t *frames = walk.frames;
+	size_t frame_count = walk.count;
 
-	auto frames_to_skip = flags & BPF_F_SKIP_FIELD_MASK;
+	auto frames_to_skip = static_cast<size_t>(flags & BPF_F_SKIP_FIELD_MASK);
 	SPDLOG_DEBUG("Skipping {} frames", frames_to_skip);
-	if (frames_to_skip > result->size()) {
+	if (frames_to_skip > frame_count) {
 		if (size > 0)
 			memset(buffer, 0, size);
 		return -EFAULT;
@@ -1455,12 +1454,12 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 	// Both operands must be the same type: on arm64 Darwin uint64_t is
 	// unsigned long long while size_t is unsigned long, which libc++ rejects.
 	auto frames_to_copy =
-		std::min(static_cast<size_t>(result->size() - frames_to_skip),
+		std::min(static_cast<size_t>(frame_count - frames_to_skip),
 			 static_cast<size_t>(size / sizeof(uint64_t)));
 	auto size_to_copy = frames_to_copy * sizeof(uint64_t);
 	SPDLOG_DEBUG("Copied {} bytes of stack", size_to_copy);
 	if (size_to_copy > 0)
-		memcpy(buffer, result->data() + frames_to_skip, size_to_copy);
+		memcpy(buffer, frames + frames_to_skip, size_to_copy);
 	if (size > size_to_copy)
 		memset(static_cast<char *>(buffer) + size_to_copy, 0,
 		       size - size_to_copy);

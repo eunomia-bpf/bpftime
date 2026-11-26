@@ -121,15 +121,16 @@ int stack_trace_map_impl::map_get_next_key(const void *key, void *next_key)
 	return -1;
 }
 
-int stack_trace_map_impl::fill_stack_trace(const std::vector<uint64_t> &stk,
+int stack_trace_map_impl::fill_stack_trace(const uint64_t *frames, size_t count,
 					   bool discard_old_one,
 					   bool compare_only_by_hash)
 {
-	auto to_put_hash =
-		stack_trace_map::hash_stack_trace(stk) % this->max_entries;
+	auto to_put_hash = stack_trace_map::hash_stack_frames(frames, count) %
+			   this->max_entries;
 	auto itr = this->data.find(to_put_hash);
-	key_buf.resize(stk.size());
-	std::copy(stk.begin(), stk.end(), key_buf.begin());
+	key_buf.resize(count);
+	if (count > 0)
+		std::copy(frames, frames + count, key_buf.begin());
 	SPDLOG_DEBUG("Filling stack trace, to_put_hash={}, stack_trace_size={}",
 		     to_put_hash, key_buf.size());
 	if (itr == this->data.end()) {
@@ -140,11 +141,11 @@ int stack_trace_map_impl::fill_stack_trace(const std::vector<uint64_t> &stk,
 		bool equals = compare_only_by_hash;
 		if (!compare_only_by_hash) {
 			SPDLOG_DEBUG("Checking equality by content..");
-			if (itr->second.size() == stk.size()) {
+			if (itr->second.size() == count) {
 				// Same size: compare every frame. The
 				// four-iterator overload stays bounded even
 				// if the size invariant were ever broken.
-				equals = std::equal(stk.begin(), stk.end(),
+				equals = std::equal(frames, frames + count,
 						    itr->second.begin(),
 						    itr->second.end());
 			} else {

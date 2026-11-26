@@ -24,13 +24,13 @@ using map_allocator = boost::interprocess::allocator<
 using stack_trace_hashmap =
 	boost::unordered_map<uint32_t, uint64_vec, uint32_hasher,
 			     std::equal_to<uint32_t>, map_allocator>;
-template <class T> static inline uint64_t hash_stack_trace(const T &stk)
+static inline uint64_t hash_stack_frames(const uint64_t *frames, size_t count)
 {
 	using boost::hash_combine;
 	size_t seed = 0;
-	hash_combine(seed, stk.size());
-	for (auto x : stk)
-		hash_combine(seed, x);
+	hash_combine(seed, count);
+	for (size_t i = 0; i < count; ++i)
+		hash_combine(seed, frames[i]);
 	return seed;
 }
 
@@ -61,7 +61,7 @@ class stack_trace_map_impl {
 
 	int map_get_next_key(const void *key, void *next_key);
 
-	int fill_stack_trace(const std::vector<uint64_t> &stk,
+	int fill_stack_trace(const uint64_t *frames, size_t count,
 			     bool discard_old_one, bool compare_only_by_hash);
 };
 

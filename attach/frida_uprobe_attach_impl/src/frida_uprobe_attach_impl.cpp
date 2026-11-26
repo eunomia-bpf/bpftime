@@ -33,6 +33,8 @@ thread_local std::optional<void *>
 
 frida_attach_impl::~frida_attach_impl()
 {
+	if (backtracer != nullptr)
+		g_object_unref(backtracer);
 	gum_object_unref((GumInterceptor *)interceptor);
 }
 
@@ -42,6 +44,8 @@ frida_attach_impl::frida_attach_impl(bool use_fuzzy_backtracer)
 	SPDLOG_DEBUG("Initializing frida attach manager");
 	gum_init_embedded();
 	interceptor = gum_interceptor_obtain();
+	backtracer = use_fuzzy_backtracer ? gum_backtracer_make_fuzzy() :
+					    gum_backtracer_make_accurate();
 }
 int frida_attach_impl::attach_at_with_ebpf_callback(void *func_addr,
 						    ebpf_callback_args &&cb)
@@ -312,7 +316,12 @@ void *frida_attach_impl::call_attach_specific_function(const std::string& name,
 {
 	SPDLOG_DEBUG("Calling frida attach impl specified feature: {}", name);
 	if (name == "generate_stack") {
-		if (!current_thread_gum_cpu_context.has_value()) {
+		auto *out = static_cast<stack_walk_data *>(data);
+		if (out == nullptr)
+			return nullptr;
+		out->count = 0;
+		if (!current_thread_gum_cpu_context.has_value() ||
+		    backtracer == nullptr) {
 			// The caller may run outside a Frida hook: a syscall-trace
 			// or tracepoint program gets a synthesized pt_regs and has
 			// no Gum invocation to unwind. No frames is a normal
@@ -327,27 +336,21 @@ void *frida_attach_impl::call_attach_specific_function(const std::string& name,
 			GumReturnAddress items[127];
 		} array;
 		array.len = 0;
-		auto tracer = use_fuzzy_backtracer ?
-				      gum_backtracer_make_fuzzy() :
-				      gum_backtracer_make_accurate();
 		gum_backtracer_generate(
-			tracer,
+			static_cast<GumBacktracer *>(backtracer),
 			(GumCpuContext *)*current_thread_gum_cpu_context,
 			(GumReturnAddressArray *)&array);
-		if (array.len == 0) {
+		out->count =
+			std::min<size_t>(array.len, stack_walk_data::max_frames);
+		for (size_t i = 0; i < out->count; i++) {
+			out->frames[i] = (uint64_t)(uintptr_t)array.items[i];
+		}
+		if (out->count == 0) {
 			SPDLOG_ERROR("Unable to get stack trace");
-			g_object_unref(tracer);
 			return nullptr;
 		}
-		auto result = new std::vector<uint64_t>;
-		for (guint i = 0; i < array.len; i++) {
-			auto frame_addr = array.items[i];
-			result->push_back((uint64_t)(uintptr_t)frame_addr);
-		}
-		SPDLOG_DEBUG("Got {} stack traces", result->size());
-		g_object_unref(tracer);
-		return result;
-
+		SPDLOG_DEBUG("Got {} stack traces", out->count);
+		return out;
 	} else {
 		SPDLOG_ERROR("Invalid frida attach impl feature: {}", name);
 		return nullptr;
