@@ -429,7 +429,7 @@ TEST_CASE("Test probe read-ahead serves overlapping reads in one event")
 
 TEST_CASE("Test probe read-ahead keeps one coherent view per event")
 {
-	uint64_t src[4] = { 1, 2, 3, 4 };
+	alignas(32) uint64_t src[4] = { 1, 2, 3, 4 };
 	uint64_t dst[4] = {};
 	{
 		bpftime::attach::attach_callback_scope scope;
@@ -454,7 +454,7 @@ TEST_CASE("Test probe read-ahead keeps one coherent view per event")
 
 TEST_CASE("Test probe read-ahead is fresh across separate events")
 {
-	uint64_t src[4] = { 1, 2, 3, 4 };
+	alignas(32) uint64_t src[4] = { 1, 2, 3, 4 };
 	uint64_t dst[4] = {};
 	// First event populates the window for this address.
 	{
@@ -655,10 +655,11 @@ TEST_CASE("Test probe read-ahead pins the in-event destination trust contract")
 	// memcpy. The destination is the BPF program's own trusted buffer; an
 	// intentionally invalid in-event destination is a contract violation that
 	// raises SIGSEGV in the child, pinned here via fork so the test host lives.
-	uint64_t src[2] = { 1, 2 };
+	alignas(16) uint64_t src[2] = { 1, 2 };
 	pid_t child = fork();
 	REQUIRE(child >= 0);
 	if (child == 0) {
+		signal(SIGSEGV, SIG_DFL);
 		bpftime::attach::attach_callback_scope scope;
 		if (!scope.entered())
 			_exit(20);
