@@ -1,13 +1,30 @@
 # micro-benchmark for uprobe, uretprobe, map and read/write operations
 
-Run the uprobe bench with one command:
+Build bpftime with the benchmark configuration first:
 
 ```sh
 cd /path/to/bpftime
+make benchmark
+```
+
+This is the build the CI benchmark workflow
+(`.github/workflows/benchmarks.yml`) and [example_results.md](example_results.md)
+use: `RelWithDebInfo`, LLVM JIT, LTO, and the `bpf_probe_read*`/`bpf_probe_write_user`
+checks disabled. A tree built with `make build` (Debug) or without
+`-DBPFTIME_LLVM_JIT=1` measures a slower runtime, so its numbers are not
+comparable with the published results.
+
+Then run the uprobe bench with one command:
+
+```sh
 python3 benchmark/uprobe/benchmark.py
 ```
 
 check the results in `results.md`. An example is [example_results.md](example_results.md).
+
+The numbers depend on the CPU, kernel and frequency scaling of the host. CI runs
+on a shared GitHub-hosted VM, so compare kernel eBPF and bpftime on the same
+machine rather than against numbers from another host.
 
 Below some details of the benchmark and how to run it mannually.
 
