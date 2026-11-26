@@ -267,39 +267,10 @@ bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 
 bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 			   const char *name, runtime_config config)
-	: name(name)
+	: bpftime_prog(insn, insn_cnt,
+		       (bpftime::bpftime_set_runtime_config(std::move(config)),
+			name))
 {
-	// BPFtime_prog relies on the global shared memory being properly
-	// initialized to function.
-	SPDLOG_DEBUG("Creating bpftime_prog with name {}", name);
-	insns.assign(insn, insn + insn_cnt);
-	bpftime::bpftime_set_runtime_config(std::move(config));
-	const char *vm_name = bpftime::bpftime_get_runtime_config().get_vm_name();
-	std::string vm_name_str = (std::string)vm_name;
-
-	if (vm_name_str == "llvm") {
-		SPDLOG_DEBUG("Creating vm with name {}", vm_name_str);
-	} else if (vm_name_str == "ubpf") {
-		SPDLOG_DEBUG("Creating vm with name {}", vm_name_str);
-	} else {
-		SPDLOG_DEBUG("Trying enabling non-builtin vm {}", vm_name_str);
-	}
-
-	vm = ebpf_create(vm_name);
-	// uBPF runs with runtime bounds checking enabled; whitelist the SHM
-	// segment that backs BPF maps. No-op (-1) on backends without the hook.
-	ebpf_register_data_bounds_check(vm,
-				       bpftime_ubpf_shm_bounds_check, nullptr);
-	// Disable bounds check because we have no implementation yet
-	// ebpf_toggle_bounds_check(vm, false);
-	if (!is_cuda()) {
-		ebpf_set_lddw_helpers(vm, map_ptr_by_fd, nullptr, map_val,
-				      nullptr, nullptr);
-	} else {
-		SPDLOG_INFO("Do not set lddw helpers due to cuda program");
-		ebpf_set_lddw_helpers(vm, map_ptr_by_fd, nullptr, map_val,
-				      nullptr, nullptr);
-	}
 }
 
 bpftime_prog::~bpftime_prog()
