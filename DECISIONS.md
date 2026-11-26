@@ -2,10 +2,24 @@
 
 Newest first. Read before starting a change. A pull request that reverses an entry is a design problem until a maintainer decides again. Every entry quotes the maintainer verbatim; changing a decision means adding a new entry.
 
-- **2026-11-26: safety principles for the `LD_PRELOAD` agent** (#948). In the injected agent (the syscall server is out of scope): only a limited set of fork-safe lock mechanisms; nothing that can throw an error into the host or make it stop; no background thread; no waiting or blocking; no signal mechanism.
+- **2026-11-26: safety rules for the `LD_PRELOAD` agent** (#948, #951). The syscall server is out of scope.
+  - **Locks:** only lock-free atomics or fixed arrays, and glibc robust mutexes across processes. On hot paths take them with `trylock`; if the lock is held, skip the event and count it, never wait. (`lock()` blocks while a live holder runs, and forever if the holder is stopped by `SIGSTOP` or a debugger.)
+  - **Errors:** every hook entry and `extern "C"` boundary catches all exceptions; injected code contains no `abort`, `exit`, `assert` or `std::terminate`.
+  - **Threads:** a background thread exists only as an optional compile-time flag.
+  - **Waiting:** bpftime's own code never sleeps, polls, joins, calls `waitpid` or takes a blocking lock. The only waits allowed are blocking calls the host itself makes, such as the syscall server's emulated `epoll_wait` or `read`, and those last only as long as the host asked.
+  - **Signals:** no installing or replacing signal handlers, no sending signals, no changing signal masks; a `kill(pid, 0)` liveness probe does not count. Exception: the trap uprobe backend (`SIGTRAP`), used where Frida is unavailable.
   > 大概就是我觉得 LD PRELOAD 里面有一些安全原则最好要遵守, 比如说 lock 必须只有有限的, fork 安全的 lock 机制; 不要任何可能会抛出错误或者导致宿主停下来的情况; 不要任何后台线程, 不要任何等待或者 block; 不要任何信号机制 这些也要记录进去
   >
   > syscall server 没关系; 记录我的原话
+  >
+  > 锁： 只允许两类：
+  >
+  > * 无锁原子操作或固定数组；
+  > * 跨进程用 glibc robust mutex（11-25 已决定）。关键一点：mutex 被别人持有时 lock() 本身就会阻塞，robust 只管持有者死掉的情况；持有者被 SIGSTOP 或调试器停住时，所有进程都会一直等。所以热路径上应该用 trylock，拿不到就跳过这次事件并计数，不等待。这样第 1 条和第 4 条才不打架。不让宿主出错或停下： 所有 hook 入口和 `extern "C"` 边界都要捕获所有异常；注入代码里不出现 `abort`、`exit`、`assert`、`std::terminate`。这条和 CLAUDE.md 现有的第 1 条不变量一致，只是说得更死。
+  >
+  > 后台线程可以在编译 flag 里面可选不等待、不阻塞： bpftime 自己不 sleep、不轮询、不 join、不 waitpid，也不用阻塞式的锁。唯一例外是宿主自己发起的阻塞调用：syscall server 模拟的 epoll_wait、read，只能按宿主要求的时长等，否则 syscall 模拟就坏了。不用信号： 不安装或替换信号处理函数，不发信号，不改信号掩码。用 `kill(pid, 0)` 只是探测进程是否存活，不算。
+  >
+  > * 冲突： 没有 Frida 的架构靠 trap 后端（SIGTRAP），这条一定下，trap 后端单独定为例外
 - **2026-11-26: decisions are recorded here; new mechanisms are agreed on first** (#948, #950). A new lock, shared-memory layout or attach path, thread, constructor, environment variable or protocol, or a change of more than ~100 production lines, needs a maintainer's agreement before it is written, in an issue or in a maintainer's comment on the pull request. Alternative designs suggested in reviews are options for the maintainers, not fixes the author must make.
   > 1. 在 CLAUDE.md 里记录维护者决定： 列一个带日期和 PR 链接的"Decisions"清单。推翻其中某条的 PR，在维护者重新决定之前一律算 design problem。
   >
