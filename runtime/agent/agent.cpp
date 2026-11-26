@@ -124,7 +124,10 @@ static void install_agent_bootstrap_logger() noexcept
 	if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) !=
 	    AGENT_UNINITIALIZED)
 		return;
-	const char *logger_target = getenv("BPFTIME_LOG_OUTPUT");
+	const char *logger_target =
+		get_agent_bootstrap_config().has_log_output ?
+			get_agent_bootstrap_config().log_output :
+			nullptr;
 	bpftime_set_logger(logger_target == nullptr ? DEFAULT_LOGGER_OUTPUT_PATH :
 						     logger_target);
 }
@@ -215,10 +218,8 @@ static bool try_forward_to_existing_agent(const gchar *data)
 static void start_agent_ipc_server_once()
 {
 #ifdef __linux__
-	const char *enable_ipc = getenv("BPFTIME_ENABLE_AGENT_IPC");
 	if (!injected_with_frida &&
-	    (enable_ipc == nullptr || enable_ipc[0] == '\0' ||
-	     strcmp(enable_ipc, "0") == 0))
+	    !get_agent_bootstrap_config().enable_agent_ipc)
 		return;
 	std::call_once(agent_ipc_once, []() {
 		sockaddr_un addr {};
@@ -720,7 +721,10 @@ static void bpftime_agent_main_impl(const gchar *data,
 			auto &runtime_config = bpftime_get_runtime_config();
 			std::string shm_logger(
 				runtime_config.get_logger_output_path());
-			const char *env_logger = getenv("BPFTIME_LOG_OUTPUT");
+			const char *env_logger =
+				get_agent_bootstrap_config().has_log_output ?
+					get_agent_bootstrap_config().log_output :
+					nullptr;
 			if (shm_logger != "console" || injected_with_frida ||
 			    (env_logger != nullptr &&
 			     strcmp(env_logger, "console") == 0)) {

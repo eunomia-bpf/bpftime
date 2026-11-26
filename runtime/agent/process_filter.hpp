@@ -1,6 +1,7 @@
 #ifndef BPFTIME_AGENT_PROCESS_FILTER_HPP
 #define BPFTIME_AGENT_PROCESS_FILTER_HPP
 // Stack-only early admission filter (no heap/STL): runs before logger/SHM/frida init.
+#include "bpftime_config.hpp"
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
@@ -54,8 +55,11 @@ inline bool process_filter_skips(const char *deny, const char *allow,
 inline bool should_skip_agent_process(const char *argv0_override = nullptr) noexcept
 {
 	int saved_errno = errno;
-	const char *deny = getenv("BPFTIME_AGENT_DENY_PROCESS");
-	const char *allow = getenv("BPFTIME_AGENT_ALLOW_PROCESS");
+	const auto &bootstrap = get_agent_bootstrap_config();
+	if (bootstrap.invalid_process_filter)
+		return true;
+	const char *deny = bootstrap.deny_process;
+	const char *allow = bootstrap.allow_process;
 	if ((deny == nullptr || *deny == '\0') && (allow == nullptr || *allow == '\0')) {
 		errno = saved_errno;
 		return false;
