@@ -99,6 +99,50 @@ with_optional_lock(bool should_lock, robust_shm_mutex &lock, Fn &&fn)
 	return fn();
 }
 
+// Per-CPU maps follow the 2026-11-26 hot-path rule: BPF helper calls
+// (from_syscall == false) take the robust mutex with trylock and skip the
+// event on contention; fd-based userspace syscalls keep the blocking lock.
+std::atomic<uint64_t> percpu_trylock_skips{ 0 };
+
+template <typename Fn>
+BPFTIME_ALWAYS_INLINE inline decltype(auto)
+with_percpu_lock(bool should_lock, bool from_syscall,
+		 robust_shm_mutex &lock, Fn &&fn)
+{
+	using Ret = std::invoke_result_t<Fn>;
+	if (!should_lock)
+		return fn();
+	if (from_syscall) {
+		robust_shm_lock_guard guard(lock, "bpf_map_handler");
+		if (!guard.owns_lock()) {
+			if constexpr (std::is_pointer_v<Ret>)
+				return Ret(nullptr);
+			else
+				return Ret(-1);
+		}
+		return fn();
+	}
+	const int saved_errno = errno;
+	struct restore_errno {
+		int value;
+		~restore_errno() { errno = value; }
+	} restore{ saved_errno };
+	robust_shm_trylock_guard guard(lock);
+	if (!guard.owns_lock()) {
+		percpu_trylock_skips.fetch_add(1, std::memory_order_relaxed);
+		if constexpr (std::is_pointer_v<Ret>)
+			return Ret(nullptr);
+		else
+			return Ret(-EBUSY);
+	}
+	Ret result = fn();
+	if constexpr (!std::is_pointer_v<Ret>) {
+		if (result == -1)
+			return Ret(-(errno != 0 ? errno : EINVAL));
+	}
+	return result;
+}
+
 // Compile-time dispatch over the builtin map implementations. Each known
 // type resolves the shared-memory pointer inside its case and invokes fn
 // with it. The preprocessor guards match map_init exactly, so types absent
@@ -180,6 +224,11 @@ bpftime_map_ops global_map_ops_table[(int)bpf_map_type::BPF_MAP_TYPE_MAX] = {
 	{ 0 }
 };
 
+uint64_t get_percpu_map_trylock_skip_count()
+{
+	return percpu_trylock_skips.load(std::memory_order_relaxed);
+}
+
 uint32_t bpf_map_handler::get_value_size() const
 {
 	return value_size;
@@ -243,9 +292,9 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 							key, from_syscall);
 					});
 			} else if constexpr (is_percpu_map_v<impl_t>) {
-				return with_optional_lock(
-					impl->should_lock, map_lock,
-					[&]() -> const void * {
+				return with_percpu_lock(
+					impl->should_lock, from_syscall,
+					map_lock, [&]() -> const void * {
 						if (from_syscall)
 							return impl->elem_lookup_userspace(
 								key);
@@ -305,6 +354,18 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 				if (!from_syscall)
 					return -EINVAL;
 			}
+			if constexpr (is_percpu_map_v<impl_t>) {
+				return with_percpu_lock(
+					impl->should_lock, from_syscall,
+					map_lock, [&]() -> long {
+						if (from_syscall)
+							return impl->elem_update_userspace(
+								key, value,
+								flags);
+						return impl->elem_update(
+							key, value, flags);
+					});
+			}
 			return with_optional_lock(
 				impl->should_lock, map_lock,
 				[&]() -> long {
@@ -314,15 +375,6 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 						return impl->elem_update(
 							key, value, flags,
 							from_syscall);
-					else if constexpr (
-						is_percpu_map_v<impl_t>) {
-						if (from_syscall)
-							return impl->elem_update_userspace(
-								key, value,
-								flags);
-						return impl->elem_update(
-							key, value, flags);
-					}
 					return impl->elem_update(
 						key, value, flags);
 				});
@@ -368,6 +420,14 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 		type, [&]() BPFTIME_ALWAYS_INLINE { return map_impl_ptr.get(); },
 		[&](auto *impl) -> int {
 			using impl_t = std::remove_cvref_t<decltype(*impl)>;
+			if constexpr (is_percpu_map_v<impl_t>) {
+				return with_percpu_lock(
+					impl->should_lock, from_syscall,
+					map_lock, [&]() -> int {
+						return impl->map_get_next_key(
+							key, next_key);
+					});
+			}
 			return with_optional_lock(
 				impl->should_lock, map_lock,
 				[&]() -> int {
@@ -408,6 +468,16 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 				if (!from_syscall)
 					return -EINVAL;
 			}
+			if constexpr (is_percpu_map_v<impl_t>) {
+				return with_percpu_lock(
+					impl->should_lock, from_syscall,
+					map_lock, [&]() -> long {
+						if (from_syscall)
+							return impl->elem_delete_userspace(
+								key);
+						return impl->elem_delete(key);
+					});
+			}
 			return with_optional_lock(
 				impl->should_lock, map_lock,
 				[&]() -> long {
@@ -416,12 +486,6 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 					if constexpr (is_lru_hash_v<impl_t>) {
 						return impl->elem_delete(
 							key, from_syscall);
-					} else if constexpr (
-						is_percpu_map_v<impl_t>) {
-						if (from_syscall)
-							return impl->elem_delete_userspace(
-								key);
-						return impl->elem_delete(key);
 					}
 					return impl->elem_delete(key);
 				});

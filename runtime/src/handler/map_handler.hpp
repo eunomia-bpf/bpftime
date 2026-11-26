@@ -32,6 +32,10 @@ using boost_shm_string =
 	boost::interprocess::basic_string<char, std::char_traits<char>,
 					  char_allocator>;
 
+// Process-local count of per-CPU map helper events skipped because the
+// map's robust mutex was held (hot-path trylock rule, DECISIONS.md 2026-11-26).
+uint64_t get_percpu_map_trylock_skip_count();
+
 // bpf map handler
 // all map data will be put on shared memory, so it can be accessed by
 // different processes
