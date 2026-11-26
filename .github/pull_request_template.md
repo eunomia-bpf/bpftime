@@ -1,6 +1,16 @@
 ## Description
 
-<!-- Summarize the change, root cause, and motivation. List any required dependencies. -->
+**Problem statement**:
+
+<!-- State the exact reproduced bug, failure symptom, or missing capability this PR solves. Cite the failing command, test, workload, or issue. -->
+
+**Necessity & why existing primitives are insufficient**:
+
+<!-- Explain the root cause and why existing OS/kernel/libc/Boost/bpftime primitives or configuration cannot solve it directly. Do not hand-roll replacements for standard primitives without proving they fail here. -->
+
+**Scope & diff size (`prod +X/-Y`, `test +A/-B`, `doc +C/-D`)**:
+
+<!-- Keep to one independent root cause or cohesive capability (~50-100 prod lines target where feasible). Confirm zero unrelated refactors, speculative abstractions, or extra bundled changes. -->
 
 Fixes # (issue)
 
@@ -46,6 +56,7 @@ Fixes # (issue)
 
 - [ ] My code follows the style guidelines and `AGENTS.md` / `CLAUDE.md` of this project
 - [ ] Single responsibility (one PR, one thing): addresses one independent root cause or cohesive capability without bundling orthogonal changes ("A and B")
+- [ ] Necessity proven: explicitly stated the reproduced problem, why existing OS/library/runtime primitives cannot solve it directly, and exact `prod / test / doc` line deltas with zero extra baggage
 - [ ] I have performed a self-review of my own code and my changes generate no new warnings
 - [ ] No over-engineering: smallest necessary diff (~50-100 prod lines target where feasible), no speculative abstractions, unused config knobs, or unnecessary new `.so` libraries
 - [ ] No over-testing: concise, high-signal regression tests covering the real failure mode without mock/scaffolding bloat
