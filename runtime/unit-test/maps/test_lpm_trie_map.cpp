@@ -888,6 +888,7 @@ struct lpm_mt_test_info {
 	int iter;
 	const bpftime::bpf_map_handler *map;
 	bool ok;
+	unsigned long skips;
 	struct {
 		uint32_t prefixlen;
 		uint32_t data;
@@ -903,6 +904,7 @@ static void *lpm_test_command(void *arg)
 	key_size = sizeof(*key_p) + sizeof(uint32_t);
 	key_p = (test_bpf_lpm_trie_key_u8 *)alloca(key_size);
 	info->ok = true;
+	info->skips = 0;
 	for (iter = 0; iter < info->iter && info->ok; iter++)
 		for (i = 0; i < MAX_TEST_KEYS; i++) {
 			// first half of iterations in forward order,
@@ -914,15 +916,22 @@ static void *lpm_test_command(void *arg)
 			       sizeof(uint32_t));
 			if (info->cmd == 0) {
 				uint32_t value = j;
-				if (info->map->map_update_elem(
-					    key_p, &value, 0, false) != 0) {
+				const int rc = info->map->map_update_elem(
+					key_p, &value, 0, false);
+				// Helper trylock: -EBUSY is a counted skip
+				// under contention, not a failure.
+				if (rc == -EBUSY)
+					info->skips++;
+				else if (rc != 0) {
 					info->ok = false;
 					break;
 				}
 			} else if (info->cmd == 1) {
 				errno = 0;
 				ret = info->map->map_delete_elem(key_p, false);
-				if (ret != 0 && errno != ENOENT) {
+				if (ret == -EBUSY)
+					info->skips++;
+				else if (ret != 0 && errno != ENOENT) {
 					info->ok = false;
 					break;
 				}
@@ -930,10 +939,16 @@ static void *lpm_test_command(void *arg)
 				errno = 0;
 				const void *result = info->map->map_lookup_elem(
 					key_p, false);
-				if (result == nullptr && errno != ENOENT) {
+				// A trylock skip returns NULL and leaves errno
+				// untouched (0); a missing key sets ENOENT.
+				// Anything else is a real failure.
+				if (result == nullptr && errno != ENOENT &&
+				    errno != 0) {
 					info->ok = false;
 					break;
 				}
+				if (result == nullptr && errno == 0)
+					info->skips++;
 			}
 		}
 
@@ -996,6 +1011,7 @@ TEST_CASE("LPM Trie Multi-thread", "[lpm_trie][kernel_style][multithread]")
 
 	// create 3 threads to test update, delete, lookup
 	setup_lpm_mt_test_info(&info[0], map_handler);
+	const uint64_t skips_before = bpftime::get_map_trylock_skip_count();
 	for (i = 0; i < 3; i++) {
 		if (i != 0)
 			memcpy(&info[i], &info[0], sizeof(info[i]));
@@ -1004,11 +1020,18 @@ TEST_CASE("LPM Trie Multi-thread", "[lpm_trie][kernel_style][multithread]")
 				       &lpm_test_command, &info[i]) == 0);
 	}
 
+	unsigned long observed_skips = 0;
 	for (i = 0; i < 3; i++) {
 		REQUIRE(pthread_join(thread_id[i], &ret) == 0);
 		REQUIRE(ret == (void *)&info[i]);
 		REQUIRE(info[i].ok);
+		observed_skips += info[i].skips;
 	}
+	// Every helper-side trylock miss observed by the workers must be
+	// reflected exactly once in the allocation-free global skip counter.
+	REQUIRE(bpftime::get_map_trylock_skip_count() - skips_before ==
+		(uint64_t)observed_skips);
+
 
 	mgr->clear_all(shm);
 	shm.destroy_ptr(mgr);

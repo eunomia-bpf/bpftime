@@ -52,19 +52,24 @@ TEST_CASE("Map helper hot path trylocks around a live holder while syscalls bloc
 {
 	hash_map_fixture fx;
 	auto &map = *fx.map;
-	std::atomic<bool> started{ false };
+	std::atomic<bool> holder_holds{ false };
+	std::atomic<bool> release_holder{ false };
 	std::thread holder([&] {
 		REQUIRE(map.get_map_lock().lock("holder"));
-		started.store(true, std::memory_order_release);
-		std::this_thread::sleep_for(std::chrono::milliseconds(250));
+		holder_holds.store(true, std::memory_order_release);
+		// Stay locked until the main thread has observed the helper
+		// skips and explicitly releases us: no timing-based sleep, so a
+		// descheduled waiter cannot miss the contention window.
+		while (!release_holder.load(std::memory_order_acquire))
+			std::this_thread::yield();
 		map.get_map_lock().unlock();
 	});
-	while (!started.load(std::memory_order_acquire))
+	while (!holder_holds.load(std::memory_order_acquire))
 		std::this_thread::yield();
 
 	// BPF helper entries (from_syscall == false) must skip immediately
-	// with -EBUSY instead of blocking while a live holder is descheduled
-	// or stopped. Host errno is preserved across the trylock fast path.
+	// with -EBUSY instead of blocking while a live holder holds the lock.
+	// Host errno is preserved across the trylock fast path.
 	std::atomic<int> skipped{ 0 }, errno_dirty{ 0 };
 	std::array<std::thread, 2> waiters;
 	for (int w = 0; w < 2; ++w)
@@ -81,18 +86,18 @@ TEST_CASE("Map helper hot path trylocks around a live holder while syscalls bloc
 							     std::memory_order_relaxed);
 			}
 		});
-	auto begin = std::chrono::steady_clock::now();
+
+	// Join all waiters before touching assertions, so a failed REQUIRE
+	// never destroys joinable threads. The holder keeps the lock across
+	// these joins, so every trylock deterministically sees contention.
 	for (auto &t : waiters)
 		t.join();
-	auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-			       std::chrono::steady_clock::now() - begin)
-			       .count();
 	REQUIRE(skipped.load() == 2);
 	REQUIRE(errno_dirty.load() == 0);
-	REQUIRE(elapsed < 100);
 
 	// The control-plane syscall entry keeps the blocking contract: it
 	// waits for the holder to release and then succeeds.
+	release_holder.store(true, std::memory_order_release);
 	uint32_t sys_key = 9;
 	uint64_t sys_value = 0x9000;
 	REQUIRE(map.map_update_elem(&sys_key, &sys_value, 0, true) == 0);

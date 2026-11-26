@@ -50,6 +50,16 @@ namespace bpftime
 
 using hash_map_impl = fix_size_hash_map_impl;
 
+// DECISIONS.md hot-path rule: a trylock miss skips the event and is counted,
+// never waited on. Process-global relaxed atomic: allocation-free, safe to
+// increment from the LD_PRELOAD hot path; observability only, no control flow.
+static std::atomic<uint64_t> map_trylock_skips{ 0 };
+
+uint64_t get_map_trylock_skip_count()
+{
+	return map_trylock_skips.load(std::memory_order_relaxed);
+}
+
 namespace {
 #if defined(__GNUC__) || defined(__clang__)
 #define BPFTIME_ALWAYS_INLINE __attribute__((always_inline))
@@ -103,6 +113,7 @@ with_map_lock(bool should_lock, bool from_syscall,
 	}
 	robust_shm_trylock_guard guard(lock);
 	if (!guard.owns_lock()) {
+		map_trylock_skips.fetch_add(1, std::memory_order_relaxed);
 		if constexpr (std::is_pointer_v<Ret>)
 			return Ret(nullptr);
 		else

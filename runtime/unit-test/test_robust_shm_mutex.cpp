@@ -197,11 +197,12 @@ TEST_CASE("robust SHM mutex try_lock skips contention without touching errno",
 
 	// A live holder in another thread makes try_lock fail immediately
 	// while preserving the host errno.
-	std::atomic<bool> inside{ false };
+	std::atomic<bool> inside{ false }, release{ false };
 	std::thread holder([&] {
 		REQUIRE(m->lock("holder"));
 		inside.store(true, std::memory_order_release);
-		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		while (!release.load(std::memory_order_acquire))
+			std::this_thread::yield();
 		m->unlock();
 	});
 	while (!inside.load(std::memory_order_acquire))
@@ -209,6 +210,7 @@ TEST_CASE("robust SHM mutex try_lock skips contention without touching errno",
 	errno = 0;
 	REQUIRE_FALSE(m->try_lock());
 	REQUIRE(errno == 0);
+	release.store(true, std::memory_order_release);
 	holder.join();
 
 	// After a SIGKILLed holder, try_lock latches the poison and still

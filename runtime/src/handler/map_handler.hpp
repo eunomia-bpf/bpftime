@@ -272,5 +272,9 @@ class bpf_map_handler {
 	uint64_t get_gpu_map_max_thread_count() const;
 };
 
+// Number of BPF-helper map operations skipped because the robust map lock was
+// held (DECISIONS.md trylock rule). Allocation-free relaxed atomic counter.
+uint64_t get_map_trylock_skip_count();
+
 } // namespace bpftime
 #endif
