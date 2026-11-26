@@ -271,6 +271,16 @@ same pull request.
    `SO_RCVTIMEO` + `MSG_NOSIGNAL` are mandatory); use non-blocking acquisition
    and move startup ordering into the external CLI/orchestrator.
 
+## Maintainer decisions
+
+Design and process questions the maintainers have settled are recorded in
+[`DECISIONS.md`](DECISIONS.md), newest first, each with its date, its pull
+requests and the maintainer's words verbatim. **Read it before starting a
+change.** Authors and reviewers check every pull request against it. A pull
+request that reverses an entry is a design problem until a maintainer decides
+again, and that new decision is added to `DECISIONS.md` before or in the change
+that relies on it.
+
 ## Trap and RISC-V backend constraints
 
 Trap callbacks execute inside SIGTRAP. Runtime-managed BPF links must reject
@@ -359,6 +369,17 @@ may cross the syscall-server / attach boundary.
 - Do not over-test. Add concise, high-signal regression tests that exercise the
   real failure mode; avoid large mock or scaffolding setups, and do not re-test
   wiring, incidental defaults, or behavior that already has coverage.
+- **New mechanisms need a maintainer's agreement first.** Before writing a
+  new lock or other synchronization primitive, a new shared-memory layout or
+  attach path, a new thread, constructor, environment variable or protocol, or
+  a change of more than about 100 production lines, describe the problem and
+  the approach and get a maintainer's agreement: in an issue, or in a
+  maintainer's comment on the pull request. The pull request links that issue
+  or comment.
+- **Alternative designs in reviews are options.** A review that suggests a
+  different design writes it as an option for the maintainers to choose, not
+  as a fix the author must make. Until a maintainer chooses it, it does not
+  block the pull request, and once chosen it is recorded in `DECISIONS.md`.
 
 Before opening or updating a pull request, self-review against this checklist:
 
@@ -369,3 +390,5 @@ Before opening or updating a pull request, self-review against this checklist:
 3. Is there any over-testing (boilerplate, mocks, or duplicated coverage)?
 4. Can more than half of the diff be cut while still fixing the root cause?
 5. Are any new shared libraries or cross-process state strictly necessary?
+6. Does it reverse an entry in `DECISIONS.md`, or add a new
+   mechanism without a linked issue or comment where a maintainer agreed?

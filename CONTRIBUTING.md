@@ -56,6 +56,10 @@ for this.
 * **DO** follow our [Coding and Style](#style-guidelines) guidelines, and keep code
 changes as small as possible.
 
+* **DO** read [DECISIONS.md](DECISIONS.md) before starting a change. It records
+the design questions the maintainers have settled; a pull request that reverses
+one of them needs a new maintainer decision first.
+
 * **DO** include corresponding tests whenever possible.
 
 * **DO** include a benchmark and a performance impact analysis in every pull
