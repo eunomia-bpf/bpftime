@@ -190,8 +190,8 @@ TEST_CASE("Ringbuf reserve waits for a live lock holder",
 
 #if defined(__linux__)
 // A producer SIGKILLed while holding the lock leaves an unreaped zombie.
-// lock_and_recover() detects the dead owner on the slow path, claims the
-// lock, and reservation continues with every record draining intact.
+// Kernel PTHREAD_MUTEX_ROBUST marks the mutex on exit; lock_and_recover()
+// handles EOWNERDEAD via pthread_mutex_consistent() and reservation continues.
 TEST_CASE("Ringbuf reserve recovers a SIGKILLed lock holder",
 	  "[ringbuf_map][reserve]")
 {
