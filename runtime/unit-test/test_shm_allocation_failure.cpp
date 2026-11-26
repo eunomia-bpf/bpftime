@@ -649,6 +649,9 @@ TEST_CASE("Client SHM_OPEN_ONLY and agent preload bypass wedged Boost segment_ma
 	const uint64_t expected_epoch =
 		bpftime::shm_holder.global_shared_memory.begin_new_session();
 	REQUIRE(expected_epoch > 0);
+	bpftime::runtime_config console_cfg{};
+	console_cfg.set_logger_output_path("console");
+	bpftime_set_runtime_config(std::move(console_cfg));
 
 	// Fork a child that permanently wedges Boost's non-robust
 	// segment_manager mutex via SIGKILL inside atomic_func().
@@ -679,10 +682,13 @@ TEST_CASE("Client SHM_OPEN_ONLY and agent preload bypass wedged Boost segment_ma
 
 	// Both SHM_OPEN_ONLY and LD_PRELOAD agent attach must succeed without
 	// touching segment.find() / Boost's wedged segment_manager lock.
+	int stdio_pipe[2]{ -1, -1 };
+	REQUIRE(pipe(stdio_pipe) == 0);
 	pid_t client = fork();
 	REQUIRE(client >= 0);
 	if (client == 0) {
 		alarm(5);
+		close(stdio_pipe[0]);
 		bpftime::bpftime_shm attached(
 			shm_name.c_str(), bpftime::shm_open_type::SHM_OPEN_ONLY);
 		if (attached.get_manager() == nullptr ||
@@ -690,6 +696,10 @@ TEST_CASE("Client SHM_OPEN_ONLY and agent preload bypass wedged Boost segment_ma
 		    !attached.add_pid_into_alive_agent_set(getpid()))
 			_exit(20);
 		attached.remove_pid_from_alive_agent_set(getpid());
+		if (dup2(stdio_pipe[1], STDOUT_FILENO) == -1 ||
+		    dup2(stdio_pipe[1], STDERR_FILENO) == -1)
+			_exit(21);
+		close(stdio_pipe[1]);
 		unsetenv("BPFTIME_LOG_OUTPUT");
 		unsetenv("SPDLOG_LEVEL");
 		setenv("HOME", "/proc/bpftime-unwritable-home", 1);
@@ -700,10 +710,22 @@ TEST_CASE("Client SHM_OPEN_ONLY and agent preload bypass wedged Boost segment_ma
 		      nullptr);
 		_exit(127);
 	}
+	close(stdio_pipe[1]);
+	std::string client_stdio;
+	char sbuf[512];
+	for (;;) {
+		ssize_t n = read(stdio_pipe[0], sbuf, sizeof(sbuf));
+		if (n > 0)
+			client_stdio.append(sbuf, static_cast<size_t>(n));
+		else if (n == 0 || errno != EINTR)
+			break;
+	}
+	close(stdio_pipe[0]);
 	int client_status = 0;
 	REQUIRE(waitpid(client, &client_status, 0) == client);
 	REQUIRE(WIFEXITED(client_status));
 	REQUIRE(WEXITSTATUS(client_status) == 100);
+	REQUIRE(client_stdio.empty());
 
 	memory.cleanup();
 	boost::interprocess::shared_memory_object::remove(shm_name.c_str());

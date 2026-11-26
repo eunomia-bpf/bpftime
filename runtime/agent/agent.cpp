@@ -718,8 +718,14 @@ static void bpftime_agent_main_impl(const gchar *data,
 				return init_fail();
 			}
 			auto &runtime_config = bpftime_get_runtime_config();
-			bpftime_set_logger(std::string(
-				runtime_config.get_logger_output_path()));
+			std::string shm_logger(
+				runtime_config.get_logger_output_path());
+			const char *env_logger = getenv("BPFTIME_LOG_OUTPUT");
+			if (shm_logger != "console" || injected_with_frida ||
+			    (env_logger != nullptr &&
+			     strcmp(env_logger, "console") == 0)) {
+				bpftime_set_logger(shm_logger);
+			}
 			apply_injected_kv_overrides(data);
 			ctx_holder.init();
 			ctx_constructed = true;
