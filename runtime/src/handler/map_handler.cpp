@@ -83,11 +83,17 @@ constexpr bool is_map_in_map_v =
 // the exact locking of the previous per-operation dispatch.
 template <typename Fn>
 BPFTIME_ALWAYS_INLINE inline decltype(auto)
-with_optional_lock(bool should_lock, volatile pthread_spinlock_t &lock,
-		   Fn &&fn)
+with_optional_lock(bool should_lock, robust_shm_mutex &lock, Fn &&fn)
 {
+	using Ret = std::invoke_result_t<Fn>;
 	if (should_lock) {
-		bpftime_lock_guard guard(lock);
+		robust_shm_lock_guard guard(lock, "bpf_map_handler");
+		if (!guard.owns_lock()) {
+			if constexpr (std::is_pointer_v<Ret>)
+				return Ret(nullptr);
+			else
+				return Ret(-1);
+		}
 		return fn();
 	}
 	return fn();
@@ -258,7 +264,10 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 				// to thread-local storage while map_lock is
 				// held, so the caller's memcpy cannot touch a
 				// concurrently freed hash node.
-				bpftime_lock_guard guard(map_lock);
+				robust_shm_lock_guard guard(map_lock,
+							    name.c_str());
+				if (!guard.owns_lock())
+					return nullptr;
 				const int *stored = static_cast<const int *>(
 					impl->elem_lookup_userspace(key));
 				if (stored == nullptr)
