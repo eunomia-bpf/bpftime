@@ -124,7 +124,10 @@ static void install_agent_bootstrap_logger() noexcept
 	if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) !=
 	    AGENT_UNINITIALIZED)
 		return;
-	const char *logger_target = getenv("BPFTIME_LOG_OUTPUT");
+	initialize_local_runtime_config_from_env();
+	const auto &bootstrap = get_agent_bootstrap_config();
+	const char *logger_target =
+		bootstrap.has_log_output ? bootstrap.log_output : nullptr;
 	bpftime_set_logger(logger_target == nullptr ? DEFAULT_LOGGER_OUTPUT_PATH :
 						     logger_target);
 }
@@ -215,10 +218,8 @@ static bool try_forward_to_existing_agent(const gchar *data)
 static void start_agent_ipc_server_once()
 {
 #ifdef __linux__
-	const char *enable_ipc = getenv("BPFTIME_ENABLE_AGENT_IPC");
 	if (!injected_with_frida &&
-	    (enable_ipc == nullptr || enable_ipc[0] == '\0' ||
-	     strcmp(enable_ipc, "0") == 0))
+	    !get_agent_bootstrap_config().enable_agent_ipc)
 		return;
 	std::call_once(agent_ipc_once, []() {
 		sockaddr_un addr {};
@@ -537,13 +538,21 @@ static int refresh_attach_session(const gchar *data)
 
 	std::lock_guard<std::mutex> guard(detach_mutex);
 	attach_callback_suppression_scope suppress_callbacks;
-	apply_injected_kv_overrides(data);
 	(void)ctx_holder.ctx.destroy_all_attach_links();
 	ctx_holder.ctx.reset_instantiated_state();
 
+	auto config = bpftime_get_runtime_config();
+	const auto &local = bpftime_get_local_runtime_config();
+	// Attach-control overrides are process-local and survive an empty
+	// refresh.
+	memcpy(config.cuda_late_ptx_dir, local.cuda_late_ptx_dir,
+	       sizeof(config.cuda_late_ptx_dir));
+	config.cuda_disable_cuobjdump = local.cuda_disable_cuobjdump;
+	bpftime_set_local_runtime_config(config);
+	apply_injected_kv_overrides(data);
 	int failed_handlers = 0;
 	int res = ctx_holder.ctx.init_attach_ctx_from_handlers(
-		bpftime_get_runtime_config(), &failed_handlers);
+		bpftime_get_local_runtime_config(), &failed_handlers);
 	if (res != 0) {
 		SPDLOG_ERROR(
 			"agent_control: init_attach_ctx_from_handlers failed: {}",
@@ -571,22 +580,25 @@ static int refresh_attach_session(const gchar *data)
 
 static void apply_injected_kv_overrides(const gchar *data)
 {
-	for_each_kv(data, [](std::string_view key,
-			     std::string_view val) -> bool {
-		if (key == "cuda_late_ptx_dir") {
-			std::string v(val);
-			setenv("BPFTIME_CUDA_LATE_PTX_DIR", v.c_str(), 1);
-			SPDLOG_INFO("bpftime-agent: BPFTIME_CUDA_LATE_PTX_DIR={}",
-				    v);
-		} else if (key == "cuda_disable_cuobjdump") {
-			std::string v(val);
-			setenv("BPFTIME_CUDA_DISABLE_CUOBJDUMP", v.c_str(), 1);
-			SPDLOG_INFO(
-				"bpftime-agent: BPFTIME_CUDA_DISABLE_CUOBJDUMP={}",
-				v);
-		}
-		return true;
-	});
+	auto config = bpftime_get_local_runtime_config();
+	for_each_kv(
+		data, [&](std::string_view key, std::string_view val) -> bool {
+			if (key == "cuda_late_ptx_dir") {
+				config.cuda_late_ptx_dir[0] = '\0';
+				if (val.size() <
+				    sizeof(config.cuda_late_ptx_dir)) {
+					memcpy(config.cuda_late_ptx_dir,
+					       val.data(), val.size());
+					config.cuda_late_ptx_dir[val.size()] =
+						'\0';
+				}
+			} else if (key == "cuda_disable_cuobjdump") {
+				config.cuda_disable_cuobjdump =
+					!val.empty() && val[0] == '1';
+			}
+			return true;
+		});
+	bpftime_set_local_runtime_config(config);
 }
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
@@ -717,7 +729,10 @@ static void bpftime_agent_main_impl(const gchar *data,
 					     ex.what());
 				return init_fail();
 			}
-			auto &runtime_config = bpftime_get_runtime_config();
+			bpftime_set_local_runtime_config(
+				bpftime_get_runtime_config());
+			auto &runtime_config =
+				bpftime_get_local_runtime_config();
 			bpftime_set_logger(std::string(
 				runtime_config.get_logger_output_path()));
 			apply_injected_kv_overrides(data);

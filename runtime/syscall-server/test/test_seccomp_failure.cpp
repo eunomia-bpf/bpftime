@@ -180,9 +180,11 @@ __wrap_prctl(int, ...)
 TEST_CASE("Failed seccomp installation cancels waiting workers")
 {
 	REQUIRE(setenv("BPFTIME_GO_SECCOMP", "1", 1) == 0);
+	bpftime::reload_agent_bootstrap_config_from_env();
 	bpftime::seccomp::go_seccomp_listener.store(-1);
 	const bool installed = bpftime::seccomp::install_seccomp_tracer();
 	unsetenv("BPFTIME_GO_SECCOMP");
+	bpftime::reload_agent_bootstrap_config_from_env();
 	REQUIRE_FALSE(installed);
 	REQUIRE(bpftime::seccomp::go_seccomp_listener.load() == -2);
 }
@@ -190,11 +192,13 @@ TEST_CASE("Failed seccomp installation cancels waiting workers")
 TEST_CASE("Worker construction failure cancels partially started seccomp setup")
 {
 	REQUIRE(setenv("BPFTIME_GO_SECCOMP", "1", 1) == 0);
+	bpftime::reload_agent_bootstrap_config_from_env();
 	bpftime::seccomp::go_seccomp_listener.store(-1);
 	worker_allocations_before_failure = 1;
 	const bool installed = bpftime::seccomp::install_seccomp_tracer();
 	worker_allocations_before_failure = -1;
 	unsetenv("BPFTIME_GO_SECCOMP");
+	bpftime::reload_agent_bootstrap_config_from_env();
 	REQUIRE_FALSE(installed);
 	REQUIRE(bpftime::seccomp::go_seccomp_listener.load() == -2);
 }
@@ -227,6 +231,7 @@ __wrap_syscall(long number, ...)
 TEST_CASE("Post-install logging failure preserves the live seccomp listener")
 {
 	REQUIRE(setenv("BPFTIME_GO_SECCOMP", "1", 1) == 0);
+	bpftime::reload_agent_bootstrap_config_from_env();
 	auto previous_logger = spdlog::default_logger();
 	auto sink = std::make_shared<spdlog::sinks::callback_sink_mt>(
 		[](const spdlog::details::log_msg &) { throw std::bad_alloc(); });
@@ -242,6 +247,7 @@ TEST_CASE("Post-install logging failure preserves the live seccomp listener")
 	allow_install = false;
 	spdlog::set_default_logger(previous_logger);
 	unsetenv("BPFTIME_GO_SECCOMP");
+	bpftime::reload_agent_bootstrap_config_from_env();
 	REQUIRE(installed);
 	REQUIRE(bpftime::seccomp::go_seccomp_listener.load() == 42);
 }
@@ -249,6 +255,7 @@ TEST_CASE("Post-install logging failure preserves the live seccomp listener")
 TEST_CASE("Foreign-ABI syscalls fail open instead of killing the process")
 {
 	REQUIRE(setenv("BPFTIME_GO_SECCOMP", "1", 1) == 0);
+	bpftime::reload_agent_bootstrap_config_from_env();
 	bpftime::seccomp::go_seccomp_listener.store(-1);
 	captured_filter.clear();
 	filter_captured = false;
@@ -256,6 +263,7 @@ TEST_CASE("Foreign-ABI syscalls fail open instead of killing the process")
 	const bool installed = bpftime::seccomp::install_seccomp_tracer();
 	allow_install = false;
 	unsetenv("BPFTIME_GO_SECCOMP");
+	bpftime::reload_agent_bootstrap_config_from_env();
 	REQUIRE(installed);
 	REQUIRE(filter_captured);
 	REQUIRE(captured_filter.size() >= 4);

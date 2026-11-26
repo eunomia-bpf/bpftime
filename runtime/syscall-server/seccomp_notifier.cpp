@@ -12,6 +12,7 @@
  */
 #if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))
 #include "seccomp_raw_syscall.hpp"
+#include "bpftime_config.hpp"
 #include "seccomp_tracer.hpp"
 #include "seccomp_bpf_compat.hpp"
 #include "syscall_server_internal_dispatch.hpp"
@@ -259,7 +260,7 @@ static void start_go_seccomp_workers()
 
 static bool setup_go_seccomp_tracer()
 {
-	if (getenv("BPFTIME_GO_SECCOMP") == nullptr)
+	if (!get_agent_bootstrap_config().go_seccomp)
 		return false;
 	start_go_seccomp_workers();
 	struct sock_filter filter[] = {
@@ -379,7 +380,7 @@ static bool setup_go_seccomp_tracer()
 
 bool install_seccomp_tracer()
 {
-	if (getenv("BPFTIME_GO_SECCOMP") == nullptr)
+	if (!get_agent_bootstrap_config().go_seccomp)
 		return false;
 	try {
 		return setup_go_seccomp_tracer();

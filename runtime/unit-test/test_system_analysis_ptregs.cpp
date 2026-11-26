@@ -142,6 +142,8 @@ TEST_CASE("sys_enter raw tracepoint is emulated by default in userspace mode",
 {
 	shm_test_fixture fixture;
 	clear_analysis_env();
+	bpftime::bpftime_set_local_runtime_config(
+		bpftime::construct_runtime_config_from_env());
 	syscall_context ctx;
 
 	int fd = open_raw_tracepoint(ctx, "sys_enter");
@@ -159,6 +161,8 @@ TEST_CASE("explicit positive pt_regs offset stays honored",
 	clear_analysis_env();
 	REQUIRE(setenv("BPFTIME_SYSTEM_ANALYSIS_PTREGS_OFFSET", "8192", 1) ==
 		0);
+	bpftime::bpftime_set_local_runtime_config(
+		bpftime::construct_runtime_config_from_env());
 	syscall_context ctx;
 
 	int fd = open_raw_tracepoint(ctx, "sys_enter");
@@ -175,6 +179,8 @@ TEST_CASE("pt_regs offset zero disables the raw tracepoint emulation",
 	shm_test_fixture fixture;
 	clear_analysis_env();
 	REQUIRE(setenv("BPFTIME_SYSTEM_ANALYSIS_PTREGS_OFFSET", "0", 1) == 0);
+	bpftime::bpftime_set_local_runtime_config(
+		bpftime::construct_runtime_config_from_env());
 	syscall_context ctx;
 
 	errno = 0;
@@ -186,6 +192,8 @@ TEST_CASE("non-sys_enter raw tracepoints always pass through",
 {
 	shm_test_fixture fixture;
 	clear_analysis_env();
+	bpftime::bpftime_set_local_runtime_config(
+		bpftime::construct_runtime_config_from_env());
 	syscall_context ctx;
 
 	errno = 0;
@@ -197,6 +205,8 @@ TEST_CASE("system_analysis lookup uses the default pt_regs offset without env",
 {
 	shm_test_fixture fixture;
 	clear_analysis_env();
+	bpftime::bpftime_set_local_runtime_config(
+		bpftime::construct_runtime_config_from_env());
 	syscall_context ctx;
 	prime_syscall_startup(ctx);
 
@@ -223,6 +233,8 @@ TEST_CASE("system_analysis lookup honors an explicit pt_regs offset",
 	clear_analysis_env();
 	REQUIRE(setenv("BPFTIME_SYSTEM_ANALYSIS_PTREGS_OFFSET", "8192", 1) ==
 		0);
+	bpftime::bpftime_set_local_runtime_config(
+		bpftime::construct_runtime_config_from_env());
 	syscall_context ctx;
 	prime_syscall_startup(ctx);
 

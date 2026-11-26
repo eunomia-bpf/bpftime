@@ -1,3 +1,4 @@
+#include "bpftime_config.hpp"
 #include "nv_gpu_shared_array_map.hpp"
 #include "bpftime_shm.hpp"
 #include "bpftime_shm_internal.hpp"
@@ -263,16 +264,9 @@ nv_gpu_shared_array_map_impl::try_initialize_for_agent_and_get_mapped_address()
 
 			// Build candidate device indices.
 			std::vector<int> candidates;
-			if (const char *p = getenv("BPFTIME_CUDA_DEVICE");
-			    p && p[0] != '\0') {
-				errno = 0;
-				char *end = nullptr;
-				long v = strtol(p, &end, 10);
-				if (errno == 0 && end && end[0] == '\0' && v >= 0 &&
-				    v <= std::numeric_limits<int>::max()) {
-					candidates.push_back((int)v);
-				}
-			}
+			const auto &config = bpftime_get_local_runtime_config();
+			if (config.has_cuda_device)
+				candidates.push_back(config.cuda_device);
 			int count = 0;
 			if (cuDeviceGetCount(&count) == CUDA_SUCCESS && count > 0) {
 				for (int i = 0; i < count; i++)

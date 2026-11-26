@@ -1,3 +1,4 @@
+#include "bpftime_config.hpp"
 #include "nv_attach_impl.hpp"
 #include "cuda_runtime_api.h"
 #include "driver_types.h"
@@ -487,11 +488,11 @@ nv_attach_impl::nv_attach_impl()
 	hook_state.replacements_installed.store(true,
 						std::memory_order_release);
 
-	static const char *ptx_pass_libraries = DEFAULT_PTX_PASS_EXECUTABLE;
+	const char *ptx_pass_libraries = DEFAULT_PTX_PASS_EXECUTABLE;
 	std::vector<std::filesystem::path> pass_libraries;
 	{
 		const char *provided_libraries =
-			getenv("BPFTIME_PTXPASS_LIBRARIES");
+			bpftime_get_local_runtime_config().ptxpass_libraries;
 		if (provided_libraries && strlen(provided_libraries) > 0) {
 			ptx_pass_libraries = provided_libraries;
 			SPDLOG_INFO(
@@ -542,7 +543,7 @@ nv_attach_impl::nv_attach_impl()
 	}
 	{
 		const char *provided_compiler_lib =
-			getenv("BPFTIME_PTX_COMPILER_LIB");
+			bpftime_get_local_runtime_config().ptx_compiler_lib;
 		const char *compiler_lib =
 			(provided_compiler_lib &&
 			 strlen(provided_compiler_lib) > 0)
@@ -669,7 +670,8 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 	// Dynamic attach path: prefer externally extracted PTX files to avoid
 	// spawning processes (cuobjdump) inside an already-CUDA-initialized
 	// target, which is fragile and can crash.
-	if (const char *dir = getenv("BPFTIME_CUDA_LATE_PTX_DIR");
+	if (const char *dir =
+		    bpftime_get_local_runtime_config().cuda_late_ptx_dir;
 	    dir && dir[0] != '\0') {
 		std::error_code ec;
 		std::filesystem::path p(dir);
@@ -700,8 +702,7 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 			dir);
 	}
 
-	if (const char *dis = getenv("BPFTIME_CUDA_DISABLE_CUOBJDUMP");
-	    dis && dis[0] == '1') {
+	if (bpftime_get_local_runtime_config().cuda_disable_cuobjdump) {
 		SPDLOG_WARN(
 			"Skipping cuobjdump-based PTX extraction because BPFTIME_CUDA_DISABLE_CUOBJDUMP=1");
 		return all_ptx;
@@ -731,7 +732,8 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 
 		// Allow overriding with either an absolute path or a
 		// PATH-resolved tool name.
-		if (const char *p = getenv("BPFTIME_CUOBJDUMP");
+		if (const char *p =
+			    bpftime_get_local_runtime_config().cuobjdump;
 		    p && p[0] != '\0') {
 			std::string s(p);
 			if (s.find('/') == std::string::npos)
@@ -741,8 +743,8 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 		}
 
 		const auto try_root =
-			[&](const char *env) -> std::optional<std::string> {
-			if (const char *p = getenv(env); p && p[0] != '\0') {
+			[&](const char *p) -> std::optional<std::string> {
+			if (p[0] != '\0') {
 				auto cand = std::filesystem::path(p) / "bin" /
 					    "cuobjdump";
 				if (exists(cand))
@@ -750,10 +752,9 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 			}
 			return std::nullopt;
 		};
-		for (const char *env :
-		     { "BPFTIME_CUDA_ROOT", "CUDA_HOME", "CUDA_PATH",
-		       "LLVMBPF_CUDA_PATH", "CUDAToolkit_ROOT" }) {
-			if (auto p = try_root(env))
+		for (const auto &root :
+		     bpftime_get_local_runtime_config().cuda_roots) {
+			if (auto p = try_root(root))
 				return *p;
 		}
 
@@ -1741,16 +1742,7 @@ static void ensure_cuda_context_for_current_thread()
 	err = cuInit(0);
 	if (err != CUDA_SUCCESS)
 		return;
-	int dev_index = 0;
-	if (const char *p = getenv("BPFTIME_CUDA_DEVICE"); p && p[0] != '\0') {
-		try {
-			dev_index = std::stoi(std::string(p));
-			if (dev_index < 0)
-				dev_index = 0;
-		} catch (...) {
-			dev_index = 0;
-		}
-	}
+	const int dev_index = bpftime_get_local_runtime_config().cuda_device;
 	CUdevice dev = 0;
 	err = cuDeviceGet(&dev, dev_index);
 	if (err != CUDA_SUCCESS)

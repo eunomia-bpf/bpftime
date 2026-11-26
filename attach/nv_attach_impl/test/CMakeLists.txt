@@ -4,7 +4,10 @@ set(TEST_SOURCES
     test_ptxpass.cpp
     # test_kernel_finder.cpp
 )
-add_executable(bpftime_nv_attach_tests ${TEST_SOURCES})
+add_executable(bpftime_nv_attach_tests ${TEST_SOURCES}
+    ${CMAKE_SOURCE_DIR}/runtime/src/bpftime_config.cpp)
+target_include_directories(bpftime_nv_attach_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/runtime/include)
 
 target_include_directories(bpftime_nv_attach_tests PUBLIC ${CMAKE_SOURCE_DIR}/third_party)
 

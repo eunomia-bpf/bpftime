@@ -23,7 +23,9 @@
 #if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))
 #include "seccomp_tracer.hpp"
 #include "syscall_server_internal_dispatch.hpp"
+#include "bpftime_config.hpp"
 #include <atomic>
+#include <cerrno>
 #include <dlfcn.h>
 #include <spdlog/spdlog.h>
 
@@ -38,7 +40,7 @@ void rootless_arm_seccomp()
 {
 	// Keep the env gate ahead of every side effect: a preload without
 	// BPFTIME_GO_SECCOMP must behave exactly as if this library were absent.
-	if (getenv("BPFTIME_GO_SECCOMP") == nullptr)
+	if (!bpftime::get_agent_bootstrap_config().go_seccomp)
 		return;
 	bool expected = false;
 	if (!g_rootless_seccomp_armed.compare_exchange_strong(expected, true))
@@ -48,15 +50,6 @@ void rootless_arm_seccomp()
 	// __libc_start_main interposer), so no exception may escape: fail open
 	// and leave the host running with ordinary syscalls.
 	try {
-		// Worker threads log through interposed syscalls; a rotating
-		// file sink makes a worker's spdlog flush contend with the main
-		// thread's stdio lock during fclose and deadlock. Default to
-		// console on the rootless path only: an ordinary
-		// BPFTIME_LOG_OUTPUT-less preload must keep writing its log
-		// file, as the startup tests assert no host stdio.
-		if (getenv("BPFTIME_LOG_OUTPUT") == nullptr)
-			setenv("BPFTIME_LOG_OUTPUT", "console", 1);
-
 		// Finish the one-time fake-kernel/SHM startup BEFORE installing
 		// the filter. The startup path issues whitelisted syscalls;
 		// doing it lazily inside a seccomp worker self-deadlocks because

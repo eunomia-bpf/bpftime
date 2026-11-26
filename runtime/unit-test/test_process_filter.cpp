@@ -71,7 +71,11 @@ struct filter_env_guard {
 	const char *name; bool had; std::string old;
 	explicit filter_env_guard(const char *n)
 		: name(n), had(getenv(n) != nullptr), old(had ? getenv(n) : "") {}
-	~filter_env_guard() { had ? setenv(name, old.c_str(), 1) : unsetenv(name); }
+	~filter_env_guard()
+	{
+		had ? setenv(name, old.c_str(), 1) : unsetenv(name);
+		bpftime::reload_agent_bootstrap_config_from_env();
+	}
 };
 TEST_CASE("argv[0] override decides admission and errno is preserved",
 	  "[agent][process_filter]")
@@ -81,10 +85,12 @@ TEST_CASE("argv[0] override decides admission and errno is preserved",
 	filter_env_guard allow_guard("BPFTIME_AGENT_ALLOW_PROCESS");
 	setenv("BPFTIME_AGENT_DENY_PROCESS", "sh", 1);
 	setenv("BPFTIME_AGENT_ALLOW_PROCESS", "", 1);
+	bpftime::reload_agent_bootstrap_config_from_env();
 	REQUIRE(should_skip_agent_process("sh"));
 	REQUIRE_FALSE(should_skip_agent_process("python3"));
 	setenv("BPFTIME_AGENT_DENY_PROCESS", "", 1);
 	setenv("BPFTIME_AGENT_ALLOW_PROCESS", "python3", 1);
+	bpftime::reload_agent_bootstrap_config_from_env();
 	REQUIRE_FALSE(should_skip_agent_process("python3"));
 	REQUIRE(should_skip_agent_process("sed"));
 	errno = 42; (void)should_skip_agent_process("sed"); REQUIRE(errno == 42); errno = 0;

@@ -86,6 +86,8 @@ TEST_CASE("cached real-file synthetic files and synthetic tpbase completion",
 	unsetenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET");
 	unsetenv("BPFTIME_SYSTEM_ANALYSIS_PTREGS_OFFSET");
 	unsetenv("BPFTIME_RUN_WITH_KERNEL");
+	bpftime::bpftime_set_local_runtime_config(
+		bpftime::construct_runtime_config_from_env());
 	bpftime::bpf_map_attr attr{
 		.type = BPF_MAP_TYPE_ARRAY, .key_size = sizeof(uint32_t),
 		.value_size = sizeof(analysis_value), .max_ents = 1
@@ -241,13 +243,22 @@ TEST_CASE("explicit BTF and kallsyms overrides redirect without copies",
 	REQUIRE(close(btf_fd) == 0);
 	BOOST_SCOPE_EXIT_ALL(&) { unlink(btf_template); };
 	setenv("BPFTIME_BTF_PATH", btf_template, 1);
-	BOOST_SCOPE_EXIT_ALL(&) { unsetenv("BPFTIME_BTF_PATH"); };
+	bpftime::bpftime_set_local_runtime_config(
+		bpftime::construct_runtime_config_from_env());
+	BOOST_SCOPE_EXIT_ALL(&)
+	{
+		unsetenv("BPFTIME_BTF_PATH");
+		bpftime::bpftime_set_local_runtime_config(
+			bpftime::construct_runtime_config_from_env());
+	};
 	auto btf = bpftime::resolve_redirected_path(
 		"/sys/kernel/btf/vmlinux");
 	REQUIRE(btf.has_value());
 	REQUIRE(*btf == btf_template);
 	// An empty value means "unset": no redirect, no generated copy.
 	setenv("BPFTIME_BTF_PATH", "", 1);
+	bpftime::bpftime_set_local_runtime_config(
+		bpftime::construct_runtime_config_from_env());
 	REQUIRE_FALSE(bpftime::resolve_redirected_path(
 		"/sys/kernel/btf/vmlinux").has_value());
 
@@ -258,11 +269,20 @@ TEST_CASE("explicit BTF and kallsyms overrides redirect without copies",
 	REQUIRE(close(kallsyms_fd) == 0);
 	BOOST_SCOPE_EXIT_ALL(&) { unlink(kallsyms_template); };
 	setenv("BPFTIME_KALLSYMS_PATH", kallsyms_template, 1);
-	BOOST_SCOPE_EXIT_ALL(&) { unsetenv("BPFTIME_KALLSYMS_PATH"); };
+	bpftime::bpftime_set_local_runtime_config(
+		bpftime::construct_runtime_config_from_env());
+	BOOST_SCOPE_EXIT_ALL(&)
+	{
+		unsetenv("BPFTIME_KALLSYMS_PATH");
+		bpftime::bpftime_set_local_runtime_config(
+			bpftime::construct_runtime_config_from_env());
+	};
 	auto kallsyms = bpftime::resolve_redirected_path("/proc/kallsyms");
 	REQUIRE(kallsyms.has_value());
 	REQUIRE(*kallsyms == kallsyms_template);
 	setenv("BPFTIME_KALLSYMS_PATH", "", 1);
+	bpftime::bpftime_set_local_runtime_config(
+		bpftime::construct_runtime_config_from_env());
 	auto without_override =
 		bpftime::resolve_redirected_path("/proc/kallsyms");
 	if (without_override)

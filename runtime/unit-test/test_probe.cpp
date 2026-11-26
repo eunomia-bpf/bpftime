@@ -308,6 +308,8 @@ TEST_CASE("Task storage covers host BTF and the no-BTF fallback")
 		const size_t offset = expected - sizeof(void *);
 		const std::string text = std::to_string(offset);
 		setenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET", text.c_str(), 1);
+		bpftime::bpftime_set_local_runtime_config(
+			bpftime::construct_runtime_config_from_env());
 		auto *task = reinterpret_cast<uint8_t *>(bpftime_get_current_task(0, 0, 0, 0, 0));
 		if (task == nullptr || malloc_usable_size(task) < expected ||
 		    reinterpret_cast<uintptr_t>(task) % 64 != 0)
@@ -349,6 +351,8 @@ TEST_CASE("Task thread-pointer slot comes from host BTF without configuration")
 	if (child == 0) {
 		task_test_no_btf = no_btf;
 		unsetenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET");
+		bpftime::bpftime_set_local_runtime_config(
+			bpftime::construct_runtime_config_from_env());
 		auto *task = reinterpret_cast<uint8_t *>(bpftime_get_current_task(0, 0, 0, 0, 0));
 		if (task == nullptr)
 			_exit(1);

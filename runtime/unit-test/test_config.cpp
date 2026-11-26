@@ -78,3 +78,84 @@ TEST_CASE("Select Frida's fuzzy backtracer from the environment")
 			  unsetenv("BPFTIME_FRIDA_FUZZY_BACKTRACER");
 	REQUIRE(restore_result == 0);
 }
+
+namespace
+{
+struct config_env_guard {
+	const char *name;
+	bool had;
+	std::string previous;
+	explicit config_env_guard(const char *key)
+		: name(key), had(getenv(key) != nullptr),
+		  previous(had ? getenv(key) : "")
+	{
+	}
+	~config_env_guard()
+	{
+		had ? setenv(name, previous.c_str(), 1) : unsetenv(name);
+		reload_agent_bootstrap_config_from_env();
+	}
+};
+} // namespace
+
+TEST_CASE("Bootstrap captures once until explicit reload and preserves errno",
+	  "[config]")
+{
+	config_env_guard guard("BPFTIME_AGENT_ALLOW_PROCESS");
+	REQUIRE(setenv(guard.name, "victim", 1) == 0);
+	errno = EBUSY;
+	reload_agent_bootstrap_config_from_env();
+	REQUIRE(errno == EBUSY);
+	REQUIRE(setenv(guard.name, "changed", 1) == 0);
+	errno = EDOM;
+	REQUIRE(std::string(get_agent_bootstrap_config().allow_process) ==
+		"victim");
+	REQUIRE(errno == EDOM);
+	reload_agent_bootstrap_config_from_env();
+	REQUIRE(errno == EDOM);
+	REQUIRE(std::string(get_agent_bootstrap_config().allow_process) ==
+		"changed");
+}
+
+TEST_CASE(
+	"Local runtime mirror survives environment mutation and follows config updates",
+	"[config]")
+{
+	config_env_guard guard("BPFTIME_SYSTEM_ANALYSIS_PTREGS_OFFSET");
+	initialize_local_runtime_config_from_env();
+	const runtime_config previous = bpftime_get_local_runtime_config();
+	REQUIRE(setenv(guard.name, "8192", 1) == 0);
+	bpftime_destroy_global_shm();
+	bpftime_initialize_global_shm(shm_open_type::SHM_NO_CREATE);
+	REQUIRE(bpftime_get_local_runtime_config()
+			.system_analysis_ptregs_offset == 8192);
+	REQUIRE(setenv(guard.name, "0", 1) == 0);
+	REQUIRE(bpftime_get_local_runtime_config()
+			.system_analysis_ptregs_offset == 8192);
+	auto cfg = bpftime_get_runtime_config();
+	cfg.system_analysis_ptregs_offset = 16384;
+	bpftime_set_runtime_config(std::move(cfg));
+	REQUIRE(bpftime_get_local_runtime_config()
+			.system_analysis_ptregs_offset == 16384);
+	::shm_remove remover(SHM_NAME);
+	bpftime_shm owner(SHM_NAME, shm_open_type::SHM_REMOVE_AND_CREATE);
+	bpftime_set_local_runtime_config(previous);
+	bpftime_shm reader(SHM_NAME, shm_open_type::SHM_OPEN_ONLY);
+	REQUIRE(bpftime_get_local_runtime_config()
+			.system_analysis_ptregs_offset == 16384);
+	bpftime_set_runtime_config(runtime_config(previous));
+}
+
+TEST_CASE("Numeric configuration preserves source type limits before clamping",
+	  "[config]")
+{
+	config_env_guard memory("BPFTIME_SHM_MEMORY_MB");
+	config_env_guard device("BPFTIME_CUDA_DEVICE");
+	REQUIRE(setenv(memory.name, "2147483648", 1) == 0);
+	REQUIRE(setenv(device.name, "2147483648", 1) == 0);
+	const auto cfg = construct_runtime_config_from_env();
+	REQUIRE(cfg.shm_memory_size == 50);
+	REQUIRE(cfg.cuda_device == 0);
+	REQUIRE(setenv(memory.name, "0", 1) == 0);
+	REQUIRE(construct_runtime_config_from_env().shm_memory_size == 1);
+}

@@ -1,176 +1,255 @@
 #include "bpftime_config.hpp"
-#include "spdlog/spdlog.h"
-#include <string_view>
-#include <optional>
+#include <cerrno>
+#include <algorithm>
 #include <limits>
-#include <type_traits>
+#include <optional>
+#include <string_view>
+#if defined(__APPLE__)
+#include <crt_externs.h>
+#else
+extern "C" char **environ;
+#endif
 
-using namespace bpftime;
-
-// Helper function to parse and validate numeric environment variables
-template<typename T>
-static std::optional<T> parse_numeric_env(const char* env_name, 
-                                          T min_value = std::numeric_limits<T>::min(),
-                                          T max_value = std::numeric_limits<T>::max())
+namespace bpftime
 {
-	const char* env_str = std::getenv(env_name);
-	if (env_str == nullptr) {
-		return std::nullopt;
-	}
+namespace
+{
+constinit agent_bootstrap_config bootstrap_config{};
+constinit bool bootstrap_initialized = false;
+constinit bool local_initialized = false;
 
-	try {
-		// Parse based on type
-		T value;
-		if constexpr (std::is_same_v<T, int>) {
-			value = std::stoi(env_str);
-		} else if constexpr (std::is_same_v<T, long>) {
-			value = std::stol(env_str);
-		} else if constexpr (std::is_same_v<T, size_t> || std::is_same_v<T, unsigned long>) {
-			value = std::stoul(env_str);
-		} else {
-			// Fallback for other types
-			value = static_cast<T>(std::stoll(env_str));
-		}
-		
-		if (value < min_value) {
-			SPDLOG_WARN("{} value {} is below minimum {}, using minimum",
-			           env_name, value, min_value);
-			return min_value;
-		}
-		
-		if (value > max_value) {
-			SPDLOG_WARN("{} value {} exceeds maximum {}, using maximum",
-			           env_name, value, max_value);
-			return max_value;
-		}
-		
-		SPDLOG_INFO("Setting {} to: {}", env_name, value);
-		return value;
-	} catch (...) {
-		SPDLOG_ERROR("Invalid value for {}: {}", env_name, env_str);
-		return std::nullopt;
-	}
+char **startup_environment() noexcept
+{
+#if defined(__APPLE__)
+	return *_NSGetEnviron();
+#else
+	return environ;
+#endif
 }
 
-static void process_token(const std::string_view &token, runtime_config &config)
+// Never retain pointers into environ. Oversized values become empty, rather
+// than a truncated path or partial process-name token.
+template <size_t N> bool copy_value(char (&out)[N], const char *value) noexcept
 {
-	if (token == "ufunc") {
-		SPDLOG_INFO("Enabling ufunc helper group");
-		config.enable_ufunc_helper_group = true;
-	} else if (token == "kernel") {
-		SPDLOG_INFO("Enabling kernel helper group");
-		config.enable_kernel_helper_group = true;
-	} else if (token == "shm_map") {
-		SPDLOG_INFO("Enabling shm_map helper group");
+	const size_t len = strlen(value);
+	out[0] = '\0';
+	if (len >= N)
+		return false;
+	memcpy(out, value, len + 1);
+	return true;
+}
+
+template <typename T>
+std::optional<T> number(const char *text, int base = 10,
+			T min = std::numeric_limits<T>::min(),
+			T max = std::numeric_limits<T>::max()) noexcept
+{
+	char *end = nullptr;
+	errno = 0;
+	if constexpr (std::is_unsigned_v<T>) {
+		const auto value = strtoull(text, &end, base);
+		if (errno || end == text || (base == 0 && *end))
+			return {};
+		return static_cast<T>(std::clamp(value, (unsigned long long)min,
+						 (unsigned long long)max));
+	} else {
+		const auto value = strtoll(text, &end, base);
+		if (errno || end == text || (base == 0 && *end) ||
+		    value < std::numeric_limits<T>::min() ||
+		    value > std::numeric_limits<T>::max())
+			return {};
+		return static_cast<T>(
+			std::clamp(value, (long long)min, (long long)max));
+	}
+}
+} // namespace
+
+// Explicit zero values keep this live, trivially destructible object in .bss.
+// Runtime defaults are installed at the accepted startup entry.
+constinit runtime_config local_runtime_config_snapshot{
+	.jit_enabled = false,
+	.enable_kernel_helper_group = false,
+	.enable_shm_maps_helper_group = false,
+	.shm_memory_size = 0,
+	.max_fd_count = 0,
+	.logger_output_path = {},
+	.vm_name = {},
+	.gpu_gdrcopy_max_per_key_bytes = 0,
+	.system_analysis_ptregs_offset = 0,
+};
+
+void reload_agent_bootstrap_config_from_env() noexcept
+{
+	const int saved_errno = errno;
+	bootstrap_config = {};
+	copy_value(bootstrap_config.global_shm_name, "bpftime_maps_shm");
+	for (char **p = startup_environment(); p && *p; ++p) {
+		const char *equal = strchr(*p, '=');
+		if (!equal)
+			continue;
+		const std::string_view name(*p, equal - *p);
+		const char *value = equal + 1;
+		if (name == "BPFTIME_GLOBAL_SHM_NAME")
+			copy_value(bootstrap_config.global_shm_name, value);
+		else if (name == "BPFTIME_AGENT_ALLOW_PROCESS")
+			bootstrap_config.invalid_process_filter |= !copy_value(
+				bootstrap_config.allow_process, value);
+		else if (name == "BPFTIME_AGENT_DENY_PROCESS")
+			bootstrap_config.invalid_process_filter |= !copy_value(
+				bootstrap_config.deny_process, value);
+		else if (name == "BPFTIME_ENABLE_AGENT_IPC")
+			bootstrap_config.enable_agent_ipc =
+				*value && strcmp(value, "0") != 0;
+		else if (name == "BPFTIME_LOG_OUTPUT") {
+			bootstrap_config.has_log_output = true;
+			copy_value(bootstrap_config.log_output, value);
+		} else if (name == "BPFTIME_GO_SECCOMP")
+			bootstrap_config.go_seccomp = true;
+	}
+	bootstrap_initialized = true;
+	errno = saved_errno;
+}
+
+const agent_bootstrap_config &get_agent_bootstrap_config() noexcept
+{
+	if (!bootstrap_initialized)
+		reload_agent_bootstrap_config_from_env();
+	return bootstrap_config;
+}
+
+void bpftime_set_local_runtime_config(const runtime_config &config) noexcept
+{
+	local_runtime_config_snapshot = config;
+	local_initialized = true;
+}
+
+void initialize_local_runtime_config_from_env() noexcept
+{
+	if (!local_initialized)
+		bpftime_set_local_runtime_config(
+			construct_runtime_config_from_env());
+}
+
+runtime_config construct_runtime_config_from_env() noexcept
+{
+	const int saved_errno = errno;
+	runtime_config config;
+	config.enable_kernel_helper_group = config.enable_ufunc_helper_group =
 		config.enable_shm_maps_helper_group = true;
-	} else {
-		SPDLOG_WARN("Unknown helper group: {}", token);
-	}
-}
-
-static void process_helper_sv(const std::string_view &str, const char delimiter,
-			      runtime_config &config)
-{
-	std::string::size_type start = 0;
-	std::string::size_type end = str.find(delimiter);
-
-	while (end != std::string::npos) {
-		process_token(str.substr(start, end - start), config);
-		start = end + 1;
-		end = str.find(delimiter, start);
-	}
-
-	// Handle the last token, if any
-	if (start < str.size()) {
-		process_token(str.substr(start), config);
-	}
-}
-
-runtime_config bpftime::construct_runtime_config_from_env() noexcept
-{
-	bpftime::runtime_config runtime_config;
-	if (const char *custom_helpers = getenv("BPFTIME_HELPER_GROUPS");
-	    custom_helpers != nullptr) {
-		runtime_config.enable_kernel_helper_group =
-			runtime_config.enable_ufunc_helper_group =
-				runtime_config.enable_shm_maps_helper_group =
-					false;
-		auto helpers_sv = std::string_view(custom_helpers);
-		process_helper_sv(helpers_sv, ',', runtime_config);
-	} else {
-		runtime_config.enable_kernel_helper_group =
-			runtime_config.enable_shm_maps_helper_group =
-				runtime_config.enable_ufunc_helper_group = true;
-	}
-
-	if (getenv("BPFTIME_DISABLE_JIT") != nullptr) {
-		runtime_config.jit_enabled = false;
-	}
-
-	if (getenv("BPFTIME_ALLOW_EXTERNAL_MAPS") != nullptr) {
-		runtime_config.allow_non_buildin_map_types = true;
-	}
-
-	if (getenv("BPFTIME_FRIDA_FUZZY_BACKTRACER") != nullptr) {
-		runtime_config.enable_frida_fuzzy_backtracer = true;
-	}
-
-	// Parse shared memory size with validation (1MB min, 10GB max)
-	if (auto shm_size = parse_numeric_env<int>("BPFTIME_SHM_MEMORY_MB", 1, 10240)) {
-		runtime_config.shm_memory_size = *shm_size;
-	}
-
-	// Parse max FD count with validation
-	if (auto max_fd = parse_numeric_env<size_t>("BPFTIME_MAX_FD_COUNT", 
-	                                             MIN_MAX_FD_COUNT, 
-	                                             MAX_MAX_FD_COUNT)) {
-		runtime_config.max_fd_count = *max_fd;
-	}
-
-	const char *vm_name = std::getenv("BPFTIME_VM_NAME");
-
-	if (vm_name != nullptr) {
-		SPDLOG_INFO("Using VM: {}", vm_name);
-		runtime_config.set_vm_name(vm_name);
-	}
-
-	const char *verifier_level = std::getenv("BPFTIME_VERIFIER_LEVEL");
-	if (verifier_level != nullptr) {
-		std::string_view level_sv(verifier_level);
-		if (level_sv == "STRICT") {
-			runtime_config.verifier_mode = BPFTIME_VERIFIER_STRICT;
-			SPDLOG_INFO("Verifier mode: STRICT");
-		} else if (level_sv == "WARNING") {
-			runtime_config.verifier_mode = BPFTIME_VERIFIER_WARNING;
-			SPDLOG_INFO("Verifier mode: WARNING");
-		} else if (level_sv == "NO_VERIFY") {
-			runtime_config.verifier_mode = BPFTIME_NO_VERIFY;
-			SPDLOG_INFO("Verifier mode: NO_VERIFY");
-		} else {
-			SPDLOG_WARN(
-				"Unknown BPFTIME_VERIFIER_LEVEL value: {}. "
-				"Valid values: STRICT, WARNING, NO_VERIFY. "
-				"Defaulting to WARNING.",
-				verifier_level);
+	for (char **p = startup_environment(); p && *p; ++p) {
+		const char *equal = strchr(*p, '=');
+		if (!equal)
+			continue;
+		const std::string_view name(*p, equal - *p);
+		const char *value = equal + 1;
+		if (name == "BPFTIME_HELPER_GROUPS") {
+			config.enable_kernel_helper_group =
+				config.enable_ufunc_helper_group =
+					config.enable_shm_maps_helper_group =
+						false;
+			std::string_view list(value);
+			while (!list.empty()) {
+				auto end = list.find(',');
+				std::string_view token(
+					list.data(),
+					end == list.npos ? list.size() : end);
+				if (token == "kernel")
+					config.enable_kernel_helper_group =
+						true;
+				if (token == "ufunc")
+					config.enable_ufunc_helper_group = true;
+				if (token == "shm_map")
+					config.enable_shm_maps_helper_group =
+						true;
+				if (end == list.npos)
+					break;
+				list.remove_prefix(end + 1);
+			}
+		} else if (name == "BPFTIME_DISABLE_JIT")
+			config.jit_enabled = false;
+		else if (name == "BPFTIME_ALLOW_EXTERNAL_MAPS")
+			config.allow_non_buildin_map_types = true;
+		else if (name == "BPFTIME_FRIDA_FUZZY_BACKTRACER")
+			config.enable_frida_fuzzy_backtracer = true;
+		else if (name == "BPFTIME_SHM_MEMORY_MB") {
+			if (auto v = number<int>(value, 10, 1, 10240))
+				config.shm_memory_size = *v;
+		} else if (name == "BPFTIME_MAX_FD_COUNT") {
+			if (auto v = number<size_t>(value, 10, MIN_MAX_FD_COUNT,
+						    MAX_MAX_FD_COUNT))
+				config.max_fd_count = *v;
+		} else if (name == "BPFTIME_VERIFIER_LEVEL") {
+			if (strcmp(value, "STRICT") == 0)
+				config.verifier_mode = BPFTIME_VERIFIER_STRICT;
+			else if (strcmp(value, "NO_VERIFY") == 0)
+				config.verifier_mode = BPFTIME_NO_VERIFY;
+		} else if (name == "BPFTIME_GPU_ARRAY_GDRCOPY")
+			config.enable_gpu_gdrcopy = value[0] == '1';
+		else if (name ==
+			 "BPFTIME_GPU_ARRAY_GDRCOPY_MAX_PER_KEY_BYTES") {
+			if (auto v = number<uint64_t>(value, 10, 0,
+						      1024ULL * 1024 * 1024))
+				config.gpu_gdrcopy_max_per_key_bytes = *v;
+		} else if (name == "BPFTIME_RUN_WITH_KERNEL")
+			config.run_with_kernel = true;
+		else if (name == "BPFTIME_CUDA_DISABLE_CUOBJDUMP")
+			config.cuda_disable_cuobjdump = value[0] == '1';
+		else if (name == "BPFTIME_CUDA_DEVICE") {
+			if (auto v = number<int>(value, 10, 0)) {
+				config.cuda_device = *v;
+				config.has_cuda_device = true;
+			}
+		} else if (name == "BPFTIME_MAP_GPU_THREAD_COUNT") {
+			if (auto v = number<uint64_t>(value)) {
+				config.map_gpu_thread_count = *v;
+				config.has_map_gpu_thread_count = true;
+			}
+		} else if (name == "BPFTIME_SYSTEM_ANALYSIS_TPBASE_ADDRESS") {
+			if (auto v = number<uint64_t>(value, 0)) {
+				config.system_analysis_tpbase_address = *v;
+				config.has_system_analysis_tpbase_address =
+					true;
+			}
+		} else if (name == "BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET") {
+			if (auto v = number<uint64_t>(value, 0)) {
+				config.system_analysis_tpbase_offset = *v;
+				config.has_system_analysis_tpbase_offset = true;
+			}
+		} else if (name == "BPFTIME_SYSTEM_ANALYSIS_PTREGS_OFFSET") {
+			if (auto v = number<uint64_t>(value, 0))
+				config.system_analysis_ptregs_offset = *v;
 		}
+#define BPFTIME_STRING_ENV(env, field)                                         \
+	else if (name == env) copy_value(config.field, value)
+		BPFTIME_STRING_ENV("BPFTIME_VM_NAME", vm_name);
+		BPFTIME_STRING_ENV("BPFTIME_LOG_OUTPUT", logger_output_path);
+		BPFTIME_STRING_ENV("BPFTIME_HOST_PROCFS", host_procfs);
+		BPFTIME_STRING_ENV("BPFTIME_SM_ARCH", sm_arch);
+		BPFTIME_STRING_ENV("BPFTIME_NOT_LOAD_PATTERN",
+				   not_load_pattern);
+		BPFTIME_STRING_ENV("BPFTIME_KALLSYMS_PATH", kallsyms_path);
+		BPFTIME_STRING_ENV("BPFTIME_BTF_PATH", btf_path);
+		BPFTIME_STRING_ENV("BPFTIME_PTXPASS_LIBRARIES",
+				   ptxpass_libraries);
+		BPFTIME_STRING_ENV("BPFTIME_PTX_COMPILER_LIB",
+				   ptx_compiler_lib);
+		BPFTIME_STRING_ENV("BPFTIME_CUDA_LATE_PTX_DIR",
+				   cuda_late_ptx_dir);
+		BPFTIME_STRING_ENV("BPFTIME_CUOBJDUMP", cuobjdump);
+		BPFTIME_STRING_ENV("BPFTIME_CUDA_ROOT", cuda_roots[0]);
+		BPFTIME_STRING_ENV("CUDA_HOME", cuda_roots[1]);
+		BPFTIME_STRING_ENV("CUDA_PATH", cuda_roots[2]);
+		BPFTIME_STRING_ENV("LLVMBPF_CUDA_PATH", cuda_roots[3]);
+		BPFTIME_STRING_ENV("CUDAToolkit_ROOT", cuda_roots[4]);
+		BPFTIME_STRING_ENV("HOME", home);
+		BPFTIME_STRING_ENV("TMPDIR", tmpdir);
+		BPFTIME_STRING_ENV("SPDLOG_LEVEL", log_levels);
+#undef BPFTIME_STRING_ENV
 	}
-
-	const char *logger_target = std::getenv("BPFTIME_LOG_OUTPUT");
-	if (logger_target != nullptr) {
-		runtime_config.set_logger_output_path(logger_target);
-	}
-
-	// Optional GDRCopy knobs for GPU map host-side lookup.
-	// Keep env parsing here (single place) to avoid sprinkling getenv() across modules.
-	if (const char *enable_gdrcopy = std::getenv("BPFTIME_GPU_ARRAY_GDRCOPY");
-	    enable_gdrcopy != nullptr && enable_gdrcopy[0] == '1') {
-		runtime_config.enable_gpu_gdrcopy = true;
-	}
-	if (auto max_bytes = parse_numeric_env<unsigned long>(
-		    "BPFTIME_GPU_ARRAY_GDRCOPY_MAX_PER_KEY_BYTES", 0ul,
-		    1024ul * 1024ul * 1024ul)) {
-		runtime_config.gpu_gdrcopy_max_per_key_bytes =
-			static_cast<uint64_t>(*max_bytes);
-	}
-	return runtime_config;
+	const auto &bootstrap = get_agent_bootstrap_config();
+	if (bootstrap.go_seccomp && !bootstrap.has_log_output)
+		config.set_logger_output_path("console");
+	errno = saved_errno;
+	return config;
 }
+} // namespace bpftime

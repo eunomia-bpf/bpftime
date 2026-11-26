@@ -25,6 +25,36 @@ The runtime implements a sophisticated shared memory architecture using Boost.In
 
 ## Implementation Details
 
+### Startup configuration
+
+`include/bpftime_config.hpp` owns both configuration stages. Before SHM or
+logger setup, `get_agent_bootstrap_config()` captures process admission,
+SHM name, IPC, explicit log output and the rootless seccomp gate into fixed
+process-local arrays. Parsing saves/restores `errno`, allocates nothing and
+retains no environment pointers. Deny/allow lists larger than 4095 bytes
+skip instrumentation; oversized paths become empty and fail through their
+normal setup paths rather than selecting a truncated path.
+
+Accepted processes parse runtime/helper/map/GPU/syscall settings in
+`construct_runtime_config_from_env()`. SHM creation/open, configuration
+updates and attach copy the resulting trivially copyable `runtime_config`
+into a process-local `.bss` mirror. Consumers read
+`bpftime_get_local_runtime_config()` directly, without SHM lookup or live
+environment access. The shared object uses the name
+`bpftime_runtime_config_v2` so an older, smaller configuration is never
+interpreted as this layout. Processes sharing a segment should use the same
+build; restart them together for a configuration change.
+
+Snapshot initialization and programmatic updates require quiescent readers.
+Environment changes after startup leave the snapshot unchanged. Explicit
+`bpftime_initialize_global_shm()` / `bpftime_destroy_global_shm()` calls
+recapture bootstrap settings for repeated test lifecycles; creating SHM
+also recaptures runtime settings. Tests changing runtime inputs without a
+new lifecycle explicitly parse and set the local snapshot. Automatic exit
+cleanup consumes the existing snapshot and performs no environment scan.
+The optional PTX pass's generic environment API and child-process environment
+inheritance remain separate from runtime configuration ingestion.
+
 ### Core APIs (`include/bpftime.hpp`)
 
 The main runtime API provides C interfaces for:

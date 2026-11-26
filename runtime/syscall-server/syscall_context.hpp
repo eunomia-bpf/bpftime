@@ -134,14 +134,6 @@ class syscall_context {
 	// must call this instead of re-reading the three conditions separately.
 	bool mock_active_for_current_thread() const noexcept;
 
-	// enable userspace eBPF runing with kernel eBPF.
-	bool run_with_kernel = false;
-	// allow programs to by pass the verifier
-	// some extensions are not supported by the verifier, so we need to
-	// by pass the verifier to make it work.
-	std::string by_pass_kernel_verifier_pattern;
-
-	void load_config_from_env();
 	long handle_map_update(int fd, const void *key, const void *value,
 			       uint64_t flags);
 	long handle_map_delete(int fd, const void *key);

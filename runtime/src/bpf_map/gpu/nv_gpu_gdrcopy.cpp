@@ -1,3 +1,4 @@
+#include "bpftime_config.hpp"
 #include "nv_gpu_gdrcopy.hpp"
 
 #include "nv_gpu_gdrcopy_abi.hpp"
@@ -147,7 +148,7 @@ std::mutex &get_mapping_state_mutex()
 
 bool gdrcopy_enabled_for_per_key_bytes(uint64_t per_key_bytes)
 {
-	const auto &config = bpftime::bpftime_get_runtime_config();
+	const auto &config = bpftime::bpftime_get_local_runtime_config();
 	if (!config.enable_gpu_gdrcopy) {
 		return false;
 	}

@@ -74,7 +74,8 @@ endif()
 if(BPFTIME_ENABLE_UNIT_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
    AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|aarch64|ARM64)$")
   add_executable(bpftime_seccomp_failure_tests
-      test/test_seccomp_failure.cpp rootless_map_files.cpp)
+      test/test_seccomp_failure.cpp rootless_map_files.cpp
+      ../src/bpftime_config.cpp)
   target_include_directories(bpftime_seccomp_failure_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     "../include"

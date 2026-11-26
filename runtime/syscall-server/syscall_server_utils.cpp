@@ -264,7 +264,7 @@ void cleanup_synthetic_fs() noexcept
 bool create_synthetic_fs_dir_locked()
 {
 	auto &state = synthetic_fs();
-	const char *tmp_root = getenv("TMPDIR");
+	const char *tmp_root = bpftime_get_local_runtime_config().tmpdir;
 	if (tmp_root == nullptr || tmp_root[0] == '\0')
 		tmp_root = "/tmp";
 	std::string templ = std::string(tmp_root) +
@@ -492,7 +492,8 @@ void start_up(syscall_context &ctx)
 	std::call_once(g_startup_once, [&ctx]() {
 		try {
 			SPDLOG_INFO("Starting syscall server..");
-			auto runtime_config = construct_runtime_config_from_env();
+			auto runtime_config =
+				bpftime_get_local_runtime_config();
 			SPDLOG_INFO("Initialize syscall server");
 
 			g_syscall_server_shm_name = get_global_shm_name();
@@ -717,11 +718,12 @@ resolve_redirected_path(const std::filesystem::path &full_path)
 	// Explicit user-supplied overrides redirect straight to the given real
 	// file: no generated content, no temp copy, and empty values are treated
 	// as unset.
-	const char *kallsyms_override = getenv("BPFTIME_KALLSYMS_PATH");
+	const char *kallsyms_override =
+		bpftime_get_local_runtime_config().kallsyms_path;
 	if (is_synthetic_kallsyms_path(virtual_path) &&
 	    kallsyms_override != nullptr && kallsyms_override[0] != '\0')
 		return std::string(kallsyms_override);
-	const char *btf_override = getenv("BPFTIME_BTF_PATH");
+	const char *btf_override = bpftime_get_local_runtime_config().btf_path;
 	if (virtual_path == "/sys/kernel/btf/vmlinux" && btf_override != nullptr &&
 	    btf_override[0] != '\0')
 		return std::string(btf_override);

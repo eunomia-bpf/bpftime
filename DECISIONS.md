@@ -2,6 +2,12 @@
 
 Newest first. Read before starting a change. A pull request that reverses an entry is a design problem until a maintainer decides again. Every entry quotes the maintainer verbatim; changing a decision means adding a new entry.
 
+- **2026-11-26: two-stage startup configuration ingestion**. Process-local admission and SHM connection settings are captured once into a fixed POD before SHM; runtime settings use the shared `runtime_config` and a process-local `.bss` mirror populated at initialization/attach. `BPFTIME_GO_SECCOMP` is also a process-local startup gate. Explicit lifecycle/test reloads require a quiescent environment; callbacks never read environment pointers.
+  > 另外 config 是不是有统一放置的位置, 开始阶段统一读, 不能到处塞 env?
+  >
+  > 第一处（SHM 挂载前的进程本地引导快照 agent_bootstrap_config，在入口单次读取落 .bss POD）：仅放决定「要不要进 SHM、连哪个 SHM」的进程级本地项（BPFTIME_GLOBAL_SHM_NAME、BPFTIME_AGENT_ALLOW_PROCESS、BPFTIME_AGENT_DENY_PROCESS、BPFTIME_ENABLE_AGENT_IPC、本进程显式 BPFTIME_LOG_OUTPUT），初始化入口一次性解析到固定大小 .bss 数组，后续零 getenv()。
+  >
+  > 第二处（跨进程共享 bpftime::runtime_config + Agent 挂载时拷贝一份 .bss 只读本地镜像）：把散落的 helper / map / GPU / syscall-server 配置统一收进 bpftime_config.hpp + construct_runtime_config_from_env()；Agent attach 完成时将 runtime_config 拍一份纯 POD 副本到本进程 .bss，热路径只读本进程 .bss，零 SHM 间接寻址、零 getenv()、零 environ 并发竞争。
 - **2026-11-26: the other hot-path items of the entry from #977 are approved** (#977, #979). These four, listed there without the maintainer's words, now stand:
   1. `process_vm_writev` on every `bpf_probe_write_user` in the default build (`ENABLE_PROBE_WRITE_CHECK` defaults to `ON`);
   2. one-time identity caching: `SYS_gettid` once per thread into TLS and `readlink("/proc/self/exe")` once per process, results cached, host `errno` preserved;

@@ -1,3 +1,4 @@
+#include "bpftime_config.hpp"
 // #include "pos/cuda_impl/utils/fatbin.h"
 #include "cuda.h"
 #include "cuda_runtime_api.h"
@@ -118,17 +119,8 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 		if (cuCtxGetCurrent(&current) != CUDA_SUCCESS ||
 		    current == nullptr) {
 			cuInit(0);
-			int dev_index = 0;
-			if (const char *p = getenv("BPFTIME_CUDA_DEVICE");
-			    p && p[0] != '\0') {
-				try {
-					dev_index = std::stoi(std::string(p));
-					if (dev_index < 0)
-						dev_index = 0;
-				} catch (...) {
-					dev_index = 0;
-				}
-			}
+			const int dev_index =
+				bpftime_get_local_runtime_config().cuda_device;
 			CUdevice dev = 0;
 			if (cuDeviceGet(&dev, dev_index) == CUDA_SUCCESS) {
 				CUcontext ctx = nullptr;

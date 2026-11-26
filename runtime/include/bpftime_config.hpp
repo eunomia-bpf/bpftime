@@ -1,13 +1,11 @@
 #ifndef _CONFIG_MANAGER_HPP
 #define _CONFIG_MANAGER_HPP
 
-#include <boost/interprocess/containers/string.hpp>
-#include <boost/interprocess/interprocess_fwd.hpp>
-#include <boost/interprocess/managed_shared_memory.hpp>
 #include <cstdlib>
 #include <cstdint>
-#include <string>
-#include <variant>
+#include <type_traits>
+#include <cstring>
+#include <cstddef>
 
 #ifndef DEFAULT_LOGGER_OUTPUT_PATH
 #define DEFAULT_LOGGER_OUTPUT_PATH "~/.bpftime/runtime.log"
@@ -33,13 +31,6 @@ constexpr uint64_t DEFAULT_GPU_GDRCOPY_MAX_PER_KEY_BYTES = 4096;
 
 namespace bpftime
 {
-using char_allocator = boost::interprocess::allocator<
-	char, boost::interprocess::managed_shared_memory::segment_manager>;
-
-using boost_shm_string =
-	boost::interprocess::basic_string<char, std::char_traits<char>,
-					  char_allocator>;
-
 // Verification mode for bpftime userspace verifier
 // Controlled via BPFTIME_VERIFIER_LEVEL environment variable
 enum bpftime_verifier_mode {
@@ -52,6 +43,23 @@ enum bpftime_verifier_mode {
 	// No verification is performed
 	BPFTIME_NO_VERIFY = 2,
 };
+
+// Pre-SHM, process-local admission/connection settings. No owned heap state.
+struct agent_bootstrap_config {
+	char global_shm_name[4096];
+	char allow_process[4096];
+	char deny_process[4096];
+	char log_output[LOG_PATH_MAX_LEN];
+	bool has_log_output;
+	bool enable_agent_ipc;
+	bool go_seccomp;
+	bool invalid_process_filter;
+};
+const agent_bootstrap_config &get_agent_bootstrap_config() noexcept;
+// Explicit lifecycle/test reset; call only while startup is quiescent.
+void reload_agent_bootstrap_config_from_env() noexcept;
+static_assert(std::is_trivial_v<agent_bootstrap_config> &&
+	      std::is_standard_layout_v<agent_bootstrap_config>);
 
 // Configuration for the bpftime runtime
 // Initialize the configuration from the environment variables
@@ -105,6 +113,33 @@ struct runtime_config {
 	uint64_t gpu_gdrcopy_max_per_key_bytes =
 		DEFAULT_GPU_GDRCOPY_MAX_PER_KEY_BYTES;
 
+	// Startup-only ingestion; callbacks read the local copy below.
+	char host_procfs[4096] = {};
+	uint64_t system_analysis_tpbase_address = 0;
+	uint64_t system_analysis_tpbase_offset = 0;
+	bool has_system_analysis_tpbase_address = false;
+	bool has_system_analysis_tpbase_offset = false;
+	uint64_t system_analysis_ptregs_offset = 4096;
+	uint64_t map_gpu_thread_count = 0;
+	bool has_map_gpu_thread_count = false;
+	int cuda_device = 0;
+	bool has_cuda_device = false;
+	char sm_arch[VM_NAME_MAX_LEN] = {};
+	bool run_with_kernel = false;
+	char not_load_pattern[4096] = {};
+	char kallsyms_path[4096] = {};
+	char btf_path[4096] = {};
+	char ptxpass_libraries[4096] = {};
+	char ptx_compiler_lib[4096] = {};
+	char cuda_late_ptx_dir[4096] = {};
+	bool cuda_disable_cuobjdump = false;
+	char cuobjdump[4096] = {};
+	char cuda_roots[5][4096] = {};
+	// Standard environment values consumed by logging/file setup.
+	char home[4096] = {};
+	char tmpdir[4096] = {};
+	char log_levels[4096] = {};
+
 	const char *get_logger_output_path() const
 	{
 		return logger_output_path;
@@ -122,6 +157,19 @@ struct runtime_config {
 		return vm_name;
 	}
 };
+
+static_assert(std::is_trivially_copyable_v<runtime_config> &&
+	      std::is_standard_layout_v<runtime_config> &&
+	      std::is_trivially_destructible_v<runtime_config>);
+extern runtime_config local_runtime_config_snapshot;
+// Valid after startup/SHM initialization. No SHM lookup or lazy initialization.
+inline const runtime_config &bpftime_get_local_runtime_config() noexcept
+{
+	return local_runtime_config_snapshot;
+}
+void bpftime_set_local_runtime_config(const runtime_config &config) noexcept;
+// Initialize once for an accepted process, before logging or syscall dispatch.
+void initialize_local_runtime_config_from_env() noexcept;
 
 // Get the bpftime configuration from the environment variables
 // If the shared memory is not int, this should be called first

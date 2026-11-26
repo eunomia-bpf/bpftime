@@ -47,6 +47,10 @@ static bool global_shm_initialized = false;
 extern "C" void bpftime_initialize_global_shm(bpftime::shm_open_type type)
 {
 	using namespace bpftime;
+	reload_agent_bootstrap_config_from_env();
+	if (type != shm_open_type::SHM_OPEN_ONLY)
+		bpftime_set_local_runtime_config(
+			construct_runtime_config_from_env());
 	// Use placement new, which will not allocate memory, but just
 	// call the constructor
 	new (&shm_holder.global_shared_memory) bpftime_shm(type);
@@ -74,7 +78,7 @@ extern "C" void bpftime_protect_restore(int saved)
 #endif
 }
 
-extern "C" void bpftime_destroy_global_shm()
+static void destroy_global_shm()
 {
 	using namespace bpftime;
 	if (global_shm_initialized) {
@@ -94,6 +98,12 @@ extern "C" void bpftime_destroy_global_shm()
 			(int)getpid());
 #endif
 	}
+}
+
+extern "C" void bpftime_destroy_global_shm()
+{
+	bpftime::reload_agent_bootstrap_config_from_env();
+	destroy_global_shm();
 }
 
 extern "C" bool bpftime_global_shm_is_initialized()
@@ -131,7 +141,7 @@ static __attribute__((destructor(65535))) void __destruct_shm()
 			.remove_pid_from_alive_agent_set(self_pid);
 	}
 
-	bpftime_destroy_global_shm();
+	destroy_global_shm();
 }
 
 namespace bpftime
@@ -850,7 +860,8 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 	: open_type(type)
 {
 	// Get the config from env because the shared memory is not initialized
-	auto config = construct_runtime_config_from_env();
+	initialize_local_runtime_config_from_env();
+	auto config = bpftime_get_local_runtime_config();
 	size_t memory_size = config.shm_memory_size;
 	size_t max_fd_count = config.max_fd_count;
 	// Seed the process-local fallback so get_runtime_config() never
@@ -971,6 +982,8 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			"NOT creating global shm. This is only for testing purpose.");
 		return;
 	}
+	if (runtime_config != nullptr)
+		bpftime_set_local_runtime_config(*runtime_config);
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	// Move CommSharedMem from the agent’s local memory to shared memory to
 	// improve performance.
@@ -1230,6 +1243,7 @@ bool bpftime_shm::is_software_perf_event_handler_fd(int fd) const
 void bpftime_shm::set_runtime_config(struct runtime_config &&config)
 {
 	shm_write_window_guard shm_window(*this);
+	bpftime_set_local_runtime_config(config);
 	if (runtime_config == nullptr) {
 		SPDLOG_INFO(
 			"global runtime_config is nullptr, set current process config");

@@ -1,3 +1,4 @@
+#include "bpftime_config.hpp"
 #include "nv_attach_utils.hpp"
 #include "trampoline_ptx.h"
 #include <cstring>
@@ -81,7 +82,7 @@ std::string sha256(const void *data, size_t length)
 std::string get_gpu_sm_arch()
 {
 	// First check environment variable
-	const char *sm_arch_env = std::getenv("BPFTIME_SM_ARCH");
+	const char *sm_arch_env = bpftime_get_local_runtime_config().sm_arch;
 	if (sm_arch_env && sm_arch_env[0] != '\0') {
 		SPDLOG_INFO("Using SM arch from BPFTIME_SM_ARCH: {}",
 			    sm_arch_env);
@@ -139,12 +140,6 @@ std::string get_gpu_sm_arch()
 	std::string sm_arch = "sm_" + std::to_string(major * 10 + minor);
 	SPDLOG_INFO("Auto-detected GPU SM arch: {} (compute capability {}.{})",
 		    sm_arch, major, minor);
-
-	if (setenv("BPFTIME_SM_ARCH", sm_arch.c_str(), 1) != 0) {
-		SPDLOG_WARN(
-			"Failed to set BPFTIME_SM_ARCH environment variable to {}",
-			sm_arch);
-	}
 
 	return sm_arch;
 }

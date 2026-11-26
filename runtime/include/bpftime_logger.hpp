@@ -1,6 +1,7 @@
+#include "bpftime_config.hpp"
 #include <string>
 #include "spdlog/spdlog.h"
-#include "spdlog/cfg/env.h"
+#include "spdlog/cfg/helpers.h"
 #include "spdlog/sinks/null_sink.h"
 #include "spdlog/sinks/rotating_file_sink.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
@@ -17,8 +18,8 @@ inline std::string expand_user_path(const std::string &input_path)
 	}
 
 	if (input_path[0] == '~') {
-		const char *homeDir = getenv("HOME");
-		if (!homeDir) {
+		const char *homeDir = bpftime_get_local_runtime_config().home;
+		if (!*homeDir) {
 			return {};
 		}
 
@@ -38,6 +39,7 @@ inline std::string expand_user_path(const std::string &input_path)
 
 inline void bpftime_set_logger(const std::string &target) noexcept
 {
+	initialize_local_runtime_config_from_env();
 	auto silence_logger = []() noexcept {
 		try {
 			auto sink =
@@ -86,7 +88,10 @@ inline void bpftime_set_logger(const std::string &target) noexcept
 		logger->flush_on(spdlog::level::info);
 		spdlog::set_default_logger(std::move(logger));
 
-		spdlog::cfg::load_env_levels();
+		const char *levels =
+			bpftime_get_local_runtime_config().log_levels;
+		if (*levels)
+			spdlog::cfg::helpers::load_levels(levels);
 	} catch (...) {
 		silence_logger();
 	}

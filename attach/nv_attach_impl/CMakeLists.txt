@@ -53,6 +53,9 @@ target_link_directories(bpftime_nv_attach_impl PUBLIC ${CUDA_LIBRARY_PATH} )
 
 target_link_libraries(bpftime_nv_attach_impl PUBLIC bpftime_base_attach_impl spdlog::spdlog ${CUDA_LIBS} PRIVATE  ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a PUBLIC llvmbpf_vm bpftime_vm_compat ptxpass_core)
 
+target_include_directories(bpftime_nv_attach_impl PRIVATE
+    ${CMAKE_SOURCE_DIR}/runtime/include)
+
 set_property(TARGET bpftime_nv_attach_impl PROPERTY CXX_STANDARD 20)
 
 # nv_attach_impl includes internal llvmbpf headers that include LLVM headers

@@ -440,14 +440,9 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 
 static uint64_t get_thread_count(const bpf_map_attr &attr)
 {
-	auto gpu_thread_count_env = std::getenv("BPFTIME_MAP_GPU_THREAD_COUNT");
-	uint64_t thread_count;
-	if (gpu_thread_count_env) {
-		thread_count = std::stoull(gpu_thread_count_env);
-	} else {
-		thread_count = attr.gpu_thread_count;
-	}
-	return thread_count;
+	const auto &config = bpftime_get_local_runtime_config();
+	return config.has_map_gpu_thread_count ? config.map_gpu_thread_count :
+						 attr.gpu_thread_count;
 }
 
 int bpf_map_handler::map_init(managed_shared_memory &memory)
@@ -824,7 +819,8 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		return 0;
 	}
 	default:
-		if (bpftime_get_runtime_config().allow_non_buildin_map_types) {
+		if (bpftime_get_local_runtime_config()
+			    .allow_non_buildin_map_types) {
 			SPDLOG_INFO("non-builtin map type: {}", (int)type);
 			map_impl_ptr = nullptr;
 			auto func_ptr =

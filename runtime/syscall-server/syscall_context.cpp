@@ -248,25 +248,6 @@ int syscall_context::reserve_handle_fd(bool close_on_exec)
 #endif
 }
 
-void syscall_context::load_config_from_env()
-{
-	const char *run_with_kernel_env = getenv("BPFTIME_RUN_WITH_KERNEL");
-	if (run_with_kernel_env != nullptr) {
-		run_with_kernel = true;
-		SPDLOG_INFO("Using kernel eBPF runtime and maps");
-	} else {
-		run_with_kernel = false;
-	}
-	const char *not_load_pattern = getenv("BPFTIME_NOT_LOAD_PATTERN");
-	if (not_load_pattern != nullptr) {
-		SPDLOG_INFO("By pass kernel verifier pattern: {}",
-			    not_load_pattern);
-		by_pass_kernel_verifier_pattern = std::string(not_load_pattern);
-	} else {
-		by_pass_kernel_verifier_pattern.clear();
-	}
-}
-
 namespace {
 struct system_analysis_compat_value {
 	uint64_t address;
@@ -275,30 +256,10 @@ struct system_analysis_compat_value {
 	uint8_t code[128];
 };
 
-// Default struct pt_regs stack offset used when emulating a sys_enter
-// raw tracepoint without an explicit override.
-constexpr unsigned long DEFAULT_SYSTEM_ANALYSIS_PTREGS_OFFSET = 4096;
-
-// Resolve the effective pt_regs offset for userspace sys_enter emulation.
-// An unset variable selects the default, an explicit "0" disables the
-// emulation, and malformed input falls back to the default instead of
-// silently breaking the lookup.
-unsigned long resolve_system_analysis_ptregs_offset(const char *offset_text)
-{
-	if (offset_text == nullptr)
-		return DEFAULT_SYSTEM_ANALYSIS_PTREGS_OFFSET;
-	char *end = nullptr;
-	errno = 0;
-	unsigned long offset = strtoul(offset_text, &end, 0);
-	if (errno != 0 || end == offset_text || *end != '\0')
-		return DEFAULT_SYSTEM_ANALYSIS_PTREGS_OFFSET;
-	return offset;
-}
-
 void maybe_complete_system_analysis(int map_fd, void *value)
 {
 	// Kernel mode runs the real BPF program and reads kernel memory itself.
-	if (getenv("BPFTIME_RUN_WITH_KERNEL") != nullptr)
+	if (bpftime_get_local_runtime_config().run_with_kernel)
 		return;
 	bpftime::bpf_map_attr map_attr;
 	const char *map_name = nullptr;
@@ -336,26 +297,13 @@ void maybe_complete_system_analysis(int map_fd, void *value)
 		errno = saved_errno;
 	};
 #if defined(__x86_64__)
-	const char *tpbase_address_text =
-		getenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_ADDRESS");
-	const char *tpbase_offset_text =
-		getenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET");
-	if (tpbase_address_text != nullptr && tpbase_offset_text != nullptr) {
-		char *address_end = nullptr;
-		char *offset_end = nullptr;
-		errno = 0;
-		unsigned long long address =
-			strtoull(tpbase_address_text, &address_end, 0);
-		unsigned long offset =
-			strtoul(tpbase_offset_text, &offset_end, 0);
-		if (errno == 0 && address_end != tpbase_address_text &&
-		    *address_end == '\0' &&
-		    offset_end != tpbase_offset_text &&
-		    *offset_end == '\0' && offset <= UINT32_MAX &&
-		    analysis->address == address) {
-			complete_tpbase((uint32_t)offset);
-			return;
-		}
+	const auto &config = bpftime_get_local_runtime_config();
+	if (config.has_system_analysis_tpbase_address &&
+	    config.has_system_analysis_tpbase_offset &&
+	    config.system_analysis_tpbase_offset <= UINT32_MAX &&
+	    analysis->address == config.system_analysis_tpbase_address) {
+		complete_tpbase((uint32_t)config.system_analysis_tpbase_offset);
+		return;
 	}
 	if (analysis->address ==
 	    bpftime::SYNTHETIC_X86_FSBASE_WRITE_TASK_ADDR) {
@@ -371,8 +319,7 @@ void maybe_complete_system_analysis(int map_fd, void *value)
 	}
 #endif
 	const unsigned long ptregs_offset =
-		resolve_system_analysis_ptregs_offset(
-			getenv("BPFTIME_SYSTEM_ANALYSIS_PTREGS_OFFSET"));
+		bpftime_get_local_runtime_config().system_analysis_ptregs_offset;
 	if (ptregs_offset == 0 || ptregs_offset > UINT32_MAX ||
 	    analysis->address >= 4096) {
 		errno = saved_errno;
@@ -404,13 +351,16 @@ syscall_context::syscall_context()
 {
 	init_original_functions();
 	enable_mock.store(false, std::memory_order_relaxed);
-	const char *logger_target = getenv("BPFTIME_LOG_OUTPUT");
+	initialize_local_runtime_config_from_env();
+	const auto &bootstrap = get_agent_bootstrap_config();
+	const char *logger_target = bootstrap.has_log_output ?
+					    bootstrap.log_output :
+					    bpftime_get_local_runtime_config()
+						    .get_logger_output_path();
 	bpftime_set_logger(logger_target == nullptr ? DEFAULT_LOGGER_OUTPUT_PATH :
 						     logger_target);
 	SPDLOG_DEBUG("Resolved original libc function pointers");
-	// FIXME: merge this into the runtime config
-	load_config_from_env();
-	auto runtime_config = bpftime::construct_runtime_config_from_env();
+	const auto &runtime_config = bpftime_get_local_runtime_config();
 	SPDLOG_INFO("Init bpftime syscall mocking..");
 	SPDLOG_INFO("The log will be written to: {}",
 		    runtime_config.get_logger_output_path());
@@ -721,9 +671,9 @@ int syscall_context::create_kernel_bpf_prog_in_userspace(int cmd,
 							 union bpf_attr *attr,
 							 size_t size)
 {
-	std::regex pattern(by_pass_kernel_verifier_pattern);
+	std::regex pattern(bpftime_get_local_runtime_config().not_load_pattern);
 	int res = 0;
-	if (!by_pass_kernel_verifier_pattern.empty() &&
+	if (bpftime_get_local_runtime_config().not_load_pattern[0] != '\0' &&
 	    std::regex_match(attr->prog_name, pattern)) {
 		SPDLOG_INFO("By pass kernel verifier for program {}",
 			    attr->prog_name);
@@ -817,7 +767,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		return fd;
 	}
 	case BPF_MAP_CREATE: {
-		if (run_with_kernel) {
+		if (bpftime_get_local_runtime_config().run_with_kernel) {
 			uint32_t translated_map_type =
 				bpftime_translate_shared_map_type_to_kernel_map_type(
 					attr->map_type);
@@ -913,7 +863,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	case BPF_MAP_LOOKUP_ELEM: {
 		SPDLOG_DEBUG("Looking up map {}, key={:x}", attr->map_fd,
 			     (uintptr_t)attr->key);
-		if (run_with_kernel) {
+		if (bpftime_get_local_runtime_config().run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
 					       (long)size);
@@ -947,7 +897,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		SPDLOG_DEBUG("Updating map {}, key={:x}, value={:x}, flags={}",
 			     attr->map_fd, (uintptr_t)attr->key,
 			     (uintptr_t)attr->value, attr->flags);
-		if (run_with_kernel) {
+		if (bpftime_get_local_runtime_config().run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
 					       (long)size);
@@ -960,7 +910,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	case BPF_MAP_DELETE_ELEM: {
 		SPDLOG_DEBUG("Deleting map {}, key={:x}", attr->map_fd,
 			     (uintptr_t)attr->key);
-		if (run_with_kernel) {
+		if (bpftime_get_local_runtime_config().run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
 					       (long)size);
@@ -972,7 +922,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		SPDLOG_DEBUG("Lookup and delete map {}, key={:x}, value={:x}",
 			     attr->map_fd, (uintptr_t)attr->key,
 			     (uintptr_t)attr->value);
-		if (run_with_kernel) {
+		if (bpftime_get_local_runtime_config().run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
 					       (long)size);
@@ -986,7 +936,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	case BPF_MAP_GET_NEXT_KEY: {
 		SPDLOG_DEBUG("Getting next key for map {}, key={:x}",
 			     attr->map_fd, (uintptr_t)attr->key);
-		if (run_with_kernel) {
+		if (bpftime_get_local_runtime_config().run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
 					       (long)size);
@@ -1004,7 +954,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 				(const char *)(uintptr_t)attr->license,
 				attr->prog_type, attr->attach_type,
 				attr->map_type);
-			if (run_with_kernel) {
+			if (bpftime_get_local_runtime_config().run_with_kernel) {
 				return create_kernel_bpf_prog_in_userspace(
 					cmd, attr, size);
 			}
@@ -1021,7 +971,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 			}
 #ifdef ENABLE_BPFTIME_VERIFIER
 			auto verifier_mode =
-				bpftime_get_runtime_config().verifier_mode;
+				bpftime_get_local_runtime_config().verifier_mode;
 			// Only do verification for tracepoint/uprobe/uretprobe
 			if (simple_section_name.has_value() &&
 			    verifier_mode != BPFTIME_NO_VERIFY) {
@@ -1087,7 +1037,8 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 						static_cast<int>(target_fd);
 		SPDLOG_DEBUG("Creating link {} -> {}, attach type {}", prog_fd,
 			     target_fd_for_log, attach_type);
-		if (run_with_kernel && !bpftime_is_perf_event_fd(target_fd)) {
+		if (bpftime_get_local_runtime_config().run_with_kernel &&
+		    !bpftime_is_perf_event_fd(target_fd)) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
 					       (long)size);
@@ -1116,13 +1067,13 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	case BPF_RAW_TRACEPOINT_OPEN: {
 		// Kernel mode keeps using the kernel's raw tracepoint
 		// implementation; the emulation only serves userspace mode.
-		if (run_with_kernel)
+		if (bpftime_get_local_runtime_config().run_with_kernel)
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
 					       (long)size);
 		const unsigned long ptregs_offset =
-			resolve_system_analysis_ptregs_offset(getenv(
-				"BPFTIME_SYSTEM_ANALYSIS_PTREGS_OFFSET"));
+			bpftime_get_local_runtime_config()
+				.system_analysis_ptregs_offset;
 		// An explicit "0" disables the emulation; an unset variable
 		// selects the default pt_regs offset.
 		if (ptregs_offset == 0)
@@ -1146,7 +1097,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		return fd;
 	}
 	case BPF_MAP_FREEZE: {
-		if (run_with_kernel) {
+		if (bpftime_get_local_runtime_config().run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
 					       (long)size);
@@ -1156,7 +1107,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		return 0;
 	}
 	case BPF_OBJ_GET_INFO_BY_FD: {
-		if (run_with_kernel) {
+		if (bpftime_get_local_runtime_config().run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
 					       (long)size);
@@ -1203,7 +1154,8 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		auto prog_fd = attr->attach_bpf_fd;
 		auto target_fd = attr->target_fd;
 		SPDLOG_DEBUG("BPF_PROG_ATTACH {} -> {}", prog_fd, target_fd);
-		if (run_with_kernel && !bpftime_is_perf_event_fd(target_fd)) {
+		if (bpftime_get_local_runtime_config().run_with_kernel &&
+		    !bpftime_is_perf_event_fd(target_fd)) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
 					       (long)size);
@@ -1228,7 +1180,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 				       (uint64_t)flags);
 	try_startup();
 	if ((int)attr->type == determine_uprobe_perf_type()) {
-		if (run_with_kernel) {
+		if (bpftime_get_local_runtime_config().run_with_kernel) {
 			SPDLOG_INFO(
 				"Calling original perf event open at uprobe creation");
 			return orig_syscall_fn(__NR_perf_event_open,
@@ -1267,7 +1219,8 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 		int new_fd = -1;
 		std::string new_probe_name = name;
 		// When running with kernel, probe names started with `cuda_` will be treated as cuda probe
-		if (name.starts_with("cuda_") && run_with_kernel) {
+		if (name.starts_with("cuda_") &&
+		    bpftime_get_local_runtime_config().run_with_kernel) {
 			auto new_attr = *attr;
 			new_attr.config1 = (uintptr_t)"do_exit";
 			new_attr.config2 = 0;
@@ -1288,7 +1241,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 			}
 			// Strip the prefix `cuda_`
 			new_probe_name = name.substr(5);
-		} else if (run_with_kernel) {
+		} else if (bpftime_get_local_runtime_config().run_with_kernel) {
 			SPDLOG_INFO(
 				"Calling original perf event open at kprobe creation");
 			return orig_syscall_fn(__NR_perf_event_open,
@@ -1303,7 +1256,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 		return id;
 	} else if ((int)attr->type ==
 		   (int)bpf_event_type::PERF_TYPE_TRACEPOINT) {
-		if (run_with_kernel) {
+		if (bpftime_get_local_runtime_config().run_with_kernel) {
 			return orig_syscall_fn(__NR_perf_event_open,
 					       (uint64_t)(uintptr_t)attr,
 					       (uint64_t)pid, (uint64_t)cpu,
@@ -1357,7 +1310,8 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 void *syscall_context::handle_mmap(void *addr, size_t length, int prot,
 				   int flags, int fd, off64_t offset)
 {
-	if (!mock_enabled_for_current_thread() || run_with_kernel ||
+	if (!mock_enabled_for_current_thread() ||
+	    bpftime_get_local_runtime_config().run_with_kernel ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_mmap_fn(addr, length, prot, flags, fd, offset);
@@ -1369,7 +1323,8 @@ void *syscall_context::handle_mmap(void *addr, size_t length, int prot,
 void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 				     int flags, int fd, off64_t offset)
 {
-	if (!mock_enabled_for_current_thread() || run_with_kernel ||
+	if (!mock_enabled_for_current_thread() ||
+	    bpftime_get_local_runtime_config().run_with_kernel ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
@@ -1452,7 +1407,8 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, unsigned long data)
 	int res;
 	if (req == PERF_EVENT_IOC_ENABLE) {
 		SPDLOG_DEBUG("Enabling perf event {}", fd);
-		if (run_with_kernel && !bpftime_is_perf_event_fd(fd)) {
+		if (bpftime_get_local_runtime_config().run_with_kernel &&
+		    !bpftime_is_perf_event_fd(fd)) {
 			SPDLOG_DEBUG(
 				"Calling original ioctl at PERF_EVENT_IOC_ENABLE");
 			return orig_ioctl_fn(fd, req, data);
@@ -1465,7 +1421,8 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, unsigned long data)
 			res);
 	} else if (req == PERF_EVENT_IOC_DISABLE) {
 		SPDLOG_DEBUG("Disabling perf event {}", fd);
-		if (run_with_kernel && !bpftime_is_perf_event_fd(fd)) {
+		if (bpftime_get_local_runtime_config().run_with_kernel &&
+		    !bpftime_is_perf_event_fd(fd)) {
 			SPDLOG_DEBUG(
 				"Calling original ioctl at PERF_EVENT_IOC_DISABLE");
 			return orig_ioctl_fn(fd, req, data);
@@ -1479,7 +1436,8 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, unsigned long data)
 	} else if (req == PERF_EVENT_IOC_SET_BPF) {
 		SPDLOG_DEBUG("Setting bpf for perf event {} and bpf {}", fd,
 			     data);
-		if (run_with_kernel && !bpftime_is_perf_event_fd(fd)) {
+		if (bpftime_get_local_runtime_config().run_with_kernel &&
+		    !bpftime_is_perf_event_fd(fd)) {
 			SPDLOG_DEBUG(
 				"Calling original ioctl at PERF_EVENT_IOC_SET_BPF");
 			return orig_ioctl_fn(fd, req, data);
@@ -1505,7 +1463,8 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, unsigned long data)
 
 int syscall_context::handle_epoll_create1(int flags)
 {
-	if (!mock_enabled_for_current_thread() || run_with_kernel ||
+	if (!mock_enabled_for_current_thread() ||
+	    bpftime_get_local_runtime_config().run_with_kernel ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_epoll_create1_fn(flags);
@@ -1525,7 +1484,8 @@ int syscall_context::handle_epoll_create1(int flags)
 int syscall_context::handle_epoll_ctl(int epfd, int op, int fd,
 				      epoll_event *evt)
 {
-	if (!mock_enabled_for_current_thread() || run_with_kernel ||
+	if (!mock_enabled_for_current_thread() ||
+	    bpftime_get_local_runtime_config().run_with_kernel ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_epoll_ctl_fn(epfd, op, fd, evt);
 	try_startup();
@@ -1555,7 +1515,8 @@ int syscall_context::handle_epoll_ctl(int epfd, int op, int fd,
 int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,
 				       int maxevents, int timeout)
 {
-	if (!mock_enabled_for_current_thread() || run_with_kernel ||
+	if (!mock_enabled_for_current_thread() ||
+	    bpftime_get_local_runtime_config().run_with_kernel ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
@@ -1612,7 +1573,8 @@ int syscall_context::handle_munmap(void *addr, size_t size)
 	};
 	if (handle_mocked_munmap())
 		return 0;
-	if (!mock_enabled_for_current_thread() || run_with_kernel ||
+	if (!mock_enabled_for_current_thread() ||
+	    bpftime_get_local_runtime_config().run_with_kernel ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_munmap_fn(addr, size);
@@ -1643,7 +1605,8 @@ FILE *syscall_context::handle_fopen(const char *pathname, const char *flags)
 int syscall_context::handle_dup3(int oldfd, int newfd, int flags)
 {
 	SPDLOG_DEBUG("Calling mocked dup3 {}, {}", oldfd, newfd);
-	if (!mock_enabled_for_current_thread() || run_with_kernel ||
+	if (!mock_enabled_for_current_thread() ||
+	    bpftime_get_local_runtime_config().run_with_kernel ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_syscall_fn(__NR_dup3, (long)oldfd, (long)newfd,
