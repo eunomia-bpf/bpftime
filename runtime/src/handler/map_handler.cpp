@@ -78,15 +78,20 @@ constexpr bool is_map_in_map_v =
 	std::is_same_v<T, array_map_of_maps_impl> ||
 	std::is_same_v<T, hash_map_of_maps_impl>;
 
-// Run fn while holding map_lock when the map impl requests locking; run it
-// directly otherwise. Every map impl declares should_lock, so this preserves
-// the exact locking of the previous per-operation dispatch.
+// BPF helper entry points (from_syscall == false) run on the LD_PRELOAD hot
+// path: a live holder stopped by SIGSTOP or a same-thread signal re-entering
+// the handler would deadlock a blocking pthread_mutex_lock. Take the robust
+// mutex with a zero-allocation trylock and skip the event on contention;
+// the control-plane syscall server (from_syscall == true) keeps blocking.
 template <typename Fn>
 BPFTIME_ALWAYS_INLINE inline decltype(auto)
-with_optional_lock(bool should_lock, robust_shm_mutex &lock, Fn &&fn)
+with_map_lock(bool should_lock, bool from_syscall,
+	      robust_shm_mutex &lock, Fn &&fn)
 {
 	using Ret = std::invoke_result_t<Fn>;
-	if (should_lock) {
+	if (!should_lock)
+		return fn();
+	if (from_syscall) {
 		robust_shm_lock_guard guard(lock, "bpf_map_handler");
 		if (!guard.owns_lock()) {
 			if constexpr (std::is_pointer_v<Ret>)
@@ -95,6 +100,13 @@ with_optional_lock(bool should_lock, robust_shm_mutex &lock, Fn &&fn)
 				return Ret(-1);
 		}
 		return fn();
+	}
+	robust_shm_trylock_guard guard(lock);
+	if (!guard.owns_lock()) {
+		if constexpr (std::is_pointer_v<Ret>)
+			return Ret(nullptr);
+		else
+			return Ret(-EBUSY);
 	}
 	return fn();
 }
@@ -236,15 +248,15 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 			if constexpr (is_lru_hash_v<impl_t>) {
 				// LRU enforces BPF_F_RDONLY/WRONLY only on
 				// syscall access; helpers pass false.
-				return with_optional_lock(
-					impl->should_lock, map_lock,
+				return with_map_lock(
+					impl->should_lock, from_syscall, map_lock,
 					[&]() -> const void * {
 						return impl->elem_lookup(
 							key, from_syscall);
 					});
 			} else if constexpr (is_percpu_map_v<impl_t>) {
-				return with_optional_lock(
-					impl->should_lock, map_lock,
+				return with_map_lock(
+					impl->should_lock, from_syscall, map_lock,
 					[&]() -> const void * {
 						if (from_syscall)
 							return impl->elem_lookup_userspace(
@@ -253,8 +265,8 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 					});
 			} else if constexpr (is_map_in_map_v<impl_t>) {
 				if (!from_syscall)
-					return with_optional_lock(
-						impl->should_lock, map_lock,
+					return with_map_lock(
+						impl->should_lock, from_syscall, map_lock,
 						[&]() -> const void * {
 							return impl->elem_lookup(
 								key);
@@ -275,8 +287,8 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 				tl_map_in_map_fd_snapshot = *stored;
 				return &tl_map_in_map_fd_snapshot;
 			}
-			return with_optional_lock(
-				impl->should_lock, map_lock,
+			return with_map_lock(
+				impl->should_lock, from_syscall, map_lock,
 				[&]() -> const void * {
 					return impl->elem_lookup(key);
 				});
@@ -305,8 +317,8 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 				if (!from_syscall)
 					return -EINVAL;
 			}
-			return with_optional_lock(
-				impl->should_lock, map_lock,
+			return with_map_lock(
+				impl->should_lock, from_syscall, map_lock,
 				[&]() -> long {
 					// LRU enforces BPF_F_RDONLY only on
 					// syscall access; helpers pass false.
@@ -368,8 +380,8 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 		type, [&]() BPFTIME_ALWAYS_INLINE { return map_impl_ptr.get(); },
 		[&](auto *impl) -> int {
 			using impl_t = std::remove_cvref_t<decltype(*impl)>;
-			return with_optional_lock(
-				impl->should_lock, map_lock,
+			return with_map_lock(
+				impl->should_lock, from_syscall, map_lock,
 				[&]() -> int {
 					// LRU enforces BPF_F_WRONLY only on
 					// syscall access; helpers pass false.
@@ -408,8 +420,8 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 				if (!from_syscall)
 					return -EINVAL;
 			}
-			return with_optional_lock(
-				impl->should_lock, map_lock,
+			return with_map_lock(
+				impl->should_lock, from_syscall, map_lock,
 				[&]() -> long {
 					// LRU enforces BPF_F_RDONLY only on
 					// syscall access; helpers pass false.
@@ -1010,22 +1022,22 @@ long bpf_map_handler::map_push_elem(const void *value, uint64_t flags,
 	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
 		auto impl =
 			static_cast<queue_map_impl *>(map_impl_ptr.get());
-		return with_optional_lock(
-			impl->should_lock, map_lock,
+		return with_map_lock(
+			impl->should_lock, from_syscall, map_lock,
 			[&] { return impl->map_push_elem(value, flags); });
 	}
 	case bpf_map_type::BPF_MAP_TYPE_STACK: {
 		auto impl =
 			static_cast<stack_map_impl *>(map_impl_ptr.get());
-		return with_optional_lock(
-			impl->should_lock, map_lock,
+		return with_map_lock(
+			impl->should_lock, from_syscall, map_lock,
 			[&] { return impl->map_push_elem(value, flags); });
 	}
 	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER: {
 		auto impl = static_cast<bloom_filter_map_impl *>(
 			map_impl_ptr.get());
-		return with_optional_lock(
-			impl->should_lock, map_lock,
+		return with_map_lock(
+			impl->should_lock, from_syscall, map_lock,
 			[&] { return impl->map_push_elem(value, flags); });
 	}
 	default:
@@ -1042,15 +1054,15 @@ long bpf_map_handler::map_pop_elem(void *value, bool from_syscall) const
 	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
 		auto impl =
 			static_cast<queue_map_impl *>(map_impl_ptr.get());
-		return with_optional_lock(
-			impl->should_lock, map_lock,
+		return with_map_lock(
+			impl->should_lock, from_syscall, map_lock,
 			[&] { return impl->map_pop_elem(value); });
 	}
 	case bpf_map_type::BPF_MAP_TYPE_STACK: {
 		auto impl =
 			static_cast<stack_map_impl *>(map_impl_ptr.get());
-		return with_optional_lock(
-			impl->should_lock, map_lock,
+		return with_map_lock(
+			impl->should_lock, from_syscall, map_lock,
 			[&] { return impl->map_pop_elem(value); });
 	}
 	default:
@@ -1072,8 +1084,8 @@ long bpf_map_handler::map_lookup_and_delete_elem(const void *key, void *value,
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 		auto impl =
 			static_cast<hash_map_impl *>(map_impl_ptr.get());
-		return with_optional_lock(
-			impl->should_lock, map_lock, [&] {
+		return with_map_lock(
+			impl->should_lock, from_syscall, map_lock, [&] {
 				return impl->lookup_and_delete(
 					key, value, from_syscall);
 			});
@@ -1081,8 +1093,8 @@ long bpf_map_handler::map_lookup_and_delete_elem(const void *key, void *value,
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
 		auto impl = static_cast<per_cpu_hash_map_impl *>(
 			map_impl_ptr.get());
-		return with_optional_lock(
-			impl->should_lock, map_lock, [&] {
+		return with_map_lock(
+			impl->should_lock, from_syscall, map_lock, [&] {
 				return impl->lookup_and_delete_userspace(
 					key, value);
 			});
@@ -1090,8 +1102,8 @@ long bpf_map_handler::map_lookup_and_delete_elem(const void *key, void *value,
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
 		auto impl = static_cast<lru_var_hash_map_impl *>(
 			map_impl_ptr.get());
-		return with_optional_lock(
-			impl->should_lock, map_lock, [&] {
+		return with_map_lock(
+			impl->should_lock, from_syscall, map_lock, [&] {
 				return impl->lookup_and_delete(
 					key, value, from_syscall);
 			});
@@ -1099,8 +1111,8 @@ long bpf_map_handler::map_lookup_and_delete_elem(const void *key, void *value,
 	case bpf_map_type::BPF_MAP_TYPE_STACK_TRACE: {
 		auto impl = static_cast<stack_trace_map_impl *>(
 			map_impl_ptr.get());
-		return with_optional_lock(
-			impl->should_lock, map_lock, [&] {
+		return with_map_lock(
+			impl->should_lock, from_syscall, map_lock, [&] {
 				return impl->lookup_and_delete(
 					key, value, from_syscall);
 			});
@@ -1110,15 +1122,15 @@ long bpf_map_handler::map_lookup_and_delete_elem(const void *key, void *value,
 			static_cast<queue_map_impl *>(map_impl_ptr.get());
 		// Queue and stack take the keyless pop, and both declare
 		// should_lock = true: the handler owns their lock.
-		return with_optional_lock(
-			impl->should_lock, map_lock,
+		return with_map_lock(
+			impl->should_lock, from_syscall, map_lock,
 			[&] { return impl->map_pop_elem(value); });
 	}
 	case bpf_map_type::BPF_MAP_TYPE_STACK: {
 		auto impl =
 			static_cast<stack_map_impl *>(map_impl_ptr.get());
-		return with_optional_lock(
-			impl->should_lock, map_lock,
+		return with_map_lock(
+			impl->should_lock, from_syscall, map_lock,
 			[&] { return impl->map_pop_elem(value); });
 	}
 	default:
@@ -1136,22 +1148,22 @@ long bpf_map_handler::map_peek_elem(void *value, bool from_syscall) const
 	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
 		auto impl =
 			static_cast<queue_map_impl *>(map_impl_ptr.get());
-		return with_optional_lock(
-			impl->should_lock, map_lock,
+		return with_map_lock(
+			impl->should_lock, from_syscall, map_lock,
 			[&] { return impl->map_peek_elem(value); });
 	}
 	case bpf_map_type::BPF_MAP_TYPE_STACK: {
 		auto impl =
 			static_cast<stack_map_impl *>(map_impl_ptr.get());
-		return with_optional_lock(
-			impl->should_lock, map_lock,
+		return with_map_lock(
+			impl->should_lock, from_syscall, map_lock,
 			[&] { return impl->map_peek_elem(value); });
 	}
 	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER: {
 		auto impl = static_cast<bloom_filter_map_impl *>(
 			map_impl_ptr.get());
-		return with_optional_lock(
-			impl->should_lock, map_lock,
+		return with_map_lock(
+			impl->should_lock, from_syscall, map_lock,
 			[&] { return impl->map_peek_elem(value); });
 	}
 	default:

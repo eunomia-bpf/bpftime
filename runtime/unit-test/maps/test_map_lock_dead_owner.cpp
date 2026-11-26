@@ -47,7 +47,7 @@ struct hash_map_fixture {
 };
 } // namespace
 
-TEST_CASE("Map lock serializes contention and fails open on dead holder",
+TEST_CASE("Map helper hot path trylocks around a live holder while syscalls block",
 	  "[map_lock][dead_owner]")
 {
 	hash_map_fixture fx;
@@ -56,30 +56,55 @@ TEST_CASE("Map lock serializes contention and fails open on dead holder",
 	std::thread holder([&] {
 		REQUIRE(map.get_map_lock().lock("holder"));
 		started.store(true, std::memory_order_release);
-		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		std::this_thread::sleep_for(std::chrono::milliseconds(250));
 		map.get_map_lock().unlock();
 	});
 	while (!started.load(std::memory_order_acquire))
 		std::this_thread::yield();
-	std::atomic<int> ok{ 0 }, busy{ 0 };
+
+	// BPF helper entries (from_syscall == false) must skip immediately
+	// with -EBUSY instead of blocking while a live holder is descheduled
+	// or stopped. Host errno is preserved across the trylock fast path.
+	std::atomic<int> skipped{ 0 }, errno_dirty{ 0 };
 	std::array<std::thread, 2> waiters;
 	for (int w = 0; w < 2; ++w)
 		waiters[w] = std::thread([&, w] {
 			uint32_t key = (uint32_t)(w + 1);
 			uint64_t value = 0x1000 + (uint64_t)w;
 			errno = 0;
-			if (map.map_update_elem(&key, &value, 0, false) == 0)
-				ok.fetch_add(1, std::memory_order_relaxed);
-			else if (errno == EBUSY)
-				busy.fetch_add(1, std::memory_order_relaxed);
+			if (map.map_update_elem(&key, &value, 0, false) ==
+			    -EBUSY) {
+				skipped.fetch_add(1,
+						  std::memory_order_relaxed);
+				if (errno != 0)
+					errno_dirty.fetch_add(1,
+							     std::memory_order_relaxed);
+			}
 		});
+	auto begin = std::chrono::steady_clock::now();
 	for (auto &t : waiters)
 		t.join();
+	auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+			       std::chrono::steady_clock::now() - begin)
+			       .count();
+	REQUIRE(skipped.load() == 2);
+	REQUIRE(errno_dirty.load() == 0);
+	REQUIRE(elapsed < 100);
+
+	// The control-plane syscall entry keeps the blocking contract: it
+	// waits for the holder to release and then succeeds.
+	uint32_t sys_key = 9;
+	uint64_t sys_value = 0x9000;
+	REQUIRE(map.map_update_elem(&sys_key, &sys_value, 0, true) == 0);
 	holder.join();
-	REQUIRE(busy.load() == 0);
-	REQUIRE(ok.load() == 2);
+}
 
 #if defined(__linux__)
+TEST_CASE("Map lock fails open on a dead holder on both entry paths",
+	  "[map_lock][dead_owner]")
+{
+	hash_map_fixture fx;
+	auto &map = *fx.map;
 	int pipefd[2]{ -1, -1 };
 	REQUIRE(pipe(pipefd) == 0);
 	pid_t child = fork();
@@ -100,18 +125,22 @@ TEST_CASE("Map lock serializes contention and fails open on dead holder",
 	close(pipefd[0]);
 	uint32_t key = 7;
 	uint64_t value = 42;
+
+	// Helper hot path: negative errno return, host errno left untouched.
 	errno = 0;
-	REQUIRE(map.map_update_elem(&key, &value, 0, false) == -1);
-	REQUIRE(errno == EBUSY);
-	errno = 0;
+	REQUIRE(map.map_update_elem(&key, &value, 0, false) == -EBUSY);
+	REQUIRE(errno == 0);
 	REQUIRE(map.map_lookup_elem(&key, false) == nullptr);
-	REQUIRE(errno == EBUSY);
+
 	int status = 0;
 	REQUIRE(waitpid(child, &status, 0) == child);
 	REQUIRE(WIFSIGNALED(status));
 	REQUIRE(WTERMSIG(status) == SIGKILL);
+
+	// Syscall control plane retains the blocking lock() convention:
+	// -1 with errno = EBUSY on the permanently poisoned mutex.
 	errno = 0;
-	REQUIRE(map.map_update_elem(&key, &value, 0, false) == -1);
+	REQUIRE(map.map_update_elem(&key, &value, 0, true) == -1);
 	REQUIRE(errno == EBUSY);
-#endif
 }
+#endif

@@ -103,6 +103,25 @@ class robust_shm_mutex {
 		return true;
 	}
 
+	// Non-blocking lock for the LD_PRELOAD BPF-helper hot path. Never logs
+	// (no heap allocation) and preserves the host errno. A dead holder is
+	// handled exactly as in lock(): unlock without consistent() latches
+	// ENOTRECOVERABLE so the half-mutated structure stays poisoned.
+	bool try_lock() noexcept
+	{
+		const int saved_errno = errno;
+		const int rc = pthread_mutex_trylock(&mutex);
+#ifdef __linux__
+		if (rc == EOWNERDEAD) {
+			pthread_mutex_unlock(&mutex);
+			errno = saved_errno;
+			return false;
+		}
+#endif
+		errno = saved_errno;
+		return rc == 0;
+	}
+
 	void unlock() { pthread_mutex_unlock(&mutex); }
 };
 
@@ -123,6 +142,25 @@ class robust_shm_lock_guard {
 	bool owns_lock() const { return mutex != nullptr; }
 	robust_shm_lock_guard(const robust_shm_lock_guard &) = delete;
 	robust_shm_lock_guard &operator=(const robust_shm_lock_guard &) = delete;
+};
+
+class robust_shm_trylock_guard {
+	robust_shm_mutex *mutex;
+
+    public:
+	explicit robust_shm_trylock_guard(robust_shm_mutex &m) noexcept
+		: mutex(m.try_lock() ? &m : nullptr)
+	{
+	}
+	~robust_shm_trylock_guard()
+	{
+		if (mutex)
+			mutex->unlock();
+	}
+	bool owns_lock() const { return mutex != nullptr; }
+	robust_shm_trylock_guard(const robust_shm_trylock_guard &) = delete;
+	robust_shm_trylock_guard &
+	operator=(const robust_shm_trylock_guard &) = delete;
 };
 
 } // namespace bpftime

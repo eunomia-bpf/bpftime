@@ -8,8 +8,10 @@
 #include "robust_shm_mutex.hpp"
 #include <atomic>
 #include <cerrno>
+#include <chrono>
 #include <new>
 #include <sched.h>
+#include <thread>
 #include <sys/mman.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -174,5 +176,50 @@ TEST_CASE("robust SHM mutex waits on live holder in a child PID namespace",
 	REQUIRE(reg->stolen_while_held.load() == 0);
 
 	munmap(reg, sizeof(*reg));
+}
+
+TEST_CASE("robust SHM mutex try_lock skips contention without touching errno",
+	  "[robust_shm_mutex]")
+{
+	auto *m = make_shared_mutex();
+
+	// Uncontended acquisition works and releases cleanly.
+	errno = 0;
+	REQUIRE(m->try_lock());
+	REQUIRE(errno == 0);
+
+	// Same-thread reentry (the signal-handler reentry model) fails
+	// immediately instead of self-deadlocking.
+	errno = 0;
+	REQUIRE_FALSE(m->try_lock());
+	REQUIRE(errno == 0);
+	m->unlock();
+
+	// A live holder in another thread makes try_lock fail immediately
+	// while preserving the host errno.
+	std::atomic<bool> inside{ false };
+	std::thread holder([&] {
+		REQUIRE(m->lock("holder"));
+		inside.store(true, std::memory_order_release);
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		m->unlock();
+	});
+	while (!inside.load(std::memory_order_acquire))
+		std::this_thread::yield();
+	errno = 0;
+	REQUIRE_FALSE(m->try_lock());
+	REQUIRE(errno == 0);
+	holder.join();
+
+	// After a SIGKILLed holder, try_lock latches the poison and still
+	// preserves errno; the blocking path then reports EBUSY.
+	(void)fork_killed_holder(m, true);
+	errno = 0;
+	REQUIRE_FALSE(m->try_lock());
+	REQUIRE(errno == 0);
+	REQUIRE_FALSE(m->lock("post-poison"));
+	REQUIRE(errno == EBUSY);
+
+	munmap(m, sizeof(*m));
 }
 #endif
