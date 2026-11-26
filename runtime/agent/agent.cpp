@@ -848,7 +848,6 @@ static void bpftime_agent_main_impl(const gchar *data,
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 			syscall_trace_impl_ptr->dispatch_process_exec();
 #endif
-			srand(std::random_device()());
 
 			if (!shm_holder.global_shared_memory
 				     .add_pid_into_alive_agent_set(getpid())) {
