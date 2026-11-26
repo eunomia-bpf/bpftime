@@ -861,9 +861,10 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		// open the shm
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::open_only, shm_name);
-		// Top-level named objects are created once under exclusive
-		// shm_lifecycle_lock before clients attach; find_no_lock reads
-		// the static named index without taking Boost's non-robust
+		// The syscall server constructs these named objects once under
+		// exclusive shm_lifecycle_lock, and the agent opens the segment
+		// only under LOCK_SH | LOCK_NB, so for the agent the named index
+		// is static. find_no_lock reads it without Boost's non-robust
 		// segment_manager mutex.
 		auto *seg_mgr = segment.get_segment_manager();
 		manager = seg_mgr->find_no_lock<bpftime::handler_manager>(
