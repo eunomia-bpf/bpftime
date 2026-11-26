@@ -635,7 +635,7 @@ TEST_CASE("Client SHM_OPEN_ONLY and agent preload bypass wedged Boost segment_ma
 	  "[allocation][agent][shm]")
 {
 	const std::string shm_name =
-		"bpftime-root-trailer-test-" + std::to_string(getpid());
+		"bpftime-find-no-lock-test-" + std::to_string(getpid());
 	env_var_guard name_guard("BPFTIME_GLOBAL_SHM_NAME");
 	env_var_guard mb_guard("BPFTIME_SHM_MEMORY_MB");
 	REQUIRE(setenv("BPFTIME_GLOBAL_SHM_NAME", shm_name.c_str(), 1) == 0);
