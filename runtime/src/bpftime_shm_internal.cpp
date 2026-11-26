@@ -846,67 +846,6 @@ bool bpftime_shm::is_exist_fake_fd(int fd) const
 	return manager->is_allocated(fd);
 }
 
-#if defined(__linux__)
-namespace
-{
-constexpr uint64_t SHM_ROOT_TRAILER_MAGIC = 0x42504654524f4f54ULL;
-constexpr uint64_t SHM_ROOT_TRAILER_READY = 0x5245414459563031ULL;
-constexpr uint64_t SHM_ROOT_NULL_OFFSET = UINT64_MAX;
-
-// Fixed read-only root directory appended as one page past Boost's managed
-// segment size inside the same POSIX SHM object. Server publishes offsets once
-// with a release store to `ready`; SHM_OPEN_ONLY clients resolve all top-level
-// pointers with zero Boost segment_manager mutex acquisitions.
-struct bpftime_shm_root_trailer {
-	uint64_t magic;
-	uint64_t boost_size;
-	uint64_t manager_off;
-	uint64_t runtime_config_off;
-	uint64_t injected_pids_off;
-	uint64_t alive_syscall_server_pids_off;
-	uint64_t epoch_state_off;
-	uint64_t cpu_exec_locks_off;
-	uint64_t cuda_comm_off;
-	std::atomic<uint64_t> ready;
-};
-
-std::string posix_shm_object_name(const char *shm_name)
-{
-	if (shm_name == nullptr || shm_name[0] == '\0')
-		return {};
-	return shm_name[0] == '/' ? std::string(shm_name)
-				  : (std::string("/") + shm_name);
-}
-
-size_t shm_trailer_page_size() noexcept
-{
-	const long pg = sysconf(_SC_PAGESIZE);
-	return pg > 0 ? static_cast<size_t>(pg) : 4096u;
-}
-
-uint64_t to_shm_offset(const void *base, size_t boost_size,
-		       const void *ptr) noexcept
-{
-	if (ptr == nullptr || base == nullptr)
-		return SHM_ROOT_NULL_OFFSET;
-	const auto b = reinterpret_cast<uintptr_t>(base);
-	const auto p = reinterpret_cast<uintptr_t>(ptr);
-	if (p < b || p - b >= boost_size)
-		return SHM_ROOT_NULL_OFFSET;
-	return static_cast<uint64_t>(p - b);
-}
-
-template <typename T>
-T *from_shm_offset(void *base, size_t boost_size, uint64_t off) noexcept
-{
-	if (base == nullptr || off == SHM_ROOT_NULL_OFFSET ||
-	    off >= boost_size || boost_size - off < sizeof(T))
-		return nullptr;
-	return reinterpret_cast<T *>(static_cast<uint8_t *>(base) + off);
-}
-} // namespace
-#endif
-
 bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 	: open_type(type)
 {
@@ -917,111 +856,31 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 	// Seed the process-local fallback so get_runtime_config() never
 	// dereferences an empty optional when no shared config exists.
 	local_runtime_config.emplace(config);
-	bool loaded_from_root_trailer = false;
 	if (type == shm_open_type::SHM_OPEN_ONLY) {
 		SPDLOG_DEBUG("start: bpftime_shm for client setup");
 		// open the shm
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::open_only, shm_name);
-#if defined(__linux__)
-		const std::string shm_obj = posix_shm_object_name(shm_name);
-		const size_t page_sz = shm_trailer_page_size();
-		const size_t boost_sz = segment.get_size();
-		const size_t trailer_off =
-			(boost_sz + page_sz - 1) & ~(page_sz - 1);
-		if (!shm_obj.empty() && page_sz >= sizeof(bpftime_shm_root_trailer)) {
-			int fd = shm_open(shm_obj.c_str(), O_RDONLY | O_CLOEXEC, 0);
-			if (fd >= 0) {
-				(void)fcntl(fd, F_SETFD, FD_CLOEXEC);
-				struct stat sb{};
-				if (fstat(fd, &sb) == 0 && sb.st_size > 0 &&
-				    static_cast<size_t>(sb.st_size) >=
-					    trailer_off +
-						    sizeof(bpftime_shm_root_trailer)) {
-					void *map = mmap(
-						nullptr, page_sz, PROT_READ,
-						MAP_SHARED, fd,
-						static_cast<off_t>(trailer_off));
-					if (map != MAP_FAILED) {
-						const auto *tr = static_cast<
-							const bpftime_shm_root_trailer *>(
-							map);
-						if (tr->ready.load(
-							    std::memory_order_acquire) ==
-							    SHM_ROOT_TRAILER_READY &&
-						    tr->magic ==
-							    SHM_ROOT_TRAILER_MAGIC &&
-						    tr->boost_size == boost_sz) {
-							void *base =
-								segment.get_address();
-							manager = from_shm_offset<
-								bpftime::handler_manager>(
-								base, boost_sz,
-								tr->manager_off);
-							runtime_config = from_shm_offset<
-								struct runtime_config>(
-								base, boost_sz,
-								tr->runtime_config_off);
-							injected_pids = from_shm_offset<
-								alive_agent_pids>(
-								base, boost_sz,
-								tr->injected_pids_off);
-							alive_syscall_server_pids =
-								from_shm_offset<
-									alive_syscall_server_pid_set>(
-									base,
-									boost_sz,
-									tr->alive_syscall_server_pids_off);
-							epoch_state = from_shm_offset<
-								bpftime_global_epoch_state>(
-								base, boost_sz,
-								tr->epoch_state_off);
-							cpu_exec_locks = from_shm_offset<
-								bpftime_cpu_exec_locks>(
-								base, boost_sz,
-								tr->cpu_exec_locks_off);
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
-							cuda_comm_shared_mem =
-								from_shm_offset<
-									cuda::CommSharedMem>(
-									base,
-									boost_sz,
-									tr->cuda_comm_off);
-#endif
-							loaded_from_root_trailer =
-								(manager != nullptr);
-						}
-						munmap(map, page_sz);
-					}
-				}
-				close(fd);
-			}
-		}
-#endif
-		if (!loaded_from_root_trailer) {
-			manager = segment.find<bpftime::handler_manager>(
-						 bpftime::DEFAULT_GLOBAL_HANDLER_NAME)
-					  .first;
-			runtime_config =
-				segment.find<struct runtime_config>(
-					       bpftime::DEFAULT_AGENT_CONFIG_NAME)
-					.first;
-
-			injected_pids =
-				segment.find<alive_agent_pids>(
-					       bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME)
-					.first;
-			alive_syscall_server_pids =
-				segment.find<alive_syscall_server_pid_set>(
-					       bpftime::DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME)
-					.first;
-			epoch_state = segment.find<bpftime_global_epoch_state>(
-						     "bpftime_global_epoch_state")
-					      .first;
-			cpu_exec_locks = segment.find<bpftime_cpu_exec_locks>(
-						 "bpftime_cpu_exec_locks")
-					  .first;
-		}
+		// Top-level named objects are created once under exclusive
+		// shm_lifecycle_lock before clients attach; find_no_lock reads
+		// the static named index without taking Boost's non-robust
+		// segment_manager mutex.
+		auto *seg_mgr = segment.get_segment_manager();
+		manager = seg_mgr->find_no_lock<bpftime::handler_manager>(
+					 bpftime::DEFAULT_GLOBAL_HANDLER_NAME)
+				  .first;
+		runtime_config =
+			seg_mgr->find_no_lock<struct runtime_config>(
+				       bpftime::DEFAULT_AGENT_CONFIG_NAME)
+				.first;
+		injected_pids =
+			seg_mgr->find_no_lock<alive_agent_pids>(
+				       bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME)
+				.first;
+		alive_syscall_server_pids =
+			seg_mgr->find_no_lock<alive_syscall_server_pid_set>(
+				       bpftime::DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME)
+				.first;
 		if (injected_pids == nullptr ||
 		    alive_syscall_server_pids == nullptr) {
 			SPDLOG_WARN(
@@ -1029,6 +888,12 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 				"the segment likely uses an incompatible older layout, "
 				"so alive-PID tracking is disabled for this process");
 		}
+		epoch_state = seg_mgr->find_no_lock<bpftime_global_epoch_state>(
+					     "bpftime_global_epoch_state")
+				      .first;
+		cpu_exec_locks = seg_mgr->find_no_lock<bpftime_cpu_exec_locks>(
+					 "bpftime_cpu_exec_locks")
+				  .first;
 		SPDLOG_DEBUG("done: bpftime_shm for client setup");
 	} else if (type == shm_open_type::SHM_CREATE_OR_OPEN ||
 		   type == shm_open_type::SHM_CREATE_ONLY) {
@@ -1109,12 +974,12 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 	// Move CommSharedMem from the agent’s local memory to shared memory to
 	// improve performance.
 	if (open_type == shm_open_type::SHM_OPEN_ONLY) {
-		if (!loaded_from_root_trailer) {
-			auto pair = segment.find<cuda::CommSharedMem>(
-				"cuda_comm_shared_mem");
-			cuda_comm_shared_mem = pair.first;
-		}
-		if (cuda_comm_shared_mem == nullptr)
+		auto pair = segment.get_segment_manager()
+				    ->find_no_lock<cuda::CommSharedMem>(
+					    "cuda_comm_shared_mem");
+		// Server builds this under shm_lifecycle_lock; no polling.
+		cuda_comm_shared_mem = pair.first;
+		if (pair.first == nullptr)
 			SPDLOG_ERROR(
 				"CommSharedMem not found in shared memory; did syscall-server initialize CUDA support?");
 		// Register the shared communication memory for CUDA device
@@ -1136,86 +1001,6 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			SPDLOG_DEBUG(
 				"Constructed CommSharedMem in shared memory at {:p}",
 				(void *)cuda_comm_shared_mem);
-		}
-	}
-#endif
-
-#if defined(__linux__)
-	if (open_type == shm_open_type::SHM_CREATE_ONLY ||
-	    open_type == shm_open_type::SHM_CREATE_OR_OPEN ||
-	    open_type == shm_open_type::SHM_REMOVE_AND_CREATE) {
-		const std::string shm_obj = posix_shm_object_name(shm_name);
-		const size_t page_sz = shm_trailer_page_size();
-		const size_t boost_sz = segment.get_size();
-		const size_t trailer_off =
-			(boost_sz + page_sz - 1) & ~(page_sz - 1);
-		if (!shm_obj.empty() &&
-		    page_sz >= sizeof(bpftime_shm_root_trailer)) {
-			int fd = shm_open(shm_obj.c_str(), O_RDWR | O_CLOEXEC,
-					  0666);
-			if (fd >= 0) {
-				(void)fcntl(fd, F_SETFD, FD_CLOEXEC);
-				struct stat sb{};
-				const size_t needed = trailer_off + page_sz;
-				if (fstat(fd, &sb) == 0 &&
-				    (static_cast<size_t>(sb.st_size) >=
-					     needed ||
-				     ftruncate(fd, static_cast<off_t>(needed)) ==
-					     0)) {
-					void *map = mmap(
-						nullptr, page_sz,
-						PROT_READ | PROT_WRITE,
-						MAP_SHARED, fd,
-						static_cast<off_t>(trailer_off));
-					if (map != MAP_FAILED) {
-						auto *tr = static_cast<
-							bpftime_shm_root_trailer *>(
-							map);
-						const void *base =
-							segment.get_address();
-						tr->magic =
-							SHM_ROOT_TRAILER_MAGIC;
-						tr->boost_size = boost_sz;
-						tr->manager_off = to_shm_offset(
-							base, boost_sz,
-							manager);
-						tr->runtime_config_off =
-							to_shm_offset(
-								base, boost_sz,
-								runtime_config);
-						tr->injected_pids_off =
-							to_shm_offset(
-								base, boost_sz,
-								injected_pids);
-						tr->alive_syscall_server_pids_off =
-							to_shm_offset(
-								base, boost_sz,
-								alive_syscall_server_pids);
-						tr->epoch_state_off =
-							to_shm_offset(
-								base, boost_sz,
-								epoch_state);
-						tr->cpu_exec_locks_off =
-							to_shm_offset(
-								base, boost_sz,
-								cpu_exec_locks);
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
-						tr->cuda_comm_off =
-							to_shm_offset(
-								base, boost_sz,
-								cuda_comm_shared_mem);
-#else
-						tr->cuda_comm_off =
-							SHM_ROOT_NULL_OFFSET;
-#endif
-						tr->ready.store(
-							SHM_ROOT_TRAILER_READY,
-							std::memory_order_release);
-						munmap(map, page_sz);
-					}
-				}
-				close(fd);
-			}
 		}
 	}
 #endif
