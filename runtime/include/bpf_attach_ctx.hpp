@@ -227,9 +227,6 @@ private:
 	std::thread cuda_watcher_thread;
 #endif
 
-	constexpr static int CURRENT_ID_OFFSET = 65536;
-	volatile int current_id = CURRENT_ID_OFFSET;
-
 	// Helpers provided by attach impls
 	std::map<int, bpftime_helper_info> helpers;
 
