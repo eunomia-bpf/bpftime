@@ -31,7 +31,7 @@ lpm_trie_map_impl::lpm_trie_map_impl(
 	: _key_size(key_size), _value_size(value_size),
 	  _max_entries(max_entries),
 	  root(nullptr, node_deleter_type(memory.get_segment_manager())),
-	  n_entries(0), memory(memory)
+	  n_entries(0), segment_manager_(memory.get_segment_manager())
 {
 	// Validate parameters
 	if (key_size < LPM_KEY_SIZE_MIN || key_size > LPM_KEY_SIZE_MAX) {
@@ -91,18 +91,16 @@ lpm_trie_map_impl::longest_prefix_match(const lpm_trie_node *node,
 node_unique_ptr lpm_trie_map_impl::create_node(const void *value,
 					       bool is_intermediate)
 {
-	// Create node in shared memory
-	lpm_trie_node *raw_node = memory.construct<lpm_trie_node>(
-		boost::interprocess::anonymous_instance)(memory);
+	segment_manager_type *sm = segment_manager_.get();
+	// Create node in shared memory via position-independent segment_manager
+	lpm_trie_node *raw_node = sm->construct<lpm_trie_node>(
+		boost::interprocess::anonymous_instance)(sm);
 	if (!raw_node) {
-		return node_unique_ptr(
-			nullptr,
-			node_deleter_type(memory.get_segment_manager()));
+		return node_unique_ptr(nullptr, node_deleter_type(sm));
 	}
 
 	// Create unique_ptr with proper deleter
-	node_unique_ptr node(raw_node,
-			     node_deleter_type(memory.get_segment_manager()));
+	node_unique_ptr node(raw_node, node_deleter_type(sm));
 
 	node->is_intermediate = is_intermediate;
 

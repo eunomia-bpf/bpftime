@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <thread>
 #include <vector>
@@ -151,4 +152,57 @@ TEST_CASE("LPM trie value pointers agree across threads",
 	REQUIRE(main_pointer != nullptr);
 	REQUIRE(worker_pointer == main_pointer);
 	REQUIRE(std::memcmp(main_pointer, value.data(), value_size) == 0);
+}
+
+TEST_CASE("LPM trie updates succeed after creator managed_shared_memory handle is gone",
+	  "[lpm_trie][shm_lifetime]")
+{
+	const std::string shm_name =
+		"LPMCrossHandleTestShm-" + std::to_string(getpid());
+	shm_remove remover{ std::string(shm_name) };
+	{
+		// Construct inside a short-lived handle so any stored reference
+		// to the creator's stack managed_shared_memory becomes dangling.
+		boost::interprocess::managed_shared_memory creator(
+			boost::interprocess::create_only, shm_name.c_str(),
+			4 * 1024 * 1024);
+		auto *trie = creator.construct<bpftime::lpm_trie_map_impl>(
+			"LPMCrossHandleInstance")(
+			creator, sizeof(bpf_lpm_trie_key) + 4, 32, 64);
+		REQUIRE(trie != nullptr);
+	}
+	// Clobber stack memory before re-opening in a child process.
+	volatile uint8_t clobber[512];
+	std::memset(const_cast<uint8_t *>(clobber), 0xA5, sizeof(clobber));
+
+	pid_t child = fork();
+	REQUIRE(child >= 0);
+	if (child == 0) {
+		alarm(2);
+		boost::interprocess::managed_shared_memory attached(
+			boost::interprocess::open_only, shm_name.c_str());
+		auto [trie, count] = attached.find<bpftime::lpm_trie_map_impl>(
+			"LPMCrossHandleInstance");
+		if (!trie || count != 1)
+			_exit(2);
+		std::vector<uint8_t> key_buf(sizeof(bpf_lpm_trie_key) + 4, 0);
+		auto *key =
+			reinterpret_cast<bpf_lpm_trie_key *>(key_buf.data());
+		key->prefixlen = 24;
+		key->data[0] = 192;
+		key->data[1] = 168;
+		key->data[2] = 1;
+		auto val = pattern(32, 17);
+		if (trie->elem_update(key, val.data(), 0) != 0)
+			_exit(3);
+		void *found = trie->elem_lookup(key);
+		if (!found || std::memcmp(found, val.data(), 32) != 0)
+			_exit(4);
+		_exit(0);
+	}
+	int status = 0;
+	while (waitpid(child, &status, 0) < 0 && errno == EINTR) {
+	}
+	REQUIRE(WIFEXITED(status));
+	REQUIRE(WEXITSTATUS(status) == 0);
 }

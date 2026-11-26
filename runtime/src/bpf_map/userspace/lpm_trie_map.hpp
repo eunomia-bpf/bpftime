@@ -27,12 +27,14 @@ struct bpf_lpm_trie_key {
 struct lpm_trie_node;
 
 // Type definitions for Boost.Interprocess smart pointers
-typedef boost::interprocess::managed_shared_memory::segment_manager
-	segment_manager_type;
-typedef boost::interprocess::deleter<lpm_trie_node, segment_manager_type>
-	node_deleter_type;
-typedef boost::interprocess::unique_ptr<lpm_trie_node, node_deleter_type>
-	node_unique_ptr;
+using segment_manager_type =
+	boost::interprocess::managed_shared_memory::segment_manager;
+using lpm_byte_allocator =
+	boost::interprocess::allocator<uint8_t, segment_manager_type>;
+using node_deleter_type =
+	boost::interprocess::deleter<lpm_trie_node, segment_manager_type>;
+using node_unique_ptr =
+	boost::interprocess::unique_ptr<lpm_trie_node, node_deleter_type>;
 
 // LPM Trie node structure
 struct lpm_trie_node {
@@ -44,47 +46,19 @@ struct lpm_trie_node {
 	// Data storage: [prefix_data][value_data]
 	// prefix_data: data_size bytes
 	// value_data: value_size bytes (only for non-intermediate nodes)
-	boost::interprocess::vector<
-		uint8_t,
-		boost::interprocess::allocator<
-			uint8_t,
-			boost::interprocess::segment_manager<
-				char,
-				boost::interprocess::rbtree_best_fit<
-					boost::interprocess::mutex_family>,
-				boost::interprocess::iset_index>>>
-		data;
+	boost::interprocess::vector<uint8_t, lpm_byte_allocator> data;
 
-	lpm_trie_node(boost::interprocess::managed_shared_memory &memory)
-		: child{ node_unique_ptr(nullptr,
-					 node_deleter_type(
-						 memory.get_segment_manager())),
-			 node_unique_ptr(
-				 nullptr,
-				 node_deleter_type(
-					 memory.get_segment_manager())) },
+	explicit lpm_trie_node(segment_manager_type *sm)
+		: child{ node_unique_ptr(nullptr, node_deleter_type(sm)),
+			 node_unique_ptr(nullptr, node_deleter_type(sm)) },
 		  prefixlen(0), flags(0), is_intermediate(false),
-		  data(boost::interprocess::allocator<
-			  uint8_t,
-			  boost::interprocess::segment_manager<
-				  char,
-				  boost::interprocess::rbtree_best_fit<
-					  boost::interprocess::mutex_family>,
-				  boost::interprocess::iset_index>>(
-			  memory.get_segment_manager()))
+		  data(lpm_byte_allocator(sm))
 	{
 	}
 };
 
 class lpm_trie_map_impl {
     private:
-	using byte_allocator = boost::interprocess::allocator<
-		uint8_t, boost::interprocess::segment_manager<
-				 char,
-				 boost::interprocess::rbtree_best_fit<
-					 boost::interprocess::mutex_family>,
-				 boost::interprocess::iset_index>>;
-
 	unsigned int _key_size;
 	unsigned int _value_size;
 	unsigned int _max_entries;
@@ -94,7 +68,7 @@ class lpm_trie_map_impl {
 	node_unique_ptr root;
 	size_t n_entries;
 
-	boost::interprocess::managed_shared_memory &memory;
+	boost::interprocess::offset_ptr<segment_manager_type> segment_manager_;
 
 	// Helper functions
 	int extract_bit(const uint8_t *data, size_t index) const;
