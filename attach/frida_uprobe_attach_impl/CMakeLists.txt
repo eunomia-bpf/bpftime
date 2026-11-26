@@ -67,6 +67,14 @@ endif()
 add_executable(bpftime_frida_uprobe_attach_tests
     ${TEST_SOURCES} ${EMPTY_MARKER_ASM_SOURCE})
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_library(bpftime_frida_unmapped_dummy MODULE
+        test/unmapped_dummy.cpp)
+    target_compile_definitions(bpftime_frida_uprobe_attach_tests PRIVATE
+        BPFTIME_FRIDA_UNMAPPED_DUMMY_PATH="$<TARGET_FILE:bpftime_frida_unmapped_dummy>")
+    add_dependencies(bpftime_frida_uprobe_attach_tests bpftime_frida_unmapped_dummy)
+endif()
+
 if (${TEST_LCOV}) 
     target_compile_options(bpftime_frida_uprobe_attach_tests PRIVATE -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
 endif()

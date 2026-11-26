@@ -88,6 +88,7 @@ class frida_attach_impl final : public base_attach_impl {
 		ebpf_helper_register_callback register_callback) override;
 	void *call_attach_specific_function(const std::string& name,
 					    void *data) override;
+	bool is_module_mapped(const char *module_name) const override;
 
     private:
 	void *interceptor;
