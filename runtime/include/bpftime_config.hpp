@@ -5,6 +5,7 @@
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <cstdlib>
+#include <atomic>
 #include <cstdint>
 #include <string>
 #include <variant>
@@ -53,9 +54,14 @@ enum bpftime_verifier_mode {
 	BPFTIME_NO_VERIFY = 2,
 };
 
+// Packed process-local POD: low 13 bits hold window size + 1; zero means defaults.
+extern uint32_t probe_read_window_config_snapshot;
+
 // Configuration for the bpftime runtime
 // Initialize the configuration from the environment variables
 struct runtime_config {
+	uint32_t probe_read_window_bytes = 512;
+	uint32_t probe_read_lookbehind_bytes = 64;
 	bool debug = false;
 	// Enable JIT?
 	bool jit_enabled = true;
@@ -122,6 +128,8 @@ struct runtime_config {
 		return vm_name;
 	}
 };
+
+void bpftime_set_probe_read_window_config(const runtime_config &config) noexcept;
 
 // Get the bpftime configuration from the environment variables
 // If the shared memory is not int, this should be called first

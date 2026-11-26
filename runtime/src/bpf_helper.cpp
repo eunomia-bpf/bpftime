@@ -108,16 +108,43 @@ __attribute__((weak)) bpftime::bpf_attach_ctx &get_global_attach_ctx()
 // (bpf_probe_read is also not in the async-signal-safe helper set).
 namespace
 {
-constexpr size_t PROBE_READ_AHEAD_CAP = 128;
+constexpr size_t PROBE_READ_AHEAD_CAP = 4096;
 
 struct probe_read_ahead_window {
 	const char *base = nullptr;
 	size_t len = 0;
 	unsigned long long generation = 0;
+	uintptr_t prev_addr = 0;
 	char storage[PROBE_READ_AHEAD_CAP];
 };
 
-thread_local probe_read_ahead_window tls_probe_read_ahead;
+// The 4 KiB window stays off static TLS: this runtime is built with
+// -ftls-model=initial-exec, so a multi-KB thread_local object would exhaust
+// the glibc static TLS surplus when the library is dlopen()ed after startup
+// ("cannot allocate memory in static TLS block"). A pthread key keeps the
+// per-thread storage on the heap, allocated lazily once per thread and freed
+// by the key destructor, mirroring the synthetic task_struct storage below.
+static pthread_key_t probe_read_ahead_key;
+static const int probe_read_ahead_key_status =
+	pthread_key_create(&probe_read_ahead_key, free);
+
+static inline probe_read_ahead_window *get_probe_read_ahead_window() noexcept
+{
+	if (probe_read_ahead_key_status != 0)
+		return nullptr;
+	auto *window = static_cast<probe_read_ahead_window *>(
+		pthread_getspecific(probe_read_ahead_key));
+	if (window == nullptr) {
+		window = static_cast<probe_read_ahead_window *>(
+			calloc(1, sizeof(probe_read_ahead_window)));
+		if (window == nullptr ||
+		    pthread_setspecific(probe_read_ahead_key, window) != 0) {
+			free(window);
+			return nullptr;
+		}
+	}
+	return window;
+}
 
 inline bool probe_read_ahead_active()
 {
@@ -126,9 +153,11 @@ inline bool probe_read_ahead_active()
 
 inline void probe_read_ahead_invalidate()
 {
-	tls_probe_read_ahead.base = nullptr;
-	tls_probe_read_ahead.len = 0;
-	tls_probe_read_ahead.generation = 0;
+	if (auto *window = get_probe_read_ahead_window()) {
+		window->base = nullptr;
+		window->len = 0;
+		window->generation = 0;
+	}
 }
 } // namespace
 #endif
@@ -176,6 +205,10 @@ long bpftime_strncmp(const char *s1, uint64_t s1_sz, const char *s2)
 static size_t probe_page_remaining(const void *address);
 static bool probe_read_memory(void *dst, const void *src, size_t size)
 {
+	struct errno_guard {
+		int saved = errno;
+		~errno_guard() { errno = saved; }
+	} preserve_errno;
 	if (size == 0)
 		return true;
 #if __APPLE__
@@ -188,50 +221,50 @@ static bool probe_read_memory(void *dst, const void *src, size_t size)
 #elif __linux__
 	pid_t pid = probe_access_atfork_status == 0 ? probe_access_pid :
 							  getpid();
-	if (probe_read_ahead_active()) {
-		auto &window = tls_probe_read_ahead;
+	const auto config = std::atomic_ref(bpftime::probe_read_window_config_snapshot)
+				    .load(std::memory_order_relaxed);
+	const size_t bytes = config ? (config & 8191u) - 1 : 512;
+	const size_t pre = config ? config >> 13 : 64;
+	if (auto *window = get_probe_read_ahead_window();
+	    probe_read_ahead_active() && bytes > 0 && window != nullptr) {
 		uintptr_t addr = reinterpret_cast<uintptr_t>(src);
-		uintptr_t base = reinterpret_cast<uintptr_t>(window.base);
-		if (window.base != nullptr &&
-		    window.generation ==
-			    bpftime::attach::
-				    current_thread_attach_event_generation &&
-		    addr >= base && addr - base <= window.len &&
-		    size <= window.len - (addr - base)) {
-			// Full overlap with the bytes fetched by the previous
-			// syscall: no new syscall is needed.
-			memcpy(dst, window.storage + (addr - base), size);
+		uintptr_t base = reinterpret_cast<uintptr_t>(window->base);
+		const auto generation = bpftime::attach::current_thread_attach_event_generation;
+		const bool backward = pre && window->generation == generation &&
+				      addr < window->prev_addr;
+		if (window->generation != generation)
+			window->base = nullptr;
+		window->prev_addr = addr;
+		window->generation = generation;
+		if (window->base != nullptr &&
+		    addr >= base && addr - base <= window->len &&
+		    size <= window->len - (addr - base)) {
+			memcpy(dst, window->storage + (addr - base), size);
 			return true;
 		}
-		// Miss. Widen the fetch inside the source page so following
-		// adjacent reads hit the window. Requests larger than the
-		// window or crossing a page boundary use the exact read below.
-		size_t room = probe_page_remaining(src);
-		if (size <= PROBE_READ_AHEAD_CAP && size <= room) {
-			size_t fetch = std::min(room, PROBE_READ_AHEAD_CAP);
-			struct iovec wide_local = { window.storage, fetch };
-			struct iovec wide_remote = { const_cast<void *>(src),
+		// Keep widened reads inside this 4 KiB page. Larger reads stay exact.
+		const size_t offset = addr & 4095u;
+		if (size <= bytes && size <= 4096 - offset) {
+			const size_t behind = std::min({ backward ? bytes - pre : pre,
+						       offset, bytes - size });
+			const uintptr_t start = addr - behind;
+			const size_t fetch = std::min(bytes, 4096 - (offset - behind));
+			struct iovec wide_local = { window->storage, fetch };
+			struct iovec wide_remote = { reinterpret_cast<void *>(start),
 						    fetch };
 			ssize_t got = syscall(SYS_process_vm_readv, pid,
 					      &wide_local, 1, &wide_remote, 1,
 					      0);
-			if (got >= (ssize_t)size) {
-				// The requested prefix is intact even if an
-				// inaccessible neighbour truncated the tail.
-				window.base = static_cast<const char *>(src);
-				window.len = (size_t)got;
-				window.generation =
-					bpftime::attach::
-						current_thread_attach_event_generation;
-				memcpy(dst, window.storage, size);
+			if (got >= (ssize_t)(behind + size)) {
+				window->base = reinterpret_cast<const char *>(start);
+				window->len = (size_t)got;
+				memcpy(dst, window->storage + behind, size);
 				return true;
 			}
-			// The request itself cannot be fully read. Drop the
-			// partial window and let the exact call produce the
-			// canonical failure for the caller's destination.
-			probe_read_ahead_invalidate();
+			window->base = nullptr;
+			return false;
 		} else {
-			probe_read_ahead_invalidate();
+			window->base = nullptr;
 		}
 	}
 	struct iovec local = { dst, size };
