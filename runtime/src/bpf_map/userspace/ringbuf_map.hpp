@@ -38,6 +38,11 @@ class ringbuf {
 	boost::interprocess::offset_ptr<unsigned long> consumer_pos;
 	boost::interprocess::offset_ptr<unsigned long> producer_pos;
 	boost::interprocess::offset_ptr<uint8_t> data;
+	// Start position of the synthetic tail-discard pad preceding the active
+	// offset-0 record (or record_pos itself when offset 0 landed without
+	// padding). No second offset-0 reservation can fit until the current
+	// offset-0 record is committed and consumed.
+	unsigned long wrap_pad_pos = 0;
 #if defined(__linux__)
 	// Kernel eventfd backing this ringbuf. The fd number is only valid in
 	// the process that constructed the ringbuf (the syscall server); other

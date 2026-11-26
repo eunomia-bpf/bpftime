@@ -67,17 +67,42 @@ TEST_CASE("Ringbuf record whose header is the last 8 bytes of the ring is "
 #if defined(__linux__)
 	REQUIRE(rb->should_wakeup(wrapped, 0));
 #endif
+	// Consumer drains the synthetic pad, stops on BUSY `wrapped` at max_ent,
+	// and subsequent reservations overwrite the old pad slot at max_ent - 8.
+	REQUIRE(rb->fetch_data(collect, &got) == 0);
+	void *fill = rb->reserve(max_ent - 24 - 24 - HDR_SZ, MAP_FD);
+	REQUIRE(fill != nullptr);
+	void *overwrite_pad = rb->reserve(16, MAP_FD);
+	REQUIRE(overwrite_pad != nullptr);
+#if defined(__linux__)
+	REQUIRE(rb->should_wakeup(wrapped, 0));
+	REQUIRE_FALSE(rb->should_wakeup(fill, 0));
+	REQUIRE_FALSE(rb->should_wakeup(overwrite_pad, 0));
+#endif
+	rb->submit(fill, true);
+	rb->submit(overwrite_pad, true);
 	std::memset(wrapped, 0xAB, 16);
 	rb->submit(wrapped, false);
-	void *second = rb->reserve(16, MAP_FD);
-	REQUIRE(second != nullptr);
-#if defined(__linux__)
-	// Consumer has not yet drained `wrapped`, so adaptive wakeup stays quiet.
-	REQUIRE_FALSE(rb->should_wakeup(second, 0));
-#endif
-	std::memset(second, 0xCD, 16);
-	rb->submit(second, false);
-	REQUIRE(rb->fetch_data(collect, &got) == 2);
+	REQUIRE(rb->fetch_data(collect, &got) == 1);
 	REQUIRE(got[0] == std::vector<uint8_t>(16, 0xAB));
+
+	// Next lap: leave one unconsumed record before the wrap pad so `off == 0`
+	// sees consumer backlog rather than a consumer parked at the pad.
+	got.clear();
+	const size_t n_recs = (max_ent - HDR_SZ) / record;
+	for (size_t i = 0; i + 1 < n_recs; ++i)
+		produce(*rb, 48, 0x22);
+	REQUIRE(rb->fetch_data(collect, &got) == (int)(n_recs - 1));
+	got.clear();
+	produce(*rb, 48, 0x33); // unconsumed backlog right before max_ent - 8
+	void *wrapped_backlog = rb->reserve(16, MAP_FD);
+	REQUIRE(wrapped_backlog != nullptr);
+#if defined(__linux__)
+	REQUIRE_FALSE(rb->should_wakeup(wrapped_backlog, 0));
+#endif
+	std::memset(wrapped_backlog, 0xCD, 16);
+	rb->submit(wrapped_backlog, false);
+	REQUIRE(rb->fetch_data(collect, &got) == 2);
+	REQUIRE(got[0] == std::vector<uint8_t>(48, 0x33));
 	REQUIRE(got[1] == std::vector<uint8_t>(16, 0xCD));
 }
