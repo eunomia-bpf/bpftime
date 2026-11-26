@@ -67,6 +67,23 @@ static int map_lookup_and_delete(int fd, const void *key, void *value)
 	return bpf_call(BPF_MAP_LOOKUP_AND_DELETE_ELEM, &attr);
 }
 
+/* bpf(cmd, NULL, size): the kernel reads an all-zero attr when size is 0
+ * and faults on the NULL pointer otherwise. cilium/ebpf probes bpf() with
+ * bpf(0, NULL, 0); the call must fail while the caller keeps running. */
+static int check_null_attr(void)
+{
+	errno = 0;
+	long ret = syscall(__NR_bpf, BPF_MAP_CREATE, NULL, 0);
+	printf("zero_size_ret=%ld\n", ret);
+	printf("zero_size_errno=%d\n", errno);
+	errno = 0;
+	ret = syscall(__NR_bpf, BPF_MAP_LOOKUP_ELEM, NULL,
+		      sizeof(union bpf_attr));
+	printf("sized_ret=%ld\n", ret);
+	printf("sized_errno=%d\n", errno);
+	return 0;
+}
+
 /* A write-only map must reject an fd-based read with EPERM, not ENOENT: the
  * backend knows why the lookup failed and the syscall layer must not
  * overwrite that. */
@@ -218,6 +235,9 @@ int main(int argc, char **argv)
 {
 	if (argc != 2) {
 		return 64;
+	}
+	if (strcmp(argv[1], "null-attr") == 0) {
+		return check_null_attr();
 	}
 	if (strcmp(argv[1], "lookup-errno") == 0) {
 		return check_lookup_errno();
