@@ -408,7 +408,7 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 	if (bpftime_identity_atfork_status != 0) {
 #if __linux__
 		const char *procfs =
-			bpftime_get_local_runtime_config().host_procfs;
+			bpftime::bpftime_get_local_runtime_config().host_procfs;
 		return (uint64_t(get_host_nspid(procfs, "self", getpid())) << 32) |
 		       uint32_t(get_host_nspid(procfs, "thread-self",
 					      syscall(SYS_gettid)));
@@ -422,7 +422,7 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 	if (bpftime_cached_tid == -1) {
 		bpftime_cached_tid = static_cast<int>(syscall(SYS_gettid));
 		const char *procfs =
-			bpftime_get_local_runtime_config().host_procfs;
+			bpftime::bpftime_get_local_runtime_config().host_procfs;
 		bpftime_cached_host_identity =
 			(uint64_t(get_host_nspid(procfs, "self", bpftime_cached_tgid)) << 32) |
 			uint32_t(get_host_nspid(procfs, "thread-self", bpftime_cached_tid));
@@ -582,7 +582,8 @@ uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t, uint64_t,
 		}
 	}
 	static const size_t tpbase_offset = [] {
-		const auto &config = bpftime_get_local_runtime_config();
+		const auto &config =
+			bpftime::bpftime_get_local_runtime_config();
 		if (config.has_system_analysis_tpbase_offset &&
 		    config.system_analysis_tpbase_offset <=
 			    task_storage_size - sizeof(void *))
