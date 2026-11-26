@@ -1081,7 +1081,9 @@ jobs:
               sleep 1
             done
             if ps -p $server_pid > /dev/null; then
-              echo "CASE $name: server did not exit after SIGINT, killing it"
+              # Record where it is stuck before killing it (#943).
+              echo "CASE $name: server did not exit after SIGINT; its threads:"
+              gdb -q -batch -p "$server_pid" -ex "info threads" -ex "thread apply all bt" 2>&1 | grep -v "^\[New LWP" || true
               kill -9 "$server_pid" 2>/dev/null || true
             fi
             wait "$server_pid" 2>/dev/null || true
