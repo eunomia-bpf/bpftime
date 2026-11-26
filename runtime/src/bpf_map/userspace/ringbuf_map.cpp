@@ -329,6 +329,11 @@ void *ringbuf::reserve(size_t size, int self_fd)
 				 __ATOMIC_RELEASE);
 		header_off = 0;
 	}
+	if (header_off == 0) {
+		__atomic_store_n(&wrap_pad_pos,
+				 need_padding ? prod_pos : record_pos,
+				 __ATOMIC_RELEASE);
+	}
 	auto header =
 		(ringbuf_hdr *)(uintptr_t)(data.get() + header_off);
 	header->fd = self_fd;
@@ -392,7 +397,17 @@ bool ringbuf::should_wakeup(const void *sample, uint64_t flags) const
 	if (delta == 0)
 		delta = ring_sz;
 	unsigned long record_start = prod - delta;
-	return smp_load_acquire_ul(consumer_pos.get()) == record_start;
+	unsigned long cons = smp_load_acquire_ul(consumer_pos.get());
+	if (cons == record_start)
+		return true;
+	// When reserve() wraps a record to offset 0, it closes the tail of the
+	// previous lap with a synthetic DISCARD padding header that never emits
+	// a wakeup of its own and records that padding start in wrap_pad_pos
+	// (immutable while this offset-0 record remains BUSY).
+	if (off == 0 && cons < record_start &&
+	    cons == __atomic_load_n(&wrap_pad_pos, __ATOMIC_ACQUIRE))
+		return true;
+	return false;
 #else
 	(void)sample;
 	(void)flags;
