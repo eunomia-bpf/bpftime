@@ -117,8 +117,21 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 	auto flag = cuda_ctx->cuda_watcher_should_stop;
 	cuda_watcher_thread = std::thread([flag, this]() {
 		auto *ctx = cuda_ctx.get();
+		// The device latches occupy_flag permanently after a helper
+		// request times out. Report it once on the host so a silent
+		// fallback-to-nullptr/-1 for every later GPU helper is visible.
+		bool occupy_latch_reported = false;
 
 		while (!flag->load()) {
+			// Read through volatile so the device-set latch cannot be
+			// cached away by the compiler on this host loop.
+			if (ctx != nullptr && !occupy_latch_reported &&
+			    *(const volatile int *)&ctx->cuda_shared_mem
+				     ->occupy_flag != 0) {
+				occupy_latch_reported = true;
+				SPDLOG_WARN(
+					"GPU helper latch (occupy_flag) is set: a host-bridge GPU helper request timed out, so later host-bridge helper calls on this channel return local fallbacks until the CUDA context is rebuilt; direct GPU map access is unaffected");
+			}
 			if (ctx != nullptr && ctx->cuda_shared_mem->flag1 == 1) {
 				ctx->cuda_shared_mem->flag1 = 0;
 				auto req_id = ctx->cuda_shared_mem->request_id;
