@@ -62,7 +62,7 @@ unrelated, already-running system daemon remains governed by the platform's
 ```mermaid
 flowchart TD
     A["Application / Loader<br/>(macos_uprobe_demo + target .dylib)"] -->|function call reaches hooked entry| B
-    B["Frida-Gum inline trampoline<br/>(uprobe / uretprobe / override / ureplace)<br/>macos-arm64 devkit 16.1.2"] -->|captured CPU context<br/>as bpftime pt_regs| C
+    B["Frida-Gum inline trampoline<br/>(uprobe / uretprobe / override / ureplace)<br/>macos-arm64 devkit 17.27.6"] -->|captured CPU context<br/>as bpftime pt_regs| C
     C["bpftime attach manager<br/>frida_uprobe_attach_impl"] --> D
     D["eBPF VM: uBPF<br/>interpreter or ARM64 / x86-64 JIT<br/>(llvmbpf also available)"] -->|helper calls| E
     E["Boost.Interprocess shared memory<br/>array / hash / ring maps, handlers"]

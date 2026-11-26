@@ -18,11 +18,11 @@ target_link_libraries(bpftime_frida_uprobe_attach_impl PRIVATE ${FRIDA_GUM_INSTA
 
 if(APPLE)
   # Frida's documented Darwin link set for the static gum library:
-  # Foundation/CoreFoundation frameworks plus libbsm and libresolv. The
-  # 16.1.2 devkit only hard-requires libresolv, but propagate the full set
-  # publicly so every consumer links standalone across gum versions.
+  # Foundation/CoreFoundation frameworks plus libbsm and libresolv.
   target_link_libraries(bpftime_frida_uprobe_attach_impl PUBLIC
     "-framework Foundation" "-framework CoreFoundation" bsm resolv)
+else()
+  target_link_libraries(bpftime_frida_uprobe_attach_impl PRIVATE atomic)
 endif()
 
 set(TEST_SOURCES
