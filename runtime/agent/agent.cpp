@@ -72,6 +72,14 @@ enum agent_init_state {
 	AGENT_READY = 2,
 };
 static int initialized = AGENT_UNINITIALIZED;
+static pid_t agent_init_pid = 0;
+__attribute__((tls_model("initial-exec"))) static thread_local int
+	agent_loader_reentry_depth = 0;
+
+struct agent_loader_scope {
+	agent_loader_scope() { ++agent_loader_reentry_depth; }
+	~agent_loader_scope() { --agent_loader_reentry_depth; }
+};
 
 using agent_control_fn_t = void (*)(const gchar *);
 
@@ -81,14 +89,16 @@ using agent_control_fn_t = void (*)(const gchar *);
 // by text-transformer
 bool injected_with_frida = true;
 
-static std::once_flag agent_ipc_once;
 static std::atomic<bool> agent_ipc_stop{ false };
 #ifdef __linux__
 static int agent_ipc_fd = -1;
 static std::thread agent_ipc_thread;
+static std::mutex agent_ipc_start_mutex;
+static bool agent_ipc_started = false;
 #endif
 
 static std::mutex detach_mutex;
+static bool agent_session_attached = false;
 static std::atomic<bool> global_ctx_constructed{ false };
 
 union bpf_attach_ctx_holder {
@@ -158,6 +168,9 @@ bpftime_agent_control(const gchar *data)
 }
 
 static void start_agent_ipc_server_once();
+#ifdef __linux__
+static int reconcile_attach_session();
+#endif
 
 static agent_control_fn_t find_other_loaded_agent_control()
 {
@@ -216,11 +229,18 @@ static void start_agent_ipc_server_once()
 {
 #ifdef __linux__
 	const char *enable_ipc = getenv("BPFTIME_ENABLE_AGENT_IPC");
+	// Bare LD_PRELOAD agents stay side-effect free: the IPC worker is
+	// opt-in via BPFTIME_ENABLE_AGENT_IPC=1 (unset, empty and "0" keep
+	// the process single-threaded). Frida-injected agents keep their
+	// historical default-on listener.
 	if (!injected_with_frida &&
 	    (enable_ipc == nullptr || enable_ipc[0] == '\0' ||
 	     strcmp(enable_ipc, "0") == 0))
 		return;
-	std::call_once(agent_ipc_once, []() {
+	std::lock_guard<std::mutex> start_guard(agent_ipc_start_mutex);
+	if (agent_ipc_started)
+		return;
+	{
 		sockaddr_un addr {};
 		socklen_t len = 0;
 		if (!bpftime::make_agent_ipc_addr(getpid(), addr, len)) {
@@ -243,6 +263,7 @@ static void start_agent_ipc_server_once()
 			return;
 		}
 		agent_ipc_fd = fd;
+		agent_ipc_started = true;
 		agent_ipc_stop.store(false, std::memory_order_release);
 		try {
 			agent_ipc_thread = std::thread([]() {
@@ -282,7 +303,8 @@ static void start_agent_ipc_server_once()
 						if (req.size() > (1 << 20))
 							break;
 					}
-					// Parse: "refresh <k=v;...>" or "detach" or "status".
+					// Parse: "refresh <k=v;...>", "reconcile",
+					// "detach" or "status".
 					auto trim = [](std::string &s) {
 						while (!s.empty() &&
 						       (s.back() == '\n' ||
@@ -303,6 +325,22 @@ static void start_agent_ipc_server_once()
 						} else {
 							std::string out =
 								"err refresh " +
+								std::to_string(rc) +
+								"\n";
+							(void)::send(cfd,
+								     out.data(),
+								     out.size(),
+								     MSG_NOSIGNAL);
+						}
+					} else if (req == "reconcile") {
+						int rc = reconcile_attach_session();
+						if (rc == 0) {
+							(void)::send(cfd, "ok\n",
+								     3,
+								     MSG_NOSIGNAL);
+						} else {
+							std::string out =
+								"err reconcile " +
 								std::to_string(rc) +
 								"\n";
 							(void)::send(cfd,
@@ -366,6 +404,7 @@ static void start_agent_ipc_server_once()
 			agent_ipc_stop.store(true, std::memory_order_release);
 			::close(fd);
 			agent_ipc_fd = -1;
+			agent_ipc_started = false;
 			return;
 		}
 		std::atexit([]() {
@@ -382,7 +421,7 @@ static void start_agent_ipc_server_once()
 				    (int)getpid());
 		} catch (...) {
 		}
-	});
+	}
 #else
 	(void)0;
 #endif
@@ -390,7 +429,10 @@ static void start_agent_ipc_server_once()
 
 static int perform_detach()
 {
+	if (agent_init_pid == 0 || getpid() != agent_init_pid)
+		return 0;
 	std::lock_guard<std::mutex> detach_guard(detach_mutex);
+	agent_session_attached = false;
 	attach_callback_suppression_scope suppress_callbacks;
 	if (!global_ctx_constructed.load(std::memory_order_acquire)) {
 		__atomic_store_n(&initialized, AGENT_UNINITIALIZED,
@@ -417,6 +459,38 @@ static int perform_detach()
 	bpftime_logger_flush();
 	return detach_err < 0 ? detach_err : 0;
 }
+
+#ifdef __linux__
+// Update local links after a module load without waiting for control work.
+static int reconcile_attach_session()
+{
+	if (agent_init_pid == 0 || getpid() != agent_init_pid)
+		return 0;
+	try {
+		if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) != AGENT_READY ||
+		    !global_ctx_constructed.load(std::memory_order_acquire))
+			return -EINVAL;
+		std::unique_lock<std::mutex> lock(detach_mutex, std::try_to_lock);
+		if (!lock.owns_lock() || !agent_session_attached)
+			return 0;
+		agent_loader_scope loader_scope;
+		attach_callback_suppression_scope suppress_callbacks;
+		int failed_handlers = 0;
+		int res = ctx_holder.ctx.reconcile_handlers(
+			bpftime_get_runtime_config(), &failed_handlers);
+		if (res != 0) {
+			SPDLOG_DEBUG("reconcile failed: {}", res);
+			return res < 0 ? res : -EINVAL;
+		}
+		SPDLOG_DEBUG(
+			"reconcile done; {} handler(s) still not instantiated",
+			failed_handlers);
+		return 0;
+	} catch (...) {
+		return -EFAULT;
+	}
+}
+#endif
 
 static void stop_syscall_dispatch_at_exit() noexcept
 {
@@ -526,6 +600,8 @@ static bool parse_force_reinit(const gchar *data)
 
 static int refresh_attach_session(const gchar *data)
 {
+	if (agent_init_pid == 0 || getpid() != agent_init_pid)
+		return 0;
 	if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) != AGENT_READY) {
 		SPDLOG_WARN("agent_control: agent not initialized");
 		return -EINVAL;
@@ -536,6 +612,8 @@ static int refresh_attach_session(const gchar *data)
 	}
 
 	std::lock_guard<std::mutex> guard(detach_mutex);
+	agent_loader_scope loader_scope;
+	agent_session_attached = false;
 	attach_callback_suppression_scope suppress_callbacks;
 	apply_injected_kv_overrides(data);
 	(void)ctx_holder.ctx.destroy_all_attach_links();
@@ -558,6 +636,7 @@ static int refresh_attach_session(const gchar *data)
 		return -EAGAIN;
 	}
 
+	agent_session_attached = true;
 	if (failed_handlers > 0) {
 		SPDLOG_WARN(
 			"Attach finished with {} handler(s) not instantiated",
@@ -620,6 +699,12 @@ extern "C" void **__cudaRegisterFatBinary(void *fatbin)
 static void bpftime_agent_main_impl(const gchar *data,
 				    gboolean *stay_resident)
 {
+	if (agent_init_pid != 0 && getpid() != agent_init_pid) {
+		*stay_resident = FALSE;
+		return;
+	}
+	agent_init_pid = getpid();
+	agent_loader_scope loader_scope;
 	if (agent::should_skip_agent_process()) {
 		*stay_resident = FALSE;
 		return;
@@ -863,6 +948,10 @@ static void bpftime_agent_main_impl(const gchar *data,
 			/* We don't want our library to be unloaded after we return. */
 			*stay_resident = TRUE;
 			setenv("BPFTIME_USED", "1", 0);
+			{
+				std::lock_guard<std::mutex> guard(detach_mutex);
+				agent_session_attached = true;
+			}
 			__atomic_store_n(&initialized, AGENT_READY,
 					 __ATOMIC_SEQ_CST);
 			try {
@@ -891,6 +980,40 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	injected_with_frida = true;
 	bpftime_agent_main_impl(data, stay_resident);
 }
+
+#ifdef __linux__
+// Loader calls during initialization and scans do not trigger another scan.
+extern "C" __attribute__((visibility("default"))) void *
+dlopen(const char *filename, int flags)
+{
+	using dlopen_fn_t = void *(*)(const char *, int);
+	static std::atomic<dlopen_fn_t> real_dlopen_cache{ nullptr };
+	dlopen_fn_t real_dlopen =
+		real_dlopen_cache.load(std::memory_order_acquire);
+	if (!real_dlopen) {
+		real_dlopen = reinterpret_cast<dlopen_fn_t>(
+			dlsym(RTLD_NEXT, "dlopen"));
+		if (!real_dlopen)
+			return nullptr;
+		real_dlopen_cache.store(real_dlopen, std::memory_order_release);
+	}
+	if (agent_init_pid == 0 || getpid() != agent_init_pid)
+		return real_dlopen(filename, flags);
+	int depth_before = agent_loader_reentry_depth;
+	agent_loader_scope loader_scope;
+	void *handle = real_dlopen(filename, flags);
+	int saved_errno = errno;
+	try {
+		if (handle != nullptr && filename != nullptr &&
+		    !(flags & RTLD_NOLOAD) && depth_before == 0 &&
+		    agent_init_pid == getpid())
+			(void)reconcile_attach_session();
+	} catch (...) {
+	}
+	errno = saved_errno;
+	return handle;
+}
+#endif
 
 // using definition for libbpf for syscall issues
 // maybe should separate libbpf and kernel features separately

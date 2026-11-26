@@ -208,6 +208,136 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 	return -EAGAIN;
 }
 
+int bpf_attach_ctx::reconcile_handlers(const runtime_config &config,
+				       int *failed_count)
+{
+	if (failed_count)
+		*failed_count = 0;
+	const handler_manager *manager =
+		shm_holder.global_shared_memory.get_manager();
+	if (!manager)
+		return -EINVAL;
+	std::unique_lock<std::mutex> lock(ctx_mutex, std::try_to_lock);
+	if (!lock.owns_lock())
+		return 0;
+	auto handler_at = [&](int id) -> const handler_variant * {
+		return manager->is_allocated(id) ? &manager->get_handler(id) : nullptr;
+	};
+	for (auto it = instantiated_attach_links.begin();
+	     it != instantiated_attach_links.end();) {
+		int id = it->first;
+		++it;
+		auto *link = std::get_if<bpf_link_handler>(handler_at(id));
+		if (link &&
+		    std::get_if<bpf_prog_handler>(handler_at(link->prog_id)) &&
+		    std::get_if<bpf_perf_event_handler>(
+			    handler_at(link->attach_target_id)))
+			continue;
+		if (int err = destroy_instantiated_attach_link_unlocked(id);
+		    err < 0)
+			return err;
+		instantiated_attach_links.erase(id);
+		instantiated_handlers.erase(id);
+	}
+	// Release stale dependencies only after their callbacks are detached.
+	for (auto it = instantiated_handlers.begin();
+	     it != instantiated_handlers.end();) {
+		int id = *it;
+		if ((instantiated_progs.contains(id) &&
+		     !std::get_if<bpf_prog_handler>(handler_at(id))) ||
+		    (instantiated_perf_events.contains(id) &&
+		     !std::get_if<bpf_perf_event_handler>(handler_at(id)))) {
+			instantiated_progs.erase(id);
+			instantiated_perf_events.erase(id);
+			it = instantiated_handlers.erase(it);
+		} else {
+			++it;
+		}
+	}
+	std::set<std::pair<std::string_view, uint64_t>> live_uprobe_targets;
+	bool built_live_targets = false;
+	for (int id = 0; id < (int)manager->size(); ++id) {
+		auto *link = std::get_if<bpf_link_handler>(handler_at(id));
+		if (!link || instantiated_attach_links.contains(id))
+			continue;
+		try {
+			auto *perf = std::get_if<bpf_perf_event_handler>(
+				handler_at(link->attach_target_id));
+			if (!std::get_if<bpf_prog_handler>(handler_at(link->prog_id)) ||
+			    !perf)
+				continue;
+			// A live callback can be iterating the backend's per-address
+			// attach vector, so defer attaching a second link to an
+			// already-hooked uprobe target until the existing link retires.
+			const auto *uprobe =
+				std::get_if<uprobe_perf_event_data>(&perf->data);
+			if (uprobe) {
+				if (!built_live_targets) {
+					built_live_targets = true;
+					for (const auto &[live_id, _] :
+					     instantiated_attach_links) {
+						const auto *live =
+							std::get_if<bpf_link_handler>(
+								handler_at(live_id));
+						const auto *live_perf =
+							live ? std::get_if<bpf_perf_event_handler>(
+								       handler_at(
+									       live->attach_target_id)) :
+							       nullptr;
+						const auto *live_uprobe =
+							live_perf ?
+								std::get_if<uprobe_perf_event_data>(
+									&live_perf->data) :
+								nullptr;
+						if (live_uprobe) {
+							live_uprobe_targets.emplace(
+								std::string_view(
+									live_uprobe
+										->_module_name
+										.c_str()),
+								live_uprobe->offset);
+						}
+					}
+				}
+				if (live_uprobe_targets.contains(
+					    { std::string_view(
+						      uprobe->_module_name
+							      .c_str()),
+					      uprobe->offset })) {
+					continue;
+				}
+			}
+			std::set<int> stk;
+			if (instantiate_handler_at(manager, link->attach_target_id,
+						   stk, config, false) < 0) {
+				if (failed_count)
+					++*failed_count;
+				continue;
+			}
+			int err = instantiate_handler_at(manager, id, stk, config, false);
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+			if (err == 0 && !instantiated_attach_links.contains(id)) {
+				stk.clear();
+				err = instantiate_handler_at(manager, id, stk, config, true);
+			}
+#endif
+			if (err >= 0 && uprobe &&
+			    instantiated_attach_links.contains(id)) {
+				live_uprobe_targets.emplace(
+					std::string_view(
+						uprobe->_module_name.c_str()),
+					uprobe->offset);
+			}
+			if (err < 0 && failed_count)
+				++*failed_count;
+		} catch (...) {
+			if (failed_count)
+				++*failed_count;
+		}
+	}
+	return 0;
+}
+
 bpf_attach_ctx::~bpf_attach_ctx()
 {
 	SPDLOG_INFO("Destructor: bpf_attach_ctx");

@@ -177,6 +177,11 @@ public:
 	// Same, using the handler manager of the global shared memory.
 	int init_attach_ctx_from_handlers(const runtime_config &config,
 					  int *failed_count = nullptr);
+	// Remove local links whose SHM link or dependencies have been released,
+	// then attach new targets. Live addresses in the dynamic uprobe backend
+	// are skipped; unmapped modules are retried on the next scan.
+	int reconcile_handlers(const runtime_config &config,
+			       int *failed_count = nullptr);
 	// Register an attach implementation. Attach manager will take its
 	// ownership. The third argument is a function that initializes a
 	// corresponding attach private data with the given string.

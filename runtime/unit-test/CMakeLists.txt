@@ -45,6 +45,7 @@ set(TEST_SOURCES
     test_bpftime_shm_json.cpp
     test_probe.cpp
     test_process_filter.cpp
+    test_agent_dynamic_uprobe_reconcile.cpp
     test_cpu_execution.cpp
     test_get_current_pid_tgid.cpp
     test_get_stack.cpp
@@ -146,7 +147,12 @@ if(UNIX AND NOT APPLE)
     set_property(TARGET bpftime-shm-allocation-test-helper PROPERTY C_STANDARD 99)
     set_property(TARGET bpftime-runtime-options-test-helper PROPERTY C_STANDARD 99)
     set_property(TARGET bpftime-map-syscall-test-helper PROPERTY C_STANDARD 99)
-    # The rootless constructor tests need a process that bypasses glibc
+    add_executable(bpftime-agent-reconcile-helper
+        assets/agent_reconcile_helper.c)
+    target_link_libraries(bpftime-agent-reconcile-helper PRIVATE ${CMAKE_DL_LIBS})
+    add_library(bpftime-agent-reconcile-target SHARED
+        assets/agent_reconcile_target.c)
+    set_property(TARGET bpftime-agent-reconcile-target PROPERTY POSITION_INDEPENDENT_CODE ON)
     # __libc_start_main (custom _start, raw syscalls only) and an ordinary
     # glibc process built from the same helper source. x86_64-only: the
     # rootless seccomp USER_NOTIF entry itself is x86_64-only.
@@ -186,10 +192,12 @@ if(UNIX AND NOT APPLE)
         bpftime-syscall-server
         bpftime-runtime-options-test-helper
         bpftime-map-syscall-test-helper
-        bpftime-shm-allocation-test-helper)
+        bpftime-shm-allocation-test-helper
+        bpftime-agent-reconcile-helper
+        bpftime-agent-reconcile-target)
     file(GENERATE
         OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/shm_allocation_test_paths.hpp"
-        CONTENT "#define BPFTIME_SHM_ALLOCATION_TEST_HELPER \"$<TARGET_FILE:bpftime-shm-allocation-test-helper>\"\n#define BPFTIME_MAP_SYSCALL_TEST_HELPER \"$<TARGET_FILE:bpftime-map-syscall-test-helper>\"\n#define BPFTIME_SYSCALL_SERVER_LIBRARY \"$<TARGET_FILE:bpftime-syscall-server>\"\n#define BPFTIME_AGENT_LIBRARY \"$<TARGET_FILE:bpftime-agent>\"\n#define BPFTIME_ROOTLESS_CUSTOM_START_HELPER \"${_rootless_custom_helper_expr}\"\n#define BPFTIME_ROOTLESS_NORMAL_START_HELPER \"${_rootless_normal_helper_expr}\"\n#define BPFTIME_SECCOMP_FASTPATH_TEST_HELPER \"${_seccomp_fastpath_helper_expr}\"\n")
+        CONTENT "#define BPFTIME_SHM_ALLOCATION_TEST_HELPER \"$<TARGET_FILE:bpftime-shm-allocation-test-helper>\"\n#define BPFTIME_MAP_SYSCALL_TEST_HELPER \"$<TARGET_FILE:bpftime-map-syscall-test-helper>\"\n#define BPFTIME_SYSCALL_SERVER_LIBRARY \"$<TARGET_FILE:bpftime-syscall-server>\"\n#define BPFTIME_AGENT_LIBRARY \"$<TARGET_FILE:bpftime-agent>\"\n#define BPFTIME_ROOTLESS_CUSTOM_START_HELPER \"${_rootless_custom_helper_expr}\"\n#define BPFTIME_ROOTLESS_NORMAL_START_HELPER \"${_rootless_normal_helper_expr}\"\n#define BPFTIME_SECCOMP_FASTPATH_TEST_HELPER \"${_seccomp_fastpath_helper_expr}\"\n#define BPFTIME_AGENT_RECONCILE_HELPER \"$<TARGET_FILE:bpftime-agent-reconcile-helper>\"\n#define BPFTIME_AGENT_RECONCILE_TARGET_LIB \"$<TARGET_FILE:bpftime-agent-reconcile-target>\"\n")
     target_include_directories(bpftime_runtime_tests PRIVATE
         "${CMAKE_CURRENT_BINARY_DIR}")
 endif()
@@ -206,6 +214,7 @@ if(UNIX AND NOT APPLE AND BPFTIME_LLVM_JIT)
 endif()
 add_dependencies(bpftime_runtime_tests runtime bpftime-object)
 if(TARGET bpftime_frida_uprobe_attach_impl)
+    target_compile_definitions(bpftime_runtime_tests PRIVATE BPFTIME_HAVE_FRIDA_ATTACH=1)
     add_dependencies(bpftime_runtime_tests bpftime_frida_uprobe_attach_impl)
     target_link_libraries(bpftime_runtime_tests PRIVATE bpftime_frida_uprobe_attach_impl)
     target_include_directories(bpftime_runtime_tests PRIVATE ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE})
