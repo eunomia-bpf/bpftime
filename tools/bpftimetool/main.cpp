@@ -242,10 +242,19 @@ int main(int argc, char *argv[])
 					}
 					return priv_data;
 				});
-			if (ctx.init_attach_ctx_from_handlers(runtime_config) ==
-			    attach::GPU_VERIFIER_REJECTED) {
+			// Only a non-zero scan result is fatal here. A non-zero
+			// failed-handler count can include unrelated CPU probes
+			// this CLI never registers (they fail with -ENOENT); the
+			// target GPU program's own attachment is gated below by
+			// find_attach_entry_by_program_name(), including a
+			// STRICT-mode GPU verifier rejection of that program.
+			int failed_handlers = 0;
+			int init_err = ctx.init_attach_ctx_from_handlers(
+				runtime_config, &failed_handlers);
+			if (init_err != 0) {
 				SPDLOG_ERROR(
-					"GPU verifier rejected the program");
+					"init_attach_ctx_from_handlers failed: {} ({} handler(s) could not be instantiated)",
+					init_err, failed_handlers);
 				return 1;
 			}
 			if (auto impl = ctx.find_nv_attach_impl(); impl) {

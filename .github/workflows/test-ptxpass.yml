@@ -104,3 +104,15 @@ jobs:
         shell: bash
         run: |
           ./build/attach/nv_attach_impl/test/bpftime_nv_attach_tests
+
+      - name: Build runtime unit tests with CUDA attach enabled
+        run: |
+          cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
+
+      - name: Run GPU verifier partial-failure regression
+        shell: bash
+        run: |
+          # CUDA-gated case in runtime/unit-test/test_attach_failures.cpp:
+          # a STRICT-mode GPU rejection must skip only the rejected handler.
+          ./build/runtime/unit-test/bpftime_runtime_tests \
+            "GPU verifier rejection skips only the rejected handler"

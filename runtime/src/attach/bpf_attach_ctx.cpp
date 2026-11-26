@@ -146,20 +146,22 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					    manager, i, stk, config, true);
 				    err < 0) {
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
-					if (err ==
-					    attach::GPU_VERIFIER_REJECTED) {
-						SPDLOG_ERROR(
-							"GPU verifier rejected handler {}",
-							i);
-						destroy_all_attach_links_unlocked();
-						reset_instantiated_state_unlocked();
-						return err;
-					}
+				// STRICT mode: a rejected GPU handler only fails
+				// itself. CPU uprobes and syscall probes
+				// instantiated earlier in the same process stay
+				// attached, so log at error level and fall through
+				// to the common count-and-skip failure path instead
+				// of tearing the whole session down.
+				if (err == attach::GPU_VERIFIER_REJECTED)
+					SPDLOG_ERROR(
+						"GPU verifier rejected handler {}; skipping it and keeping every other attach link",
+						i);
+				else
 #endif
 					SPDLOG_DEBUG(
 						"Failed to instantiate handler {}: {}",
 						i, err);
-					record_failure(i, err);
+				record_failure(i, err);
 				}
 			}
 		}
