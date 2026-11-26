@@ -2,6 +2,16 @@
 
 Newest first. Read before starting a change. A pull request that reverses an entry is a design problem until a maintainer decides again. Every entry quotes the maintainer verbatim; changing a decision means adding a new entry.
 
+- **2026-11-26: the other hot-path items of the entry from #977 are approved** (#977, #979). These four, listed there without the maintainer's words, now stand:
+  1. `process_vm_writev` on every `bpf_probe_write_user` in the default build (`ENABLE_PROBE_WRITE_CHECK` defaults to `ON`);
+  2. one-time identity caching: `SYS_gettid` once per thread into TLS and `readlink("/proc/self/exe")` once per process, results cached, host `errno` preserved;
+  3. vDSO `clock_gettime` (`bpf_ktime_get_ns` and the other time helpers), including its fallback to a real syscall on clock sources the vDSO does not serve;
+  4. no `static` heap-owning C++ containers in injected code, since their `__cxa_atexit` destructors run at `exit()` while other threads may still use them.
+  > 无原话支持的豁免 是什么? 我应该支持, 你觉得合理吗
+  >
+  > 明确记住, 全部同意
+- **2026-11-26: `process_vm_readv` for probe reads in the default build is allowed** (#977, #979). `ENABLE_PROBE_READ_CHECK` defaults to `ON` (`cmake/StandardSettings.cmake`), so in a default build `bpf_probe_read*` reaches `process_vm_readv`: inside an attach event once per miss of the per-thread 128-byte read-ahead window (`PROBE_READ_AHEAD_CAP` in `runtime/src/bpf_helper.cpp`), outside an event once per read. That call is an approved hot-path syscall; it replaces the "opt-in ... explicitly enabled" wording of item 2 in the entry below for `process_vm_readv`.
+  > 默认构建每次 probe read 都会调用它 没问题
 - **2026-11-26: zero active syscalls on `LD_PRELOAD` hot paths ("Four Zeros"); revert `#906` ringbuf eventfd** (#906, #946). Injected `LD_PRELOAD` hot paths (uprobe/uretprobe/syscall callbacks, BPF helpers, ringbuf/map reserve/submit/lookup/update, constructor early-exit and process-exit paths) must issue **zero active syscalls** (`write`, `read`, `socket`, `connect`, `sendmsg`, `recvmsg`, `open`, `mmap`, `eventfd`, etc.), preserve host `errno`, and never hold `static` C++ heap containers whose `__cxa_atexit` destructors race background threads at `exit(0)`. Collector / `syscall-server` consumer wait paths are out of scope. Explicit maintainer-approved exemptions on hot paths are strictly limited to:
   1. Linux kernel `futex` inside `PTHREAD_MUTEX_ROBUST` only on actual cross-process contention or `EOWNERDEAD` dead-owner recovery (uncontended path is pure userspace atomic CAS);
   2. `process_vm_readv` / `process_vm_writev` when opt-in fault-checked `bpf_probe_read*` / `bpf_probe_write_user` (`ENABLE_PROBE_READ_CHECK`) is explicitly enabled;

@@ -246,8 +246,11 @@ same pull request.
    `eventfd`, etc.), preserving host `errno` (both to avoid latency/blocking
    and to prevent `syscall_trace`/seccomp recursion or sandbox traps). Only
    maintainer-approved exemptions recorded in `DECISIONS.md` are permitted
-   (contended/`EOWNERDEAD` `PTHREAD_MUTEX_ROBUST` `futex`, opt-in
-   `ENABLE_PROBE_READ_CHECK` `process_vm_readv`/`process_vm_writev`, one-time
+   (contended/`EOWNERDEAD` `PTHREAD_MUTEX_ROBUST` `futex`; `process_vm_readv`
+   for probe reads in the default build (`ENABLE_PROBE_READ_CHECK`), once per
+   miss of the 128-byte per-event read-ahead window and once per read outside
+   an event; `process_vm_writev` once per `bpf_probe_write_user`
+   (`ENABLE_PROBE_WRITE_CHECK`); one-time
    cold TLS/`.bss` identity initialization, and userspace vDSO
    `clock_gettime`). Prefer preallocated fixed-size lock-free atomics (e.g.
    fixed atomic PID arrays); where mutual exclusion is unavoidable on Linux,
