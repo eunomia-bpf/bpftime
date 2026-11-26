@@ -492,10 +492,10 @@ namespace bpftime {
 class bpftime_shm;
 class shm_write_window_guard {
 	int saved_rights = -1;
-	bpftime_shm *instance = nullptr;
+	const bpftime_shm *instance = nullptr;
     public:
 	shm_write_window_guard();
-	explicit shm_write_window_guard(bpftime_shm &shm);
+	explicit shm_write_window_guard(const bpftime_shm &shm);
 	~shm_write_window_guard();
 	shm_write_window_guard(const shm_write_window_guard &) = delete;
 	shm_write_window_guard &operator=(const shm_write_window_guard &) = delete;

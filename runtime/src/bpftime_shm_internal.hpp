@@ -416,8 +416,8 @@ public:
 	int translate_shared_map_type_to_kernel_map_type(int type);
 
 #if BPFTIME_ENABLE_MPK
-	int open_mpk_write_window();
-	void restore_mpk_rights(int saved);
+	int open_mpk_write_window() const;
+	void restore_mpk_rights(int saved) const;
 #endif
 
 	// initialize the shared memory globally
