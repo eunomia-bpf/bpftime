@@ -2,6 +2,7 @@
 #define _CONFIG_MANAGER_HPP
 
 #include <cstdlib>
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <cstddef>
@@ -44,6 +45,8 @@ enum bpftime_verifier_mode {
 	BPFTIME_NO_VERIFY = 2,
 };
 
+// Packed process-local POD: low 13 bits hold window size + 1; zero means defaults.
+extern uint32_t probe_read_window_config_snapshot;
 // Process-local startup configuration captured once before SHM/logging.
 struct agent_bootstrap_config {
 	char global_shm_name[256];
@@ -65,6 +68,8 @@ void reload_agent_bootstrap_config_from_env() noexcept;
 // Configuration for the bpftime runtime
 // Initialize the configuration from the environment variables
 struct runtime_config {
+	uint32_t probe_read_window_bytes = 512;
+	uint32_t probe_read_lookbehind_bytes = 64;
 	bool debug = false;
 	// Enable JIT?
 	bool jit_enabled = true;
@@ -136,6 +141,7 @@ struct runtime_config {
 };
 
 static_assert(std::is_trivially_copyable_v<runtime_config>);
+void bpftime_set_probe_read_window_config(const runtime_config &config) noexcept;
 
 // Get the bpftime configuration from the environment variables
 // If the shared memory is not int, this should be called first

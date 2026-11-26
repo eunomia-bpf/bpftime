@@ -576,6 +576,7 @@ static int refresh_attach_session(const gchar *data)
 	(void)ctx_holder.ctx.destroy_all_attach_links();
 	ctx_holder.ctx.reset_instantiated_state();
 
+	bpftime_set_probe_read_window_config(bpftime_get_runtime_config());
 	int failed_handlers = 0;
 	int res = ctx_holder.ctx.init_attach_ctx_from_handlers(
 		bpftime_get_runtime_config(), &failed_handlers);
@@ -765,6 +766,7 @@ static void bpftime_agent_main_impl(const gchar *data,
 				return init_fail();
 			}
 			auto &runtime_config = bpftime_get_runtime_config();
+			bpftime_set_probe_read_window_config(runtime_config);
 			std::string shm_logger(
 				runtime_config.get_logger_output_path());
 			const char *env_logger =

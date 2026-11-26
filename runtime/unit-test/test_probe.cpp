@@ -6,6 +6,7 @@
 #include "bpftime_helper_group.hpp"
 #include "bpftime_config.hpp"
 #include "base_attach_impl.hpp"
+#include "bpftime_config.hpp"
 #include <algorithm>
 #include "catch2/catch_test_macros.hpp"
 #include "spdlog/spdlog.h"
@@ -392,6 +393,73 @@ static void fill_rolling_pattern(uint8_t *p, size_t n)
 }
 } // namespace
 
+TEST_CASE("Probe window adapts descending reads within page bounds")
+{
+	struct restore_config {
+		uint32_t saved = std::atomic_ref(bpftime::probe_read_window_config_snapshot).load();
+		~restore_config() { std::atomic_ref(bpftime::probe_read_window_config_snapshot).store(saved); }
+	} restore;
+	bpftime::runtime_config cfg;
+	bpftime::bpftime_set_probe_read_window_config(cfg);
+	alignas(4096) uint64_t page[512] = {};
+	auto read = [&](int slot) {
+		uint64_t dst = 0;
+		errno = EDOM;
+		REQUIRE(bpftime_probe_read((uint64_t)&dst, 8, (uint64_t)(page + slot), 0, 0) == 0);
+		REQUIRE(errno == EDOM);
+		return dst;
+	};
+	{
+		bpftime::attach::attach_callback_scope scope;
+		REQUIRE(read(255) == 0); // CFA - 8
+		page[254] = page[253] = page[256] = 1;
+		for (int slot : { 256, 254, 253 }) REQUIRE(read(slot) == 0);
+		REQUIRE(read(231) == 0); // descending miss shifts lookbehind to 448 B
+		page[207] = 2;
+		REQUIRE(read(207) == 0);
+		uint64_t large[128];
+		REQUIRE(bpftime_probe_read((uint64_t)large, sizeof(large), (uint64_t)(page + 300), 0, 0) == 0);
+		REQUIRE(read(270) == 0); // direction survives an exact large read
+		page[246] = 5;
+		REQUIRE(read(246) == 0);
+	}
+	{
+		bpftime::attach::attach_callback_scope scope;
+		REQUIRE(read(207) == 2); // next event fetches fresh bytes
+		cfg.probe_read_window_bytes = 0;
+		bpftime::bpftime_set_probe_read_window_config(cfg);
+		page[207] = 3;
+		REQUIRE(read(207) == 3); // disabling also bypasses a populated cache
+	}
+	cfg.probe_read_window_bytes = 512;
+	cfg.probe_read_lookbehind_bytes = 0;
+	bpftime::bpftime_set_probe_read_window_config(cfg);
+	{
+		bpftime::attach::attach_callback_scope scope;
+		REQUIRE(read(255) == 0);
+		page[254] = 4;
+		REQUIRE(read(254) == 4); // zero lookbehind remains forward
+	}
+	const size_t page_size = sysconf(_SC_PAGESIZE);
+	auto *pages = static_cast<uint64_t *>(mmap(nullptr, 3 * page_size, PROT_NONE,
+		MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+	REQUIRE(pages != MAP_FAILED);
+	REQUIRE(mprotect(pages + page_size / 8, page_size, PROT_READ | PROT_WRITE) == 0);
+	bpftime::bpftime_set_probe_read_window_config(bpftime::runtime_config{});
+	{
+		bpftime::attach::attach_callback_scope scope;
+		uint64_t dst[2];
+		for (size_t slot : { page_size / 8, 2 * page_size / 8 - 1 }) {
+			errno = EDOM;
+			REQUIRE(bpftime_probe_read((uint64_t)dst, 8, (uint64_t)(pages + slot), 0, 0) == 0);
+			REQUIRE(errno == EDOM);
+		}
+		REQUIRE(bpftime_probe_read((uint64_t)dst, 16, (uint64_t)(pages + 2 * page_size / 8 - 1), 0, 0) == -EFAULT);
+		REQUIRE(errno == EDOM);
+	}
+	REQUIRE(munmap(pages, 3 * page_size) == 0);
+}
+
 TEST_CASE("Test probe read-ahead serves overlapping reads in one event")
 {
 	const long page_size = sysconf(_SC_PAGESIZE);
@@ -555,9 +623,9 @@ TEST_CASE("Test probe write invalidates the read-ahead window")
 
 TEST_CASE("Test probe read-ahead falls back for reads larger than the window")
 {
-	// 256 bytes exceeds the 128-byte window, so the exact path is used and the
+	// 8192 bytes exceeds the 4096-byte cap, so the exact path is used and the
 	// result must match the source regardless of window state.
-	constexpr size_t n = 256;
+	constexpr size_t n = 8192;
 	auto *src = new uint8_t[n];
 	auto *dst = new uint8_t[n]();
 	fill_rolling_pattern(src, n);

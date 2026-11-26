@@ -299,7 +299,11 @@ window by `memcpy`. It is active only while an attach callback is running
 (`current_thread_attach_callback_depth > 0`) and is bound to an event
 generation, so it can never satisfy a read from a previous event. It installs
 no signal handler, no BPF instruction, and no caller-facing API, and the
-out-of-event exact-read path is byte-for-byte unchanged.
+out-of-event exact-read path keeps one syscall and preserves host `errno`.
+
+`BPFTIME_PROBE_READ_WINDOW_BYTES` sets 0–4096 bytes (default 512; 0 disables caching).
+`BPFTIME_PROBE_READ_LOOKBEHIND_BYTES` sets lookbehind (default 64, capped at window size;
+0 selects forward reads). Descending reads automatically bias the window backward.
 
 Two deliberate, documented contracts apply while the window is active:
 

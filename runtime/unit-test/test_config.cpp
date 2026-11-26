@@ -18,6 +18,8 @@ TEST_CASE("Test bpftime runtime_config")
 	managed_shared_memory mem(create_only, SHM_NAME, 20 << 20);
 
 	runtime_config cfg;
+	REQUIRE(cfg.probe_read_window_bytes == 512);
+	REQUIRE(cfg.probe_read_lookbehind_bytes == 64);
 	cfg.set_logger_output_path(test_string.c_str());
 	REQUIRE(cfg.get_logger_output_path() == test_string);
 	cfg.set_logger_output_path(test_string_2.c_str());
@@ -78,6 +80,20 @@ TEST_CASE("Select Frida's fuzzy backtracer from the environment")
 				 saved_value.c_str(), 1) :
 			  unsetenv("BPFTIME_FRIDA_FUZZY_BACKTRACER");
 	REQUIRE(restore_result == 0);
+}
+
+TEST_CASE("Probe window environment clamps size and lookbehind")
+{
+	for (auto name : { "BPFTIME_PROBE_READ_WINDOW_BYTES", "BPFTIME_PROBE_READ_LOOKBEHIND_BYTES" }) {
+		const char *old = getenv(name);
+		const std::string saved = old ? old : "";
+		setenv(name, "8192", 1);
+		const auto cfg = construct_runtime_config_from_env();
+		if (old) setenv(name, saved.c_str(), 1); else unsetenv(name);
+		if (name == std::string("BPFTIME_PROBE_READ_WINDOW_BYTES"))
+			REQUIRE(cfg.probe_read_window_bytes == 4096);
+		else REQUIRE(cfg.probe_read_lookbehind_bytes == cfg.probe_read_window_bytes);
+	}
 }
 
 struct config_env_guard {
