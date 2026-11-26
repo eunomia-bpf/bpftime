@@ -4,6 +4,7 @@
 #include "bpftime_shm.hpp"
 #include "handler/map_handler.hpp"
 #include "bpftime_shm_internal.hpp"
+#include "common_def.hpp"
 #include <atomic>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <cerrno>
@@ -135,7 +136,7 @@ TEST_CASE("Perf output on a locked perf array skips silently with -EBUSY",
 	const std::string previous_name = old_name ? old_name : "";
 	const std::string name =
 		"PerfOutputLockSkipShm-" + std::to_string(getpid());
-	shm_remove remover{ name };
+	shm_remove remover{ std::string(name) };
 	REQUIRE(setenv("BPFTIME_GLOBAL_SHM_NAME", name.c_str(), 1) == 0);
 	bpftime_destroy_global_shm();
 	bpftime_initialize_global_shm(

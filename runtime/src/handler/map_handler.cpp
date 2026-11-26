@@ -59,6 +59,19 @@ uint64_t get_map_trylock_skip_count()
 {
 	return map_trylock_skips.load(std::memory_order_relaxed);
 }
+// Per-thread outcome of the most recent with_map_lock call. Unlike the
+// process-global counter this is safe for control-flow classification: a
+// helper reads only its own thread's last lock result, so concurrent skips on
+// other threads cannot be mistaken for this lookup's contention. Reset on
+// every with_map_lock entry, set only on a helper-path trylock miss.
+static thread_local bool tls_last_map_trylock_missed = false;
+
+bool consume_last_map_trylock_miss()
+{
+	const bool missed = tls_last_map_trylock_missed;
+	tls_last_map_trylock_missed = false;
+	return missed;
+}
 
 namespace {
 #if defined(__GNUC__) || defined(__clang__)
@@ -98,6 +111,7 @@ BPFTIME_ALWAYS_INLINE inline decltype(auto)
 with_map_lock(bool should_lock, bool from_syscall,
 	      robust_shm_mutex &lock, Fn &&fn)
 {
+	tls_last_map_trylock_missed = false;
 	using Ret = std::invoke_result_t<Fn>;
 	if (!should_lock)
 		return fn();
@@ -114,6 +128,7 @@ with_map_lock(bool should_lock, bool from_syscall,
 	robust_shm_trylock_guard guard(lock);
 	if (!guard.owns_lock()) {
 		map_trylock_skips.fetch_add(1, std::memory_order_relaxed);
+		tls_last_map_trylock_missed = true;
 		if constexpr (std::is_pointer_v<Ret>)
 			return Ret(nullptr);
 		else

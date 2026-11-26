@@ -979,21 +979,19 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 		return (uint64_t)-1;
 	}
 	if (map_ty == bpftime::bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY) {
-		const uint64_t skips_before =
-			bpftime::get_map_trylock_skip_count();
 		const int32_t *val_ptr =
 			(int32_t *)(uintptr_t)bpftime::shm_holder
 				.global_shared_memory.bpf_map_lookup_elem(
 					fd, &current_cpu, false);
 		if (val_ptr == nullptr) {
-			// Ordinary lock contention makes the helper-path lookup
-			// skip with a trylock miss. That is not an invalid map:
-			// return -EBUSY quietly (no SPDLOG, no errno mutation) to
-			// honor the LD_PRELOAD hot-path contract. A genuine missing
-			// slot leaves the skip counter unchanged and takes the
-			// original error path below.
-			if (bpftime::get_map_trylock_skip_count() !=
-			    skips_before)
+			// Classify this lookup's own lock outcome via the
+			// thread-local flag rather than the process-global
+			// counter, which other threads can change concurrently.
+			// Ordinary contention is a silent skip: kernel-style
+			// -EBUSY, no SPDLOG, host errno preserved. A genuine
+			// missing slot leaves the flag false and falls through
+			// to the original invalid-map error path.
+			if (bpftime::consume_last_map_trylock_miss())
 				return (uint64_t)-EBUSY;
 			SPDLOG_ERROR("Invalid map fd for perf event output: {}",
 				     fd);

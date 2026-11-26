@@ -276,5 +276,10 @@ class bpf_map_handler {
 // held (DECISIONS.md trylock rule). Allocation-free relaxed atomic counter.
 uint64_t get_map_trylock_skip_count();
 
+// True when the calling thread's most recent map operation skipped because
+// its trylock lost contention. Thread-local: classifies only this thread's
+// last operation, unaffected by skips on other threads. Resets on read.
+bool consume_last_map_trylock_miss();
+
 } // namespace bpftime
 #endif
