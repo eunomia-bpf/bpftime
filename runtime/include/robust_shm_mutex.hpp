@@ -15,11 +15,13 @@
 namespace bpftime
 {
 
-// Process-shared pthread mutex for SHM objects whose mutations can leave
-// half-written state if a holder is killed (SIGKILL/OOM). On Linux it is
-// ROBUST: a dead holder surfaces as EOWNERDEAD; we unlock without calling
-// pthread_mutex_consistent(), permanently latching ENOTRECOVERABLE, and
-// fail with errno=EBUSY rather than touching corrupt state.
+// Process-shared pthread mutex for cross-process SHM synchronization. On Linux
+// it is ROBUST so a dead holder (SIGKILL/OOM) surfaces as EOWNERDEAD instead of
+// hanging future lockers:
+// - lock() unlocks without pthread_mutex_consistent(), latching ENOTRECOVERABLE
+//   and failing with EBUSY for multi-step structures that may be half-mutated;
+// - lock_and_recover() calls pthread_mutex_consistent() and acquires the lock
+//   for pure mutual-exclusion slots that hold no structural invariants.
 class robust_shm_mutex {
 	pthread_mutex_t mutex;
 
@@ -71,6 +73,27 @@ class robust_shm_mutex {
 		if (rc == ENOTRECOVERABLE) {
 			errno = EBUSY;
 			return false;
+		}
+#endif
+		if (rc != 0) {
+			errno = rc;
+			return false;
+		}
+		return true;
+	}
+
+	bool lock_and_recover()
+	{
+		int rc = pthread_mutex_lock(&mutex);
+#ifdef __linux__
+		if (rc == EOWNERDEAD) {
+			rc = pthread_mutex_consistent(&mutex);
+			if (rc != 0) {
+				pthread_mutex_unlock(&mutex);
+				errno = rc;
+				return false;
+			}
+			return true;
 		}
 #endif
 		if (rc != 0) {
