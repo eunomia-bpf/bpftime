@@ -87,21 +87,28 @@ TEST_CASE("Map helper hot path trylocks around a live holder while syscalls bloc
 			}
 		});
 
-	// Join all waiters before touching assertions, so a failed REQUIRE
-	// never destroys joinable threads. The holder keeps the lock across
-	// these joins, so every trylock deterministically sees contention.
+	// Join all waiters while the holder still keeps the lock, so every
+	// trylock deterministically sees contention. Capture the outcomes but
+	// do not assert yet: a throwing REQUIRE while a thread is joinable would
+	// call std::terminate in ~thread and abort the whole test runner.
 	for (auto &t : waiters)
 		t.join();
-	REQUIRE(skipped.load() == 2);
-	REQUIRE(errno_dirty.load() == 0);
+	const int observed_skipped = skipped.load();
+	const int observed_errno_dirty = errno_dirty.load();
 
 	// The control-plane syscall entry keeps the blocking contract: it
 	// waits for the holder to release and then succeeds.
 	release_holder.store(true, std::memory_order_release);
 	uint32_t sys_key = 9;
 	uint64_t sys_value = 0x9000;
-	REQUIRE(map.map_update_elem(&sys_key, &sys_value, 0, true) == 0);
+	const int syscall_rc =
+		map.map_update_elem(&sys_key, &sys_value, 0, true);
 	holder.join();
+
+	// All threads are joined; assertions now unwind safely.
+	REQUIRE(observed_skipped == 2);
+	REQUIRE(observed_errno_dirty == 0);
+	REQUIRE(syscall_rc == 0);
 }
 
 #if defined(__linux__)

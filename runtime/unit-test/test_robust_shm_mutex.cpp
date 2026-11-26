@@ -208,10 +208,14 @@ TEST_CASE("robust SHM mutex try_lock skips contention without touching errno",
 	while (!inside.load(std::memory_order_acquire))
 		std::this_thread::yield();
 	errno = 0;
-	REQUIRE_FALSE(m->try_lock());
-	REQUIRE(errno == 0);
+	const bool contended = m->try_lock();
+	const int errno_after_trylock = errno;
 	release.store(true, std::memory_order_release);
 	holder.join();
+	// Assert only after the holder is joined so a failure cannot terminate
+	// a joinable thread and abort the test runner.
+	REQUIRE_FALSE(contended);
+	REQUIRE(errno_after_trylock == 0);
 
 	// After a SIGKILLed holder, try_lock latches the poison and still
 	// preserves errno; the blocking path then reports EBUSY.
