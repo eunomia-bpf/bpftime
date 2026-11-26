@@ -31,7 +31,6 @@ class frida_internal_attach_entry {
 	override_return_set_callback override_return_callback;
 
 	bool has_override() const;
-	bool has_uprobe_or_uretprobe() const;
 	void ensure_listener(int attach_type);
 	void run_filter_callback(const pt_regs &regs) const;
 	void iterate_uprobe_callbacks(const pt_regs &regs) const;
