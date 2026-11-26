@@ -260,6 +260,13 @@ done:
 }
 bool ringbuf::has_data() const
 {
+	// SEQ_CST fence before the position/header loads: together with the
+	// SEQ_CST header commit in submit() and the SEQ_CST consumer_pos load
+	// in should_wakeup(), this forms a strict Dekker pair with the
+	// producer's commit-then-probe sequence, so a consumer draining its
+	// eventfd in bpftime_epoll_prepare_kernel_block() before blocking in
+	// epoll_wait cannot miss a concurrently committed record.
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
 	auto cons_pos = smp_load_acquire_ul(consumer_pos.get());
 	auto prod_pos = smp_load_acquire_ul(producer_pos.get());
 	if (cons_pos < prod_pos) {
@@ -357,7 +364,10 @@ void ringbuf::submit(const void *sample, bool discard)
 	auto new_len = hdr->len & ~BPF_RINGBUF_BUSY_BIT;
 	if (discard)
 		new_len |= BPF_RINGBUF_DISCARD_BIT;
-	__atomic_exchange_n(&hdr->len, new_len, __ATOMIC_ACQ_REL);
+	// SEQ_CST pairs with the SEQ_CST fence in has_data()/consumer park
+	// path so a parked epoll consumer cannot be ordered before this
+	// commit on weakly ordered architectures.
+	__atomic_exchange_n(&hdr->len, new_len, __ATOMIC_SEQ_CST);
 }
 ringbuf::~ringbuf()
 {
@@ -397,7 +407,11 @@ bool ringbuf::should_wakeup(const void *sample, uint64_t flags) const
 	if (delta == 0)
 		delta = ring_sz;
 	unsigned long record_start = prod - delta;
-	unsigned long cons = smp_load_acquire_ul(consumer_pos.get());
+	// SEQ_CST pairs with the submit() exchange and the SEQ_CST fence in
+	// has_data()/consumer park path so producer and consumer cannot both
+	// miss each other's store on weakly ordered architectures.
+	unsigned long cons =
+		__atomic_load_n(consumer_pos.get(), __ATOMIC_SEQ_CST);
 	if (cons == record_start)
 		return true;
 	// When reserve() wraps a record to offset 0, it closes the tail of the

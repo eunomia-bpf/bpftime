@@ -431,12 +431,13 @@ void bpftime_ringbuf_submit_with_flags(int fd, void *data, int discard,
 		return;
 	}
 	auto impl = ret.value();
-#if defined(__linux__)
-	bool wake = !discard && impl->should_wakeup(data, flags);
-#endif
+	// Commit or discard the record (clearing BUSY) before deciding on the
+	// wakeup, mirroring __bpf_ringbuf_submit() in kernel/bpf/ringbuf.c.
+	// Discard also evaluates adaptive wakeup so a consumer parked on this
+	// BUSY header wakes to drain already-committed records behind it.
 	impl->submit(data, discard);
 #if defined(__linux__)
-	if (wake) {
+	if (impl->should_wakeup(data, flags)) {
 		int eventfd = bpftime_ringbuf_get_local_eventfd(fd);
 		if (eventfd >= 0) {
 			uint64_t one = 1;

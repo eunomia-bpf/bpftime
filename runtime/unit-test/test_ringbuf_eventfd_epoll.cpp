@@ -342,4 +342,174 @@ TEST_CASE("ringbuf eventfd: wedged exporter socket falls back on timeout",
 	REQUIRE((WIFEXITED(status) && WEXITSTATUS(status) == 0));
 	REQUIRE(ms < 1500);
 }
+
+extern "C" uint64_t bpf_ringbuf_submit(uint64_t data, uint64_t flags, uint64_t,
+				       uint64_t, uint64_t);
+extern "C" uint64_t bpf_ringbuf_discard(uint64_t data, uint64_t flags, uint64_t,
+					uint64_t, uint64_t);
+
+// Dekker lost-wakeup regression: a producer that commits (or discards a head
+// record blocking already-committed records) while the consumer is finishing
+// the previous record and parking in epoll_wait must still deliver an eventfd
+// wakeup.
+TEST_CASE("ringbuf eventfd: commit before wakeup keeps parked consumer live",
+	  "[epoll][ringbuf-eventfd]")
+{
+	SECTION("unknown helper flags report EINVAL without stranding BUSY bit")
+	{
+		eventfd_test_fixture f;
+		auto *r1 = bpftime_ringbuf_reserve(f.rb_fd, sizeof(uint64_t));
+		auto *r2 = bpftime_ringbuf_reserve(f.rb_fd, sizeof(uint64_t));
+		REQUIRE(r1 != nullptr);
+		REQUIRE(r2 != nullptr);
+		int saved = bpftime_protect_open_write_window();
+		*static_cast<uint64_t *>(r1) = 0x1111ULL;
+		*static_cast<uint64_t *>(r2) = 0x2222ULL;
+		bpftime_protect_restore(saved);
+
+		REQUIRE(bpf_ringbuf_discard(reinterpret_cast<uint64_t>(r1),
+					    0x100ULL, 0, 0,
+					    0) == static_cast<uint64_t>(-EINVAL));
+		REQUIRE(bpf_ringbuf_submit(reinterpret_cast<uint64_t>(r2),
+					   0x200ULL, 0, 0,
+					   0) == static_cast<uint64_t>(-EINVAL));
+
+		uint64_t seen = 0;
+		int fetched = bpftime_poll_from_ringbuf(
+			f.rb_fd, &seen, [](void *ctx, void *data, size_t len) {
+				if (len == sizeof(uint64_t))
+					*static_cast<uint64_t *>(ctx) =
+						*static_cast<uint64_t *>(data);
+				return 0;
+			});
+		REQUIRE(fetched == 1);
+		REQUIRE(seen == 0x2222ULL);
+	}
+
+	SECTION("discarding head BUSY record wakes consumer for queued record")
+	{
+		eventfd_test_fixture f;
+		std::array<epoll_event, 4> evts{};
+		auto *r1 = bpftime_ringbuf_reserve(f.rb_fd, sizeof(uint64_t));
+		auto *r2 = bpftime_ringbuf_reserve(f.rb_fd, sizeof(uint64_t));
+		REQUIRE(r1 != nullptr);
+		REQUIRE(r2 != nullptr);
+		{
+			int saved = bpftime_protect_open_write_window();
+			*static_cast<uint64_t *>(r2) = 42;
+			bpftime_protect_restore(saved);
+		}
+		// r2 commits behind BUSY r1: adaptive wakeup does not fire yet.
+		bpftime_ringbuf_submit_with_flags(f.rb_fd, r2, false, 0);
+		REQUIRE(f.ctx.handle_epoll_wait(f.epfd, evts.data(),
+						evts.size(), 0) == 0);
+		// Discarding r1 at consumer_pos must wake the consumer for r2.
+		bpftime_ringbuf_submit_with_flags(f.rb_fd, r1, true, 0);
+		REQUIRE(f.ctx.handle_epoll_wait(f.epfd, evts.data(),
+						evts.size(), 0) == 1);
+		int seen = 0;
+		REQUIRE(bpftime_poll_from_ringbuf(
+				f.rb_fd, &seen,
+				[](void *ctx, void *, size_t) {
+					++(*static_cast<int *>(ctx));
+					return 0;
+				}) == 1);
+		REQUIRE(seen == 1);
+	}
+
+	SECTION("concurrent producer/consumer bursts never lose epoll wakeup")
+	{
+		constexpr int kBursts = 2000;
+		constexpr int kMaxInFlight = 64;
+		constexpr int kWaitTimeoutMs = 2000;
+		eventfd_test_fixture f;
+		std::array<epoll_event, 4> evts{};
+		std::atomic<bool> consumer_ready{ false };
+		std::atomic<int> consumed{ 0 };
+		std::atomic<bool> consumer_failed{ false };
+		std::atomic<bool> producer_failed{ false };
+
+		std::thread consumer([&] {
+			consumer_ready.store(true, std::memory_order_release);
+			int total = 0;
+			while (total < kBursts &&
+			       !producer_failed.load(
+				       std::memory_order_acquire)) {
+				evts.fill(epoll_event{});
+				int rc = f.ctx.handle_epoll_wait(
+					f.epfd, evts.data(), evts.size(),
+					kWaitTimeoutMs);
+				if (rc != 1 ||
+				    evts[0].data.u64 !=
+					    eventfd_test_fixture::
+						    epoll_data_marker) {
+					consumer_failed.store(
+						true,
+						std::memory_order_release);
+					return;
+				}
+				int drained;
+				do {
+					drained = bpftime_poll_from_ringbuf(
+						f.rb_fd, nullptr,
+						[](void *, void *, size_t) {
+							return 0;
+						});
+					if (drained < 0) {
+						consumer_failed.store(
+							true,
+							std::memory_order_release);
+						return;
+					}
+					total += drained;
+				} while (drained > 0);
+				consumed.store(total,
+					       std::memory_order_release);
+			}
+		});
+
+		while (!consumer_ready.load(std::memory_order_acquire))
+			std::this_thread::yield();
+
+		const auto deadline =
+			clock_type::now() + std::chrono::seconds(15);
+		for (int i = 0; i < kBursts; ++i) {
+			while (i - consumed.load(std::memory_order_acquire) >=
+			       kMaxInFlight) {
+				if (consumer_failed.load(
+					    std::memory_order_acquire) ||
+				    clock_type::now() > deadline) {
+					producer_failed.store(
+						true,
+						std::memory_order_release);
+					break;
+				}
+				std::this_thread::yield();
+			}
+			if (producer_failed.load(std::memory_order_acquire) ||
+			    consumer_failed.load(std::memory_order_acquire))
+				break;
+			uint64_t value = static_cast<uint64_t>(i) + 1;
+			auto *buf =
+				bpftime_ringbuf_reserve(f.rb_fd, sizeof(value));
+			if (buf == nullptr) {
+				producer_failed.store(
+					true, std::memory_order_release);
+				break;
+			}
+			int saved = bpftime_protect_open_write_window();
+			*static_cast<uint64_t *>(buf) = value;
+			bpftime_protect_restore(saved);
+			bpftime_ringbuf_submit_with_flags(f.rb_fd, buf, false,
+							  0);
+			std::this_thread::yield();
+		}
+
+		consumer.join();
+		REQUIRE_FALSE(producer_failed.load(std::memory_order_acquire));
+		REQUIRE_FALSE(consumer_failed.load(std::memory_order_acquire));
+		REQUIRE(consumed.load(std::memory_order_acquire) == kBursts);
+		f.drain_all();
+	}
+}
 #endif
