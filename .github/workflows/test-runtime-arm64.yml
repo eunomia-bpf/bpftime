@@ -30,24 +30,18 @@ env:
   BPFTIME_VM_NAME: llvm
 
 jobs:
-  pick-runner:
-    uses: ./.github/workflows/pick-runner.yml
-    permissions:
-      actions: read
-    with:
-      hosted: ubuntu-24.04-arm
-      jobs: 1
-      local: '["self-hosted","linux","arm64","sandbox"]'
-      local-slots: 1
-
   runtime-arm64:
-    needs: pick-runner
-    # GitHub's ubuntu-24.04-arm runner, or the organization's one ephemeral
-    # arm64 runner in a gVisor sandbox (Ubuntu 24.04 image) when it has room;
-    # the build and the runtime unit tests run natively on aarch64 either way.
-    # The sandbox has no tracefs, kprobes, uprobes or kernel BPF; jobs that
-    # need them run on the x86-64 runners.
-    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner || '"ubuntu-24.04-arm"') }}
+    # GitHub's ubuntu-24.04-arm runner by default; the build and the runtime
+    # unit tests run natively on aarch64. The organization's gVisor arm64
+    # runner is not used by default: since 2026-11-25 every runtime-arm64 job
+    # there has blocked in a runtime unit test until the 150-minute timeout
+    # (#972), while the same job finishes in about 5 minutes here.
+    # The repository variable BPFTIME_ARM64_RUNNER overrides the runner
+    # without editing this file: it holds a JSON list of runner labels, the
+    # same convention as BPFTIME_LINUX_RUNNER in pick-runner.yml (for example
+    # ["self-hosted","linux","arm64","sandbox"]). When it is unset or empty,
+    # the job stays on GitHub's hosted ubuntu-24.04-arm runner.
+    runs-on: ${{ vars.BPFTIME_ARM64_RUNNER && fromJSON(vars.BPFTIME_ARM64_RUNNER) || 'ubuntu-24.04-arm' }}
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
