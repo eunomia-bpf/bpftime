@@ -6,8 +6,8 @@
 
 #if __linux__
 #include "linux/bpf.h"
-#include <gnu/lib-names.h>
 #include <asm/unistd.h>
+#include <unistd.h>
 #elif __APPLE__
 #include "bpftime_epoll.h"
 #endif
@@ -15,7 +15,6 @@
 #include <bpf_map/userspace/prog_array.hpp>
 #include <cerrno>
 #include <spdlog/spdlog.h>
-#include <dlfcn.h>
 #include <stdexcept>
 
 #ifndef offsetofend
@@ -25,12 +24,45 @@
 
 #if __linux__
 
-// syscall() function was hooked by syscall server, direct call to it will lead
-// to a result provided by bpftime. So if we want to get things from kernel, we
-// must manually execute `syscall` from libc
-static void *libc_handle = dlopen(LIBC_SO, RTLD_LAZY);
-static auto libc_syscall =
-	reinterpret_cast<decltype(&::syscall)>(dlsym(libc_handle, "syscall"));
+// Issue the bpf syscall directly instead of going through libc's syscall()
+// symbol. On x86_64/aarch64 the bpftime syscall server interposes that
+// symbol, so a plain ::syscall() would re-enter bpftime emulation instead of
+// reaching the kernel. The raw instruction takes no dynamic-loader lock,
+// does no allocation and needs no dlopen/dlsym. Encoded userspace entries
+// return before this kernel-only path, keeping their lookup syscall-free.
+static long raw_bpf_syscall(long cmd, union bpf_attr *attr,
+			    unsigned long size)
+{
+#if defined(__x86_64__) || defined(__aarch64__)
+#if defined(__x86_64__)
+	long ret;
+	__asm__ volatile("syscall"
+			 : "=a"(ret)
+			 : "a"((long)__NR_bpf), "D"(cmd), "S"(attr),
+			   "d"((long)size)
+			 : "rcx", "r11", "memory", "cc");
+#else
+	register long x8 __asm__("x8") = __NR_bpf;
+	register long x0 __asm__("x0") = cmd;
+	register long x1 __asm__("x1") = reinterpret_cast<long>(attr);
+	register long x2 __asm__("x2") = (long)size;
+	__asm__ volatile("svc #0"
+			 : "=r"(x0)
+			 : "r"(x8), "0"(x0), "r"(x1), "r"(x2)
+			 : "memory", "cc");
+	long ret = x0;
+#endif
+	if (ret < 0) {
+		errno = (int)-ret;
+		return -1;
+	}
+	return ret;
+#else
+	// Other Linux architectures do not build the syscall() interposer,
+	// so the libc wrapper reaches the kernel directly.
+	return ::syscall(__NR_bpf, cmd, attr, size);
+#endif
+}
 
 static int my_bpf_obj_get_info_by_fd(int bpf_fd, void *info, __u32 *info_len)
 {
@@ -43,7 +75,7 @@ static int my_bpf_obj_get_info_by_fd(int bpf_fd, void *info, __u32 *info_len)
 	attr.info.info_len = *info_len;
 	attr.info.info = (uintptr_t)info;
 
-	err = libc_syscall(__NR_bpf, BPF_OBJ_GET_INFO_BY_FD, &attr, attr_sz);
+	err = raw_bpf_syscall(BPF_OBJ_GET_INFO_BY_FD, &attr, attr_sz);
 	if (!err)
 		*info_len = attr.info.info_len;
 	return err;
@@ -55,9 +87,9 @@ my_bpf_syscall_fd(long cmd, union bpf_attr *attr, unsigned long size)
 	int attempts = 5;
 	long fd;
 	do {
-		fd = libc_syscall(__NR_bpf, cmd, attr, size);
-		// libc syscall() returns -1 and sets errno on failure; it never
-		// returns -EAGAIN directly, so the retry must inspect errno.
+		fd = raw_bpf_syscall(cmd, attr, size);
+		// The wrapper keeps libc conventions (-1 + errno), so the
+		// retry inspects errno rather than a raw -EAGAIN return.
 	} while (fd < 0 && errno == EAGAIN && --attempts > 0);
 	return fd;
 }
