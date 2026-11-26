@@ -17,6 +17,8 @@
 #include <cstring>
 #include <linux/bpf.h>
 #include <sys/mman.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 #include <thread>
 #include <unistd.h>
@@ -67,6 +69,7 @@ struct eventfd_test_fixture {
 		if (rb_fd >= 0)
 			ctx.handle_close(rb_fd);
 		bpftime_destroy_global_shm();
+		bpftime_remove_global_shm();
 		bpftime_initialize_global_shm(
 			bpftime::shm_open_type::SHM_NO_CREATE);
 		unsetenv("BPFTIME_GLOBAL_SHM_NAME");
@@ -76,7 +79,9 @@ struct eventfd_test_fixture {
 	{
 		auto *buf = bpftime_ringbuf_reserve(rb_fd, sizeof(value));
 		REQUIRE(buf != nullptr);
+		int saved = bpftime_protect_open_write_window();
 		*static_cast<uint64_t *>(buf) = value;
+		bpftime_protect_restore(saved);
 		bpftime_ringbuf_submit_with_flags(rb_fd, buf, false, flags);
 	}
 
@@ -126,7 +131,9 @@ TEST_CASE("ringbuf eventfd: cross-process submit wakes blocked epoll_wait",
 		auto *buf = bpftime_ringbuf_reserve(f.rb_fd, sizeof(uint64_t));
 		if (buf == nullptr)
 			_exit(10);
+		int saved = bpftime_protect_open_write_window();
 		*static_cast<uint64_t *>(buf) = 7;
+		bpftime_protect_restore(saved);
 		submit_ns->store(
 			std::chrono::duration_cast<std::chrono::nanoseconds>(
 				clock_type::now().time_since_epoch())
@@ -266,5 +273,73 @@ TEST_CASE("ringbuf eventfd: timeout=0 polls once and SIGINT gives EINTR",
 	REQUIRE(rc == -1);
 	REQUIRE(saved_errno == EINTR);
 	sigaction(SIGINT, &old_sa, nullptr);
+}
+
+TEST_CASE("ringbuf eventfd: wedged exporter socket falls back on timeout",
+	  "[epoll][ringbuf-eventfd]")
+{
+	// Bind before try_startup so our non-accepting listener owns the
+	// abstract exporter address, standing in for a stopped exporter.
+	const std::string shm = "bpftime-rb-wedge-" + std::to_string(getpid());
+	setenv("BPFTIME_GLOBAL_SHM_NAME", shm.c_str(), 1);
+	bpftime_destroy_global_shm();
+	struct sockaddr_un addr { .sun_family = AF_UNIX };
+	constexpr char prefix[] = "\0bpftime-mapfd-";
+	const size_t plen = sizeof(prefix) - 1;
+	std::memcpy(addr.sun_path, prefix, plen);
+	std::memcpy(addr.sun_path + plen, shm.data(), shm.size());
+	socklen_t alen = static_cast<socklen_t>(
+		offsetof(struct sockaddr_un, sun_path) + plen + shm.size());
+	int wedge = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	REQUIRE(bind(wedge, reinterpret_cast<struct sockaddr *>(&addr),
+		     alen) == 0);
+	REQUIRE(listen(wedge, 1) == 0);
+	bpftime_initialize_global_shm(
+		bpftime::shm_open_type::SHM_REMOVE_AND_CREATE);
+	int status = 0;
+	clock_type::duration elapsed{};
+	{
+		syscall_context ctx;
+		ctx.try_startup();
+		union bpf_attr attr{ .map_type = BPF_MAP_TYPE_RINGBUF };
+		attr.max_entries = 64U * getpagesize();
+		int rb_fd = ctx.handle_sysbpf(BPF_MAP_CREATE, &attr, sizeof(attr));
+		REQUIRE(rb_fd >= 0);
+		int epfd = ctx.handle_epoll_create1(0);
+		REQUIRE(epfd >= 0);
+		pid_t pid = fork();
+		REQUIRE(pid >= 0);
+		if (pid == 0) {
+			bpftime_ringbuf_drop_local_eventfd(rb_fd);
+			epoll_event evt{ .events = EPOLLIN };
+			if (ctx.handle_epoll_ctl(epfd, EPOLL_CTL_ADD, rb_fd, &evt) != 0)
+				_exit(12);
+			uint32_t sample = 0x5a5a5a5aU;
+			void *slot = bpftime_ringbuf_reserve(rb_fd, sizeof(sample));
+			if (!slot)
+				_exit(13);
+			int saved = bpftime_protect_open_write_window();
+			std::memcpy(slot, &sample, sizeof(sample));
+			bpftime_protect_restore(saved);
+			bpftime_ringbuf_submit(rb_fd, slot, 0);
+			epoll_event out{};
+			_exit(ctx.handle_epoll_wait(epfd, &out, 1, 50) == 1 ? 0 : 14);
+		}
+		const auto t0 = clock_type::now();
+		REQUIRE(waitpid(pid, &status, 0) == pid);
+		elapsed = clock_type::now() - t0;
+		ctx.handle_close(epfd);
+		ctx.handle_close(rb_fd);
+	}
+	const auto ms =
+		std::chrono::duration_cast<std::chrono::milliseconds>(elapsed)
+			.count();
+	close(wedge);
+	bpftime_destroy_global_shm();
+	bpftime_remove_global_shm();
+	bpftime_initialize_global_shm(bpftime::shm_open_type::SHM_NO_CREATE);
+	unsetenv("BPFTIME_GLOBAL_SHM_NAME");
+	REQUIRE((WIFEXITED(status) && WEXITSTATUS(status) == 0));
+	REQUIRE(ms < 1500);
 }
 #endif
