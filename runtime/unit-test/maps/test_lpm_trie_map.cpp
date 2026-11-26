@@ -8,6 +8,8 @@
 #include "catch2/catch_message.hpp"
 
 #include "bpf_map/userspace/lpm_trie_map.hpp"
+#include "bpftime_handler.hpp"
+#include "bpftime_shm.hpp"
 #include "../common_def.hpp"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <cstring>
@@ -884,7 +886,8 @@ TEST_CASE("LPM Trie Full Map", "[lpm_trie][kernel_style][full_map]")
 struct lpm_mt_test_info {
 	int cmd; // 0: update, 1: delete, 2: lookup
 	int iter;
-	bpftime::lpm_trie_map_impl *trie;
+	const bpftime::bpf_map_handler *map;
+	bool ok;
 	struct {
 		uint32_t prefixlen;
 		uint32_t data;
@@ -899,7 +902,8 @@ static void *lpm_test_command(void *arg)
 
 	key_size = sizeof(*key_p) + sizeof(uint32_t);
 	key_p = (test_bpf_lpm_trie_key_u8 *)alloca(key_size);
-	for (iter = 0; iter < info->iter; iter++)
+	info->ok = true;
+	for (iter = 0; iter < info->iter && info->ok; iter++)
 		for (i = 0; i < MAX_TEST_KEYS; i++) {
 			// first half of iterations in forward order,
 			// and second half in backward order.
@@ -910,16 +914,26 @@ static void *lpm_test_command(void *arg)
 			       sizeof(uint32_t));
 			if (info->cmd == 0) {
 				uint32_t value = j;
-				// update must succeed
-				REQUIRE(info->trie->elem_update(key_p, &value,
-								0) == 0);
+				if (info->map->map_update_elem(
+					    key_p, &value, 0, false) != 0) {
+					info->ok = false;
+					break;
+				}
 			} else if (info->cmd == 1) {
-				ret = info->trie->elem_delete(key_p);
-				REQUIRE((ret == 0 || errno == ENOENT));
+				errno = 0;
+				ret = info->map->map_delete_elem(key_p, false);
+				if (ret != 0 && errno != ENOENT) {
+					info->ok = false;
+					break;
+				}
 			} else if (info->cmd == 2) {
-				void *result = info->trie->elem_lookup(key_p);
-				// Should succeed or return ENOENT
-				REQUIRE((result != nullptr || errno == ENOENT));
+				errno = 0;
+				const void *result = info->map->map_lookup_elem(
+					key_p, false);
+				if (result == nullptr && errno != ENOENT) {
+					info->ok = false;
+					break;
+				}
 			}
 		}
 
@@ -928,10 +942,11 @@ static void *lpm_test_command(void *arg)
 }
 
 static void setup_lpm_mt_test_info(struct lpm_mt_test_info *info,
-				   bpftime::lpm_trie_map_impl *trie)
+				   const bpftime::bpf_map_handler *map)
 {
 	info->iter = 2000;
-	info->trie = trie;
+	info->map = map;
+	info->ok = false;
 	info->key[0].prefixlen = 16;
 	inet_pton(AF_INET, "192.168.0.0", &info->key[0].data);
 	info->key[1].prefixlen = 24;
@@ -942,11 +957,11 @@ static void setup_lpm_mt_test_info(struct lpm_mt_test_info *info,
 	inet_pton(AF_INET, "192.168.1.0", &info->key[3].data);
 }
 
-// Multi-threaded test
+// Multi-threaded test exercising bpf_map_handler::map_lock (should_lock = true)
 TEST_CASE("LPM Trie Multi-thread", "[lpm_trie][kernel_style][multithread]")
 {
 	const char *SHARED_MEMORY_NAME = "LPMTrieMultiThreadTestShm";
-	const size_t SHARED_MEMORY_SIZE = 1024 * 1024;
+	const size_t SHARED_MEMORY_SIZE = 4 * 1024 * 1024;
 
 	shm_remove remover((std::string(SHARED_MEMORY_NAME)));
 
@@ -960,22 +975,27 @@ TEST_CASE("LPM Trie Multi-thread", "[lpm_trie][kernel_style][multithread]")
 	int i;
 	void *ret;
 
-	// create a trie
 	value_size = sizeof(uint32_t);
 	key_size = sizeof(struct test_bpf_lpm_trie_key_hdr) + value_size;
 
-	bpftime::lpm_trie_map_impl *trie = nullptr;
-	try {
-		trie = shm.construct<bpftime::lpm_trie_map_impl>(
-			"LPMTrieMultiThreadInstance")(shm, key_size, value_size,
-						      100);
-		REQUIRE(trie != nullptr);
-	} catch (const std::exception &ex) {
-		FAIL("Failed to construct LPM Trie: " << ex.what());
-	}
+	constexpr int MAP_FD = 1;
+	auto *mgr = shm.construct<bpftime::handler_manager>(
+		"LPMTrieMultiThreadManager")(shm, MIN_MAX_FD_COUNT);
+	REQUIRE(mgr != nullptr);
+	REQUIRE(mgr->set_handler(
+			MAP_FD,
+			bpftime::bpf_map_handler(
+				MAP_FD,
+				(int)bpftime::bpf_map_type::BPF_MAP_TYPE_LPM_TRIE,
+				key_size, value_size, 100, BPF_F_NO_PREALLOC,
+				"lpm_mt_map", shm),
+			shm) == MAP_FD);
+	auto *map_handler = const_cast<bpftime::bpf_map_handler *>(
+		&std::get<bpftime::bpf_map_handler>((*mgr)[MAP_FD]));
+	REQUIRE(map_handler->map_init(shm) == 0);
 
 	// create 3 threads to test update, delete, lookup
-	setup_lpm_mt_test_info(&info[0], trie);
+	setup_lpm_mt_test_info(&info[0], map_handler);
 	for (i = 0; i < 3; i++) {
 		if (i != 0)
 			memcpy(&info[i], &info[0], sizeof(info[i]));
@@ -987,12 +1007,11 @@ TEST_CASE("LPM Trie Multi-thread", "[lpm_trie][kernel_style][multithread]")
 	for (i = 0; i < 3; i++) {
 		REQUIRE(pthread_join(thread_id[i], &ret) == 0);
 		REQUIRE(ret == (void *)&info[i]);
+		REQUIRE(info[i].ok);
 	}
 
-	// Cleanup
-	if (trie) {
-		shm.destroy_ptr(trie);
-	}
+	mgr->clear_all(shm);
+	shm.destroy_ptr(mgr);
 }
 
 // Test string iteration functionality

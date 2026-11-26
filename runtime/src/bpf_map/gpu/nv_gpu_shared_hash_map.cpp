@@ -20,7 +20,6 @@ nv_gpu_shared_hash_map_impl::nv_gpu_shared_hash_map_impl(
 	  key_buffer(memory.get_segment_manager())
 {
 	key_buffer.resize((key_size + 4) * _num_buckets);
-	pthread_spin_init(&map_lock, 0);
 	SPDLOG_INFO(
 		"Initializing map type of BPF_MAP_TYPE_GPU_HASH_MAP (device), key_size={}, value_size={}, max_entries={}, num_buckets={}",
 		key_size, value_size, max_entries, _num_buckets);
@@ -48,7 +47,6 @@ void *nv_gpu_shared_hash_map_impl::elem_lookup(const void *key)
 {
 	size_t index = bpftime_hasher::hash_func(key, _key_size) % _num_buckets;
 	size_t start_index = index;
-	bpftime_lock_guard guard(map_lock);
 
 	do {
 		if (is_empty(index)) {
@@ -69,7 +67,6 @@ long nv_gpu_shared_hash_map_impl::elem_update(const void *key,
 		return -1;
 	size_t index = bpftime_hasher::hash_func(key, _key_size) % _num_buckets;
 	size_t start_index = index;
-	bpftime_lock_guard guard(map_lock);
 
 	// Iterate over the hash map using linear probing
 	do {
@@ -112,7 +109,6 @@ long nv_gpu_shared_hash_map_impl::elem_delete(const void *key)
 {
 	size_t index = bpftime_hasher::hash_func(key, _key_size) % _num_buckets;
 	size_t start_index = index;
-	bpftime_lock_guard guard(map_lock);
 
 	do {
 		if (is_empty(index)) {
@@ -139,7 +135,6 @@ int nv_gpu_shared_hash_map_impl::map_get_next_key(const void *key,
 		errno = EINVAL;
 		return -1;
 	}
-	bpftime_lock_guard guard(map_lock);
 
 	if (key == nullptr) {
 		// get the first key
@@ -173,10 +168,7 @@ int nv_gpu_shared_hash_map_impl::map_get_next_key(const void *key,
 	return -1;
 }
 
-nv_gpu_shared_hash_map_impl::~nv_gpu_shared_hash_map_impl()
-{
-	pthread_spin_destroy(&map_lock);
-}
+nv_gpu_shared_hash_map_impl::~nv_gpu_shared_hash_map_impl() = default;
 
 CUdeviceptr
 nv_gpu_shared_hash_map_impl::try_initialize_for_agent_and_get_mapped_address()

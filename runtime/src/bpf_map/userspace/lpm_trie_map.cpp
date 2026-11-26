@@ -167,9 +167,6 @@ lpm_trie_map_impl::get_node_value_data(const lpm_trie_node *node) const
 
 void *lpm_trie_map_impl::elem_lookup(const void *key)
 {
-	robust_shm_lock_guard lock(mapSpin, "LPM trie map");
-	if (!lock.owns_lock())
-		return nullptr;
 	if (!key) {
 		SPDLOG_ERROR(
 			"LPM Trie elem_lookup failed: key pointer is nullptr");
@@ -247,9 +244,6 @@ void *lpm_trie_map_impl::elem_lookup(const void *key)
 long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 				    uint64_t flags)
 {
-	robust_shm_lock_guard lock(mapSpin, "LPM trie map");
-	if (!lock.owns_lock())
-		return -1;
 	if (!key || !value) {
 		SPDLOG_ERROR(
 			"LPM Trie elem_update failed: key ({:p}) or value ({:p}) pointer is nullptr",
@@ -492,9 +486,6 @@ long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 
 long lpm_trie_map_impl::elem_delete(const void *key)
 {
-	robust_shm_lock_guard lock(mapSpin, "LPM trie map");
-	if (!lock.owns_lock())
-		return -1;
 	if (!key) {
 		SPDLOG_ERROR(
 			"LPM Trie elem_delete failed: key pointer is nullptr");
@@ -548,9 +539,6 @@ long lpm_trie_map_impl::elem_delete(const void *key)
 
 int lpm_trie_map_impl::map_get_next_key(const void *key, void *next_key)
 {
-	robust_shm_lock_guard lock(mapSpin, "LPM trie map");
-	if (!lock.owns_lock())
-		return -1;
 	if (!next_key) {
 		SPDLOG_ERROR(
 			"LPM Trie map_get_next_key failed: next_key pointer is nullptr");

@@ -195,7 +195,7 @@ class bpftime_shm {
 	struct bpftime::runtime_config *runtime_config = nullptr;
 
 	// Record which pids are injected by agent
-	alive_agent_pids *injected_pids;
+	alive_agent_pids *injected_pids = nullptr;
 
 	// Record which pids own or use the syscall-server side of this shm.
 	alive_syscall_server_pid_set *alive_syscall_server_pids = nullptr;

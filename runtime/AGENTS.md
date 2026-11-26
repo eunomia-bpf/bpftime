@@ -9,10 +9,12 @@ Safety Redlines and Host-process safety invariants are binding here.
   constructor early-exit and detach) obey the "Three Zeros": no libc heap
   allocation, no dynamic Boost `segment_manager` shared-memory allocation
   (preallocate at setup), and no non-robust cross-process locks.
-- Prefer preallocated fixed-size lock-free atomics. Where mutual exclusion is
-  required, use `pthread_mutex_t` with `PTHREAD_PROCESS_SHARED |
-  PTHREAD_MUTEX_ROBUST`; never bare `pthread_spinlock_t` or non-robust
-  `boost::interprocess::interprocess_mutex`.
+- Prefer preallocated fixed-size lock-free atomics. Where cross-process mutual
+  exclusion is required, use `bpftime::robust_shm_mutex` (`pthread_mutex_t`
+  with `PTHREAD_PROCESS_SHARED | PTHREAD_MUTEX_ROBUST`); never bare
+  `pthread_spinlock_t` or non-robust `boost::interprocess::interprocess_mutex`,
+  and never nest private inner locks inside container maps (`should_lock = true`
+  delegates locking solely to `bpf_map_handler::map_lock`).
 - Every internal fd (shared memory, eventfd, sockets) is `O_CLOEXEC`/
   `SOCK_CLOEXEC`, and process-local locks stay safe after a multi-threaded
   `fork()`.
