@@ -45,7 +45,7 @@ typedef int gboolean;
 #ifdef __linux__
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <sys/types.h>
+#include "bpftime_agent_ipc.hpp"
 #endif
 #include "bpftime_shm.hpp"
 #include <spdlog/spdlog.h>
@@ -203,68 +203,12 @@ static agent_control_fn_t find_other_loaded_agent_control()
 }
 
 #ifdef __linux__
-static bool make_agent_ipc_addr(pid_t pid, sockaddr_un &addr, socklen_t &len)
-{
-	memset(&addr, 0, sizeof(addr));
-	addr.sun_family = AF_UNIX;
-	std::string name = "bpftime-agent-" + std::to_string((int)pid);
-	if (name.size() + 1 > sizeof(addr.sun_path))
-		return false;
-	addr.sun_path[0] = '\0'; // abstract namespace
-	memcpy(addr.sun_path + 1, name.data(), name.size());
-	len = (socklen_t)(offsetof(sockaddr_un, sun_path) + 1 + name.size());
-	return true;
-}
-
-static bool try_send_agent_ipc(pid_t pid, const std::string &request,
-			       std::string *response_out = nullptr)
-{
-	int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-	if (fd < 0)
-		return false;
-	sockaddr_un addr {};
-	socklen_t len = 0;
-	if (!make_agent_ipc_addr(pid, addr, len)) {
-		::close(fd);
-		return false;
-	}
-	if (::connect(fd, (sockaddr *)&addr, len) != 0) {
-		::close(fd);
-		return false;
-	}
-	const char *buf = request.data();
-	size_t left = request.size();
-	while (left > 0) {
-		ssize_t n = ::send(fd, buf, left, MSG_NOSIGNAL);
-		if (n < 0) {
-			::close(fd);
-			return false;
-		}
-		buf += (size_t)n;
-		left -= (size_t)n;
-	}
-	(void)::shutdown(fd, SHUT_WR);
-	if (response_out) {
-		std::string resp;
-		char rbuf[4096];
-		for (;;) {
-			ssize_t n = ::recv(fd, rbuf, sizeof(rbuf), 0);
-			if (n <= 0)
-				break;
-			resp.append(rbuf, rbuf + n);
-		}
-		*response_out = std::move(resp);
-	}
-	::close(fd);
-	return true;
-}
-
 static bool try_forward_to_existing_agent(const gchar *data)
 {
 	std::string req("refresh ");
 	if (data != nullptr)
 		req += data;
-	return try_send_agent_ipc(getpid(), req);
+	return bpftime::try_send_agent_ipc(getpid(), req);
 }
 #endif
 
@@ -279,7 +223,7 @@ static void start_agent_ipc_server_once()
 	std::call_once(agent_ipc_once, []() {
 		sockaddr_un addr {};
 		socklen_t len = 0;
-		if (!make_agent_ipc_addr(getpid(), addr, len)) {
+		if (!bpftime::make_agent_ipc_addr(getpid(), addr, len)) {
 			SPDLOG_WARN("agent ipc: unable to build socket address");
 			return;
 		}
@@ -325,6 +269,7 @@ static void start_agent_ipc_server_once()
 					::close(cfd);
 					continue;
 				}
+				bpftime::set_ipc_socket_timeout(cfd, 1000);
 				std::string req;
 				char buf[4096];
 				for (;;) {
