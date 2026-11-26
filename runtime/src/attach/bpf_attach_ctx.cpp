@@ -221,7 +221,6 @@ bpf_attach_ctx::~bpf_attach_ctx()
 // create a probe context
 bpf_attach_ctx::bpf_attach_ctx()
 {
-	current_id = CURRENT_ID_OFFSET;
 	SPDLOG_INFO("bpf_attach_ctx constructed");
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	if (auto ctx = cuda::create_cuda_context(); ctx) {
@@ -626,7 +625,6 @@ void bpf_attach_ctx::reset_instantiated_state_unlocked()
 	instantiated_attach_links.clear();
 	instantiated_perf_events.clear();
 	instantiated_handlers.clear();
-	current_id = CURRENT_ID_OFFSET;
 }
 
 } // namespace bpftime
