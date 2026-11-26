@@ -402,6 +402,7 @@ void *bpftime_get_ringbuf_producer_page(int ringbuf_fd)
 
 void *bpftime_ringbuf_reserve(int fd, uint64_t size)
 {
+	shm_write_window_guard shm_window;
 	auto &shm = shm_holder.global_shared_memory;
 	if (auto ret = shm.try_get_ringbuf_map_impl(fd); ret.has_value()) {
 		auto impl = ret.value();
@@ -415,6 +416,7 @@ void *bpftime_ringbuf_reserve(int fd, uint64_t size)
 
 void bpftime_ringbuf_submit(int fd, void *data, int discard)
 {
+	shm_write_window_guard shm_window;
 	auto &shm = shm_holder.global_shared_memory;
 	if (auto ret = shm.try_get_ringbuf_map_impl(fd); ret.has_value()) {
 		auto impl = ret.value();
