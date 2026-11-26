@@ -5,18 +5,22 @@
  */
 #if defined(__linux__)
 #include "ringbuf_eventfd.hpp"
+#include "bpftime_config.hpp"
 #include "bpftime_shm.hpp"
 #include "handler/handler_manager.hpp"
+#include <atomic>
 #include <cerrno>
+#include <climits>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <fcntl.h>
-#include <mutex>
+#include <string_view>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/un.h>
+#include <type_traits>
 #include <unistd.h>
-#include <unordered_map>
 #include <spdlog/spdlog.h>
 #include <utility>
 
@@ -30,7 +34,7 @@ struct mapfd_addr {
 	socklen_t len;
 };
 
-mapfd_addr make_mapfd_addr(const std::string &shm_name)
+mapfd_addr make_mapfd_addr(std::string_view shm_name)
 {
 	constexpr char prefix[] = "\0bpftime-mapfd-"; // includes leading NUL
 	constexpr size_t prefix_len = sizeof(prefix) - 1;
@@ -134,7 +138,7 @@ int receive_eventfd(int sock)
 
 constexpr timeval ipc_timeout{ .tv_sec = 0, .tv_usec = 200 * 1000 };
 
-int request_eventfd_dup(int map_fd, const std::string &shm_name)
+int request_eventfd_dup(int map_fd, std::string_view shm_name)
 {
 	int sock = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (sock < 0)
@@ -156,22 +160,11 @@ int request_eventfd_dup(int map_fd, const std::string &shm_name)
 	return rc;
 }
 
-struct cached_entry {
-	int eventfd;
-	bool dup_owned;
-};
-
-std::mutex &local_eventfd_cache_mutex()
-{
-	static std::mutex mutex;
-	return mutex;
-}
-
-std::unordered_map<int, cached_entry> &local_eventfd_cache()
-{
-	static std::unordered_map<int, cached_entry> cache;
-	return cache;
-}
+// Client-only SCM_RIGHTS dup cache in .bss: 0 = unresolved, -1 = unavailable,
+// >0 = (dup_fd + 1). Trivially destructible and zero-allocation so uprobes
+// firing during exit(0) after __cxa_atexit never touch freed C++ containers.
+std::atomic<int> local_eventfd_dups[MAX_MAX_FD_COUNT]{};
+static_assert(std::is_trivially_destructible_v<decltype(local_eventfd_dups)>);
 } // namespace
 
 namespace bpftime
@@ -250,44 +243,45 @@ void ringbuf_eventfd_exporter::run()
 
 extern "C" int bpftime_ringbuf_get_local_eventfd(int ringbuf_map_fd)
 {
-	std::lock_guard<std::mutex> guard(local_eventfd_cache_mutex());
-	auto &cache = local_eventfd_cache();
-	if (auto it = cache.find(ringbuf_map_fd); it != cache.end())
-		return it->second.eventfd;
+	if (ringbuf_map_fd < 0 ||
+	    static_cast<size_t>(ringbuf_map_fd) >= MAX_MAX_FD_COUNT)
+		return -1;
+	auto &slot = local_eventfd_dups[ringbuf_map_fd];
+	if (int cached = slot.load(std::memory_order_acquire); cached != 0)
+		return cached < 0 ? -1 : cached - 1;
 
 	int owner_pid = bpftime_ringbuf_eventfd_owner_pid(ringbuf_map_fd);
 	if (owner_pid <= 0)
 		return -1;
+	if (owner_pid == getpid())
+		return bpftime_ringbuf_creator_eventfd(ringbuf_map_fd);
 
-	int eventfd;
-	bool dup_owned;
-	if (owner_pid == getpid()) {
-		// The creating process uses its original kernel fd directly.
-		eventfd = bpftime_ringbuf_creator_eventfd(ringbuf_map_fd);
-		dup_owned = false;
-	} else {
-		eventfd = request_eventfd_dup(ringbuf_map_fd,
-					      bpftime::get_global_shm_name());
-		dup_owned = true;
-	}
-	if (eventfd < 0) {
-		cache.emplace(ringbuf_map_fd, cached_entry{ -1, false });
+	int eventfd = request_eventfd_dup(ringbuf_map_fd,
+					  bpftime::get_global_shm_name());
+	if (eventfd == INT_MAX) {
+		close(eventfd);
 		return -1;
 	}
-	cache.emplace(ringbuf_map_fd, cached_entry{ eventfd, dup_owned });
-	return eventfd;
+	int expected = 0;
+	int desired = eventfd < 0 ? -1 : eventfd + 1;
+	if (slot.compare_exchange_strong(expected, desired,
+					 std::memory_order_acq_rel,
+					 std::memory_order_acquire))
+		return eventfd < 0 ? -1 : eventfd;
+	if (eventfd >= 0)
+		close(eventfd);
+	return expected <= 0 ? -1 : expected - 1;
 }
 
 extern "C" void bpftime_ringbuf_drop_local_eventfd(int ringbuf_map_fd)
 {
-	std::lock_guard<std::mutex> guard(local_eventfd_cache_mutex());
-	auto &cache = local_eventfd_cache();
-	auto it = cache.find(ringbuf_map_fd);
-	if (it == cache.end())
+	if (ringbuf_map_fd < 0 ||
+	    static_cast<size_t>(ringbuf_map_fd) >= MAX_MAX_FD_COUNT)
 		return;
-	if (it->second.dup_owned)
-		close(it->second.eventfd);
-	cache.erase(it);
+	int prev = local_eventfd_dups[ringbuf_map_fd].exchange(
+		0, std::memory_order_acq_rel);
+	if (prev > 0)
+		close(prev - 1);
 }
 
 extern "C" int bpftime_ringbuf_drain_local_eventfd(int ringbuf_map_fd)
