@@ -238,4 +238,49 @@ TEST_CASE("system_analysis lookup honors an explicit pt_regs offset",
 	REQUIRE(result.error == 0);
 	REQUIRE(result.address == STACK_BASE + 8192);
 }
+TEST_CASE("a tid-guarded system_analysis request is completed",
+	  "[syscall-server][system-analysis]")
+{
+	// Layout of the OpenTelemetry eBPF profiler since its #2147.
+	struct tid_value {
+		uint64_t address;
+		uint32_t size;
+		uint32_t tid;
+		int32_t error;
+		uint8_t code[128];
+	};
+	shm_test_fixture fixture;
+	clear_analysis_env();
+	syscall_context ctx;
+	prime_syscall_startup(ctx);
+
+	bpftime::bpf_map_attr map_attr{};
+	map_attr.type = BPF_MAP_TYPE_ARRAY;
+	map_attr.key_size = sizeof(uint32_t);
+	map_attr.value_size = sizeof(tid_value);
+	map_attr.max_ents = 1;
+	int map_fd = bpftime_maps_create(-1, "system_analysis", map_attr);
+	REQUIRE(map_fd >= 0);
+	uint32_t key = 0;
+	tid_value request{};
+	request.address = 0x20;
+	request.size = 8;
+	request.tid = static_cast<uint32_t>(gettid());
+	REQUIRE(bpftime_map_update_elem(map_fd, &key, &request, 0) == 0);
+
+	tid_value result{};
+	union bpf_attr attr {};
+	attr.map_fd = static_cast<uint32_t>(map_fd);
+	attr.key = reinterpret_cast<uint64_t>(&key);
+	attr.value = reinterpret_cast<uint64_t>(&result);
+	REQUIRE(ctx.handle_sysbpf(BPF_MAP_LOOKUP_ELEM, &attr, sizeof(attr)) ==
+		0);
+	REQUIRE(result.tid == 0);
+	REQUIRE(result.error == 0);
+	REQUIRE(result.address == STACK_BASE + DEFAULT_PTREGS_OFFSET);
+	uint64_t base = 0;
+	memcpy(&base, result.code, sizeof(base));
+	REQUIRE(base == STACK_BASE);
+}
+
 #endif

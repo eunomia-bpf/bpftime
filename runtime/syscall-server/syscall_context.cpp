@@ -270,7 +270,18 @@ void syscall_context::load_config_from_env()
 namespace {
 struct system_analysis_compat_value {
 	uint64_t address;
-	uint32_t pid;
+	uint32_t requester; // pid
+	int32_t error;
+	uint8_t code[128];
+};
+
+// The OpenTelemetry eBPF profiler's layout since its "guard system analysis
+// requests by tid" change (#2147): the requester is the thread, and the
+// request also carries the read size.
+struct system_analysis_tid_value {
+	uint64_t address;
+	uint32_t size;
+	uint32_t requester; // tid
 	int32_t error;
 	uint8_t code[128];
 };
@@ -295,23 +306,10 @@ unsigned long resolve_system_analysis_ptregs_offset(const char *offset_text)
 	return offset;
 }
 
-void maybe_complete_system_analysis(int map_fd, void *value)
+template <typename analysis_value>
+void complete_system_analysis(analysis_value *analysis, int saved_errno)
 {
-	// Kernel mode runs the real BPF program and reads kernel memory itself.
-	if (getenv("BPFTIME_RUN_WITH_KERNEL") != nullptr)
-		return;
-	bpftime::bpf_map_attr map_attr;
-	const char *map_name = nullptr;
-	bpftime::bpf_map_type map_type;
-	int saved_errno = errno;
-	if (bpftime_map_get_info(map_fd, &map_attr, &map_name, &map_type) < 0 ||
-	    map_name == nullptr || strcmp(map_name, "system_analysis") != 0 ||
-	    map_attr.value_size < sizeof(system_analysis_compat_value)) {
-		errno = saved_errno;
-		return;
-	}
-	auto *analysis = static_cast<system_analysis_compat_value *>(value);
-	if (analysis->pid == 0) {
+	if (analysis->requester == 0) {
 		errno = saved_errno;
 		return;
 	}
@@ -332,7 +330,7 @@ void maybe_complete_system_analysis(int map_fd, void *value)
 #endif
 		analysis->address = 0;
 		analysis->error = 0;
-		analysis->pid = 0;
+		analysis->requester = 0;
 		errno = saved_errno;
 	};
 #if defined(__x86_64__)
@@ -383,8 +381,34 @@ void maybe_complete_system_analysis(int map_fd, void *value)
 	memcpy(analysis->code, &stack_base, sizeof(stack_base));
 	analysis->address = stack_base + offset;
 	analysis->error = 0;
-	analysis->pid = 0;
+	analysis->requester = 0;
 	errno = saved_errno;
+}
+
+void maybe_complete_system_analysis(int map_fd, void *value)
+{
+	// Kernel mode runs the real BPF program and reads kernel memory itself.
+	if (getenv("BPFTIME_RUN_WITH_KERNEL") != nullptr)
+		return;
+	bpftime::bpf_map_attr map_attr;
+	const char *map_name = nullptr;
+	bpftime::bpf_map_type map_type;
+	int saved_errno = errno;
+	if (bpftime_map_get_info(map_fd, &map_attr, &map_name, &map_type) < 0 ||
+	    map_name == nullptr || strcmp(map_name, "system_analysis") != 0 ||
+	    map_attr.value_size < sizeof(system_analysis_compat_value)) {
+		errno = saved_errno;
+		return;
+	}
+	// The value size tells the two layouts apart (144 and 152 bytes).
+	if (map_attr.value_size >= sizeof(system_analysis_tid_value))
+		complete_system_analysis(
+			static_cast<system_analysis_tid_value *>(value),
+			saved_errno);
+	else
+		complete_system_analysis(
+			static_cast<system_analysis_compat_value *>(value),
+			saved_errno);
 }
 } // namespace
 
