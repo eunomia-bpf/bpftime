@@ -207,17 +207,6 @@ bool frida_internal_attach_entry::has_override() const
 	return false;
 }
 
-bool frida_internal_attach_entry::has_uprobe_or_uretprobe() const
-{
-	for (auto v : user_attaches) {
-		if (v->get_type() == ATTACH_UPROBE ||
-		    v->get_type() == ATTACH_URETPROBE) {
-			return true;
-		}
-	}
-	return false;
-}
-
 void frida_internal_attach_entry::run_filter_callback(const pt_regs &regs) const
 {
 	attach_callback_scope callback_scope;
