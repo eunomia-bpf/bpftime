@@ -6,7 +6,8 @@
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
 #include <bpf_map/userspace/ringbuf_map.hpp>
-#include <pthread.h>
+#include <cerrno>
+#include <cstdint>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #if defined(__linux__)

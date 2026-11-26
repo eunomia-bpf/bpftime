@@ -130,7 +130,7 @@ TEST_CASE("robust SHM mutex waits on live holder in a child PID namespace",
 			char ok = 'r';
 			(void)write(ready_pipe[1], &ok, 1);
 			close(ready_pipe[1]);
-			// Hold well past the 128-spin + 512-yield threshold (~1.1 ms)
+			// Hold across a child PID namespace so the parent blocks in futex wait
 			usleep(20000);
 			reg->child_inside.store(0, std::memory_order_release);
 			reg->lock_recover.unlock();
@@ -155,7 +155,7 @@ TEST_CASE("robust SHM mutex waits on live holder in a child PID namespace",
 	}
 	REQUIRE(sig == 'r');
 
-	// Parent waits past slow-path threshold on both lock() and lock_and_recover():
+	// Parent waits on both lock() and lock_and_recover():
 	// neither may taint or steal while the child PID-namespace holder is inside.
 	REQUIRE(reg->lock_taint.lock("parent-wait"));
 	if (reg->child_inside.load(std::memory_order_acquire) != 0)
