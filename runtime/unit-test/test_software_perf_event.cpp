@@ -2,7 +2,8 @@
 
 #include "handler/perf_event_handler.hpp"
 #include "bpftime_shm.hpp"
-#include "common_def.hpp"
+#include "handler/map_handler.hpp"
+#include "bpftime_shm_internal.hpp"
 #include <atomic>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <cerrno>
@@ -124,6 +125,60 @@ TEST_CASE("Perf output never changes the calling thread's CPU affinity",
 	// The helper must not touch scheduler state at all: the mask set by the
 	// test itself stays identical on every success and error path.
 	CHECK(CPU_EQUAL(&before, &after));
+}
+
+TEST_CASE("Perf output on a locked perf array skips silently with -EBUSY",
+	  "[perf_event][map_lock]")
+{
+	const char *old_name = getenv("BPFTIME_GLOBAL_SHM_NAME");
+	const bool had_name = old_name != nullptr;
+	const std::string previous_name = old_name ? old_name : "";
+	const std::string name =
+		"PerfOutputLockSkipShm-" + std::to_string(getpid());
+	shm_remove remover{ name };
+	REQUIRE(setenv("BPFTIME_GLOBAL_SHM_NAME", name.c_str(), 1) == 0);
+	bpftime_destroy_global_shm();
+	bpftime_initialize_global_shm(
+		bpftime::shm_open_type::SHM_REMOVE_AND_CREATE);
+
+	const int map_fd = bpftime_maps_create(
+		-1, "locked_perf_array",
+		{ .type = BPF_MAP_TYPE_PERF_EVENT_ARRAY, .key_size = 4,
+		  .value_size = 4, .max_ents = CPU_SETSIZE });
+	REQUIRE(map_fd >= 0);
+
+	auto &handler = std::get<bpftime::bpf_map_handler>(
+		bpftime::shm_holder.global_shared_memory.get_handler(map_fd));
+
+	// Hold the map lock so the helper-path (from_syscall=false) lookup
+	// hits the trylock fast path.
+	REQUIRE(handler.get_map_lock().lock("perf-lock-test"));
+	const uint64_t skips_before =
+		bpftime::get_map_trylock_skip_count();
+	errno = 0;
+	uint32_t payload = 7;
+	const uint64_t ret =
+		bpf_perf_event_output(0, map_fd, 0,
+				      reinterpret_cast<uint64_t>(&payload),
+				      sizeof(payload));
+	const int saved_errno = errno;
+	const uint64_t skips_after =
+		bpftime::get_map_trylock_skip_count();
+	handler.get_map_lock().unlock();
+
+	// Contention is a silent skip: kernel negative errno, no SPDLOG, host
+	// errno preserved, and exactly one trylock miss is accounted.
+	REQUIRE(ret == (uint64_t)-EBUSY);
+	REQUIRE(saved_errno == 0);
+	REQUIRE(skips_after - skips_before == 1);
+
+	bpftime_destroy_global_shm();
+	bpftime_initialize_global_shm(
+		bpftime::shm_open_type::SHM_NO_CREATE);
+	if (had_name)
+		setenv("BPFTIME_GLOBAL_SHM_NAME", previous_name.c_str(), 1);
+	else
+		unsetenv("BPFTIME_GLOBAL_SHM_NAME");
 }
 #endif
 
