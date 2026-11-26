@@ -45,8 +45,8 @@ class ringbuf {
 	int kernel_eventfd = -1;
 	int32_t eventfd_owner_pid = 0;
 #endif
-	// Process-shared reserve lock with zero-overhead CAS fast path and
-	// dead-holder recovery on the slow path.
+	// Process-shared robust mutex: a producer killed while holding it is
+	// recovered through EOWNERDEAD in lock_and_recover().
 	mutable robust_shm_mutex reserve_lock;
 	// raw buffer
 	buf_vec_unique_ptr raw_buffer;
