@@ -8,9 +8,13 @@
 #include "robust_shm_mutex.hpp"
 #include <atomic>
 #include <cerrno>
+#include <cstdio>
+#include <fcntl.h>
 #include <new>
+#include <pthread.h>
 #include <sched.h>
 #include <sys/mman.h>
+#include <sys/mount.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -173,6 +177,75 @@ TEST_CASE("robust SHM mutex waits on live holder in a child PID namespace",
 	REQUIRE(WEXITSTATUS(outer_status) == 0);
 	REQUIRE(reg->stolen_while_held.load() == 0);
 
+	munmap(reg, sizeof(*reg));
+}
+
+// A live holder whose /proc/<pid>/task/<tid>/stat cannot be opened (hidden
+// procfs, hidepid, transient ENOENT) must not be declared dead: the first
+// tgkill already found the thread, so a second tgkill has to confirm ESRCH.
+TEST_CASE("robust SHM mutex keeps a live holder when procfs is unavailable",
+	  "[robust_shm_mutex]")
+{
+	struct proc_hide_region {
+		bpftime::robust_shm_mutex lock;
+	};
+	void *raw = mmap(nullptr, sizeof(proc_hide_region),
+			 PROT_READ | PROT_WRITE,
+			 MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+	REQUIRE(raw != MAP_FAILED);
+	auto *reg = new (raw) proc_hide_region();
+
+	const uid_t outer_uid = getuid();
+	const gid_t outer_gid = getgid();
+	pid_t child = fork();
+	REQUIRE(child >= 0);
+	if (child == 0) {
+		if (unshare(CLONE_NEWUSER | CLONE_NEWNS) != 0)
+			_exit(40);
+		int sg = open("/proc/self/setgroups", O_WRONLY);
+		if (sg >= 0) {
+			(void)write(sg, "deny", 4);
+			close(sg);
+		}
+		char uid_map[32];
+		int uid_map_len = snprintf(uid_map, sizeof(uid_map), "0 %u 1",
+					   static_cast<unsigned>(outer_uid));
+		int um = open("/proc/self/uid_map", O_WRONLY);
+		if (um < 0 || write(um, uid_map, uid_map_len) != uid_map_len)
+			_exit(41);
+		close(um);
+		char gid_map[32];
+		int gid_map_len = snprintf(gid_map, sizeof(gid_map), "0 %u 1",
+					   static_cast<unsigned>(outer_gid));
+		int gm = open("/proc/self/gid_map", O_WRONLY);
+		if (gm >= 0) {
+			(void)write(gm, gid_map, gid_map_len);
+			close(gm);
+		}
+		// Cache the current PID-namespace tag before hiding /proc.
+		uint64_t token = bpftime::detail::current_shm_owner_token();
+		if (!reg->lock.lock("proc-hide"))
+			_exit(43);
+		if (mount("tmpfs", "/proc", "tmpfs", 0, nullptr) != 0) {
+			reg->lock.unlock();
+			_exit(42);
+		}
+		// Live holder plus unreadable /proc/<pid>/task/<tid>/stat:
+		// must NOT be treated as dead.
+		bool dead = bpftime::detail::shm_owner_is_dead(token);
+		reg->lock.unlock();
+		if (dead)
+			_exit(44);
+		_exit(0);
+	}
+	int status = 0;
+	REQUIRE(waitpid(child, &status, 0) == child);
+	if (WIFEXITED(status) && WEXITSTATUS(status) == 40) {
+		munmap(reg, sizeof(*reg));
+		SKIP("unprivileged user/mount namespaces unavailable");
+	}
+	REQUIRE(WIFEXITED(status));
+	REQUIRE(WEXITSTATUS(status) == 0);
 	munmap(reg, sizeof(*reg));
 }
 #endif

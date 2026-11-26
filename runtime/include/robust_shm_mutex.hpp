@@ -221,8 +221,16 @@ inline bool shm_owner_is_dead(uint64_t owner) noexcept
 		return true;
 	char state = 0;
 	int rc = read_proc_thread_state(pid, tid, state);
-	if (rc < 0)
-		return true;
+	if (rc <= 0) {
+		// procfs can be missing or unreadable while the holder thread
+		// is still alive (thread-group leader exit, hidepid mounts,
+		// permission/fd errors). Since the first tgkill did not confirm
+		// thread exit, require a second tgkill returning ESRCH before
+		// treating the holder as dead; keep live or EPERM holders safe.
+		return ::syscall(SYS_tgkill, static_cast<int>(pid),
+				 static_cast<int>(tid), 0) != 0 &&
+		       errno == ESRCH;
+	}
 	if (rc > 0 && (state == 'Z' || state == 'X' || state == 'x'))
 		return true;
 	return false;
