@@ -28,6 +28,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 /* A death by signal loses the stack, so the killing frame has to be
@@ -320,6 +321,45 @@ main(void)
 		       errno);
 		if (dup_fd >= 0)
 			close(dup_fd);
+
+		/* A forked child inherits the seccomp USER_NOTIF filter (as Go
+		 * forkAndExecInChild does before execve). Closing map_fd in
+		 * the child must run in-kernel for the child only and must NOT
+		 * destroy the parent's emulated map_fd. */
+		{
+			pid_t child = fork();
+			int fork_ok = 0;
+			if (child == 0) {
+				long rc = raw_syscall(__NR_close, map_fd, 0, 0,
+						      0, 0, 0);
+				if (rc == 0) {
+					/* raw_syscall() maps every error to -1
+					 * and sets errno, so the kernel's
+					 * -EBADF surfaces as errno here. */
+					long fl = raw_syscall(__NR_fcntl,
+							      map_fd, F_GETFD,
+							      0, 0, 0, 0);
+					_exit(fl == -1 && errno == EBADF ? 0 : 2);
+				}
+				/* Pre-5.5 kernels lack FLAG_CONTINUE and
+				 * return -ENOSYS without mutating parent fds
+				 * (again as -1 plus errno). */
+				_exit(rc == -1 && errno == ENOSYS ? 0 : 1);
+			}
+			if (child > 0) {
+				int wstatus = 0;
+				while (waitpid(child, &wstatus, 0) < 0 &&
+				       errno == EINTR) {
+				}
+				uint64_t after_fork = 0;
+				fork_ok = WIFEXITED(wstatus) &&
+					  WEXITSTATUS(wstatus) == 0 &&
+					  bpf_map_lookup(map_fd, &key,
+							 &after_fork) == 0 &&
+					  after_fork == value;
+			}
+			report("fork_child_close_passthrough", fork_ok, errno);
+		}
 
 		/* Ringbuf map fd mmap must trap and return the emulated
 		 * consumer page; a kernel mmap on the /dev/null-backed fake

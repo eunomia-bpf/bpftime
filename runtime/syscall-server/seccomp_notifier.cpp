@@ -186,11 +186,37 @@ static int64_t dispatch_seccomp_syscall(const int64_t *args)
 	return result;
 }
 
+static void send_seccomp_response(int listener,
+				  struct seccomp_notif_resp &response)
+{
+	while (ioctl(listener, SECCOMP_IOCTL_NOTIF_SEND, &response) < 0) {
+		if (errno == EINTR)
+			continue;
+		// Kernels < 5.5 lack SECCOMP_USER_NOTIF_FLAG_CONTINUE and
+		// reject it with EINVAL; fail with ENOSYS rather than faking
+		// success or leaving the target thread blocked forever.
+		if (errno == EINVAL &&
+		    (response.flags & SECCOMP_USER_NOTIF_FLAG_CONTINUE) != 0) {
+			response.flags = 0;
+			response.error = -ENOSYS;
+			response.val = 0;
+			continue;
+		}
+		if (errno != ENOENT) {
+			SPDLOG_ERROR(
+				"seccomp response SEND failed for request {}: {}",
+				response.id, errno);
+		}
+		break;
+	}
+}
+
 static void start_go_seccomp_workers()
 {
+	const pid_t owner_tgid = getpid();
 	constexpr size_t worker_count = 4;
 	for (size_t i = 0; i < worker_count; i++) {
-		std::thread([] {
+		std::thread([owner_tgid] {
 			int listener;
 			while ((listener = go_seccomp_listener.load(
 					std::memory_order_acquire)) < 0) {
@@ -211,34 +237,46 @@ static void start_go_seccomp_workers()
 					}
 					received = true;
 
-					int64_t args[] = {
-						(int64_t)request.data.nr,
-						(int64_t)request.data.args[0],
-						(int64_t)request.data.args[1],
-						(int64_t)request.data.args[2],
-						(int64_t)request.data.args[3],
-						(int64_t)request.data.args[4],
-						(int64_t)request.data.args[5],
-					};
 					response.id = request.id;
-					int64_t result = dispatch_seccomp_syscall(args);
-					if (result < 0 && result >= -4095)
-						response.error = (int32_t)result;
-					else
-						response.val = result;
-					// Retry only on a signal; any other SEND failure must be
-					// recorded rather than silently dropping the response and
-					// leaving the target blocked on the notification.
-					while (ioctl(listener,
-						     SECCOMP_IOCTL_NOTIF_SEND,
-						     &response) < 0) {
-						if (errno != EINTR) {
-							SPDLOG_ERROR(
-								"seccomp response SEND failed for request {}: {}",
-								request.id, errno);
-							break;
-						}
+					// SECCOMP_RET_USER_NOTIF filters are inherited across
+					// fork/execve. Emulating notifications from a child
+					// process would mutate this process's fd table (e.g.
+					// Go forkAndExecInChild closing fds before execve) or
+					// dereference child user pointers in parent memory.
+					if (raw_syscall(SYS_tgkill, owner_tgid,
+							static_cast<pid_t>(
+								request.pid),
+							0, 0, 0, 0) != 0) {
+						response.flags =
+							SECCOMP_USER_NOTIF_FLAG_CONTINUE;
+					} else {
+						int64_t args[] = {
+							(int64_t)request.data.nr,
+							(int64_t)request.data
+								.args[0],
+							(int64_t)request.data
+								.args[1],
+							(int64_t)request.data
+								.args[2],
+							(int64_t)request.data
+								.args[3],
+							(int64_t)request.data
+								.args[4],
+							(int64_t)request.data
+								.args[5],
+						};
+						int64_t result =
+							dispatch_seccomp_syscall(
+								args);
+						if (result < 0 &&
+						    result >= -4095)
+							response.error =
+								(int32_t)result;
+						else
+							response.val = result;
 					}
+					send_seccomp_response(listener,
+							      response);
 				} catch (...) {
 					// An acquired notification still blocks its host thread.
 					// If emulation fails, ask the kernel to run the original
@@ -247,9 +285,8 @@ static void start_go_seccomp_workers()
 						response = {};
 						response.id = request.id;
 						response.flags = SECCOMP_USER_NOTIF_FLAG_CONTINUE;
-						while (ioctl(listener, SECCOMP_IOCTL_NOTIF_SEND,
-							     &response) < 0 && errno == EINTR) {
-						}
+						send_seccomp_response(listener,
+								      response);
 					}
 				}
 			}
