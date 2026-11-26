@@ -383,12 +383,13 @@ may cross the syscall-server / attach boundary.
 - Do not over-test. Add concise, high-signal regression tests that exercise the
   real failure mode; avoid large mock or scaffolding setups, and do not re-test
   wiring, incidental defaults, or behavior that already has coverage.
-- **New mechanisms start as an issue.** Before writing a new lock or other
-  synchronization primitive, a new shared-memory layout or attach path, a new
-  thread, constructor, environment variable or protocol, or a change of more
-  than about 100 production lines, open an issue that describes the problem
-  and the approach, and get a maintainer's agreement there. The pull request
-  links that issue.
+- **New mechanisms need a maintainer's agreement first.** Before writing a
+  new lock or other synchronization primitive, a new shared-memory layout or
+  attach path, a new thread, constructor, environment variable or protocol, or
+  a change of more than about 100 production lines, describe the problem and
+  the approach and get a maintainer's agreement: in an issue, or in a
+  maintainer's comment on the pull request. The pull request links that issue
+  or comment.
 - **Alternative designs in reviews are options.** A review that suggests a
   different design writes it as an option for the maintainers to choose, not
   as a fix the author must make. Until a maintainer chooses it, it does not
@@ -405,4 +406,4 @@ Before opening or updating a pull request, self-review against this checklist:
 4. Can more than half of the diff be cut while still fixing the root cause?
 5. Are any new shared libraries or cross-process state strictly necessary?
 6. Does it reverse an entry under "Maintainer decisions", or add a new
-   mechanism without a linked issue where a maintainer agreed?
+   mechanism without a linked issue or comment where a maintainer agreed?
