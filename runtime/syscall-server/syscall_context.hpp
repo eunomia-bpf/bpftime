@@ -22,9 +22,8 @@
 #include <atomic>
 #include <future>
 #include <mutex>
-#include <memory>
-#include <string>
 #include <stdexcept>
+#include <string>
 #include <thread>
 // #include "pos/include/common.h"
 // #include "pos/include/utils/command_caller.h"
@@ -39,13 +38,6 @@ constexpr const int MOCKED_URETPROBE_BIT = 0;
 constexpr const int MOCKED_KPROBE_TYPE_VALUE = 8;
 constexpr const int MOCKED_KRETPROBE_BIT = 0;
 
-
-#if defined(__linux__)
-namespace bpftime
-{
-class ringbuf_eventfd_exporter;
-}
-#endif
 
 class syscall_context {
 	using syscall_fn = long (*)(long, ...);
@@ -156,14 +148,7 @@ class syscall_context {
 	void release_map_in_map_refs(int outer_fd);
 	void release_owned_map_fd(int fd);
 	void release_unreferenced_deferred_maps();
-#if defined(__linux__)
-	// Lazily-started AF_UNIX SCM_RIGHTS exporter that lets producer
-	// processes (injected agents) obtain a dup of each ringbuf kernel
-	// eventfd without ptrace or /proc/<pid>/fd access.
-	std::unique_ptr<bpftime::ringbuf_eventfd_exporter> mapfd_exporter;
-	std::mutex mapfd_exporter_mutex;
-	void ensure_ringbuf_eventfd_exporter();
-#endif
+
     public:
 	// enable mock the syscall behavior in userspace
 	std::atomic<bool> enable_mock{ true };

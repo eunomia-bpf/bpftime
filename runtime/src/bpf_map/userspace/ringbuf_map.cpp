@@ -10,16 +10,7 @@
 #include <cstdint>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
-#if defined(__linux__)
-#include <sys/eventfd.h>
-#include <unistd.h>
-#ifndef BPF_RB_NO_WAKEUP
-#define BPF_RB_NO_WAKEUP 1U
-#endif
-#ifndef BPF_RB_FORCE_WAKEUP
-#define BPF_RB_FORCE_WAKEUP 2U
-#endif
-#elif __APPLE__
+#if __APPLE__
 #include "bpftime_epoll.h"
 #endif
 
@@ -198,19 +189,6 @@ ringbuf::ringbuf(uint32_t max_ent,
 	producer_pos =
 		(unsigned long *)(uintptr_t)(&((*raw_buffer)[page_size]));
 	data = (uint8_t *)(uintptr_t)(&((*raw_buffer)[page_size * 2]));
-#if defined(__linux__)
-	// A non-blocking eventfd needs no capabilities: it is a plain kernel
-	// object shared with consumers through SCM_RIGHTS, never through
-	// /proc/<pid>/fd or pidfd_getfd.
-	kernel_eventfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
-	if (kernel_eventfd < 0) {
-		SPDLOG_WARN(
-			"Failed to create ringbuf eventfd, kernel epoll wakeup disabled: {}",
-			errno);
-		kernel_eventfd = -1;
-	}
-	eventfd_owner_pid = getpid();
-#endif
 }
 
 int ringbuf::fetch_data(int (*cb)(void *ctx, void *data, size_t len), void *ctx)
@@ -329,11 +307,6 @@ void *ringbuf::reserve(size_t size, int self_fd)
 				 __ATOMIC_RELEASE);
 		header_off = 0;
 	}
-	if (header_off == 0) {
-		__atomic_store_n(&wrap_pad_pos,
-				 need_padding ? prod_pos : record_pos,
-				 __ATOMIC_RELEASE);
-	}
 	auto header =
 		(ringbuf_hdr *)(uintptr_t)(data.get() + header_off);
 	header->fd = self_fd;
@@ -361,57 +334,5 @@ void ringbuf::submit(const void *sample, bool discard)
 }
 ringbuf::~ringbuf()
 {
-#if defined(__linux__)
-	// Only the creator owns the kernel fd; agents that received a dup via
-	// SCM_RIGHTS close their own copy through their process-local cache.
-	if (kernel_eventfd >= 0 && eventfd_owner_pid == getpid())
-		close(kernel_eventfd);
-#endif
-}
-
-bool ringbuf::should_wakeup(const void *sample, uint64_t flags) const
-{
-#if defined(__linux__)
-	if (flags & BPF_RB_NO_WAKEUP)
-		return false;
-	if (flags & BPF_RB_FORCE_WAKEUP)
-		return true;
-	// Default adaptive behavior (mirrors libbpf ring_buffer__commit):
-	// wake only when the consumer had caught up to the start of this
-	// record, i.e. it is likely blocked waiting for new data. A consumer
-	// still processing older records already has a level-triggered
-	// eventfd ready. Positions are monotonic while the header lives at a
-	// wrapped offset, so recover this record's absolute position from the
-	// current producer position. Live data never exceeds the ring size,
-	// making the reconstruction unique.
-	unsigned long ring_sz = (unsigned long)mask() + 1;
-	unsigned long off = (unsigned long)((const uint8_t *)sample -
-					    data.get()) -
-			     BPF_RINGBUF_HDR_SZ;
-	unsigned long prod = smp_load_acquire_ul(producer_pos.get());
-	// The record start is the unique lap-aligned position in
-	// (prod - ring_sz, prod] whose offset matches the header slot.
-	// Delta zero means the record spans the whole ring, so it starts one
-	// full lap earlier rather than at prod.
-	unsigned long delta = (prod - off) % ring_sz;
-	if (delta == 0)
-		delta = ring_sz;
-	unsigned long record_start = prod - delta;
-	unsigned long cons = smp_load_acquire_ul(consumer_pos.get());
-	if (cons == record_start)
-		return true;
-	// When reserve() wraps a record to offset 0, it closes the tail of the
-	// previous lap with a synthetic DISCARD padding header that never emits
-	// a wakeup of its own and records that padding start in wrap_pad_pos
-	// (immutable while this offset-0 record remains BUSY).
-	if (off == 0 && cons < record_start &&
-	    cons == __atomic_load_n(&wrap_pad_pos, __ATOMIC_ACQUIRE))
-		return true;
-	return false;
-#else
-	(void)sample;
-	(void)flags;
-	return false;
-#endif
 }
 } // namespace bpftime

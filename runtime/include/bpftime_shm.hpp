@@ -432,35 +432,8 @@ void bpftime_close(int fd);
 
 void *bpftime_ringbuf_reserve(int fd, uint64_t size);
 void bpftime_ringbuf_submit(int fd, void *data, int discard);
-// Submit with BPF_RB_NO_WAKEUP / BPF_RB_FORCE_WAKEUP semantics. On Linux a
-// committed record additionally signals the ringbuf kernel eventfd so blocked
-// epoll_wait consumers wake from the kernel.
-void bpftime_ringbuf_submit_with_flags(int fd, void *data, int discard,
-				       uint64_t flags);
-#if defined(__linux__)
-// Kernel eventfd fd owned by the ringbuf creator process (valid only in that
-// process); other processes use bpftime_ringbuf_get_local_eventfd().
-int bpftime_ringbuf_creator_eventfd(int fd);
-// Pid of the process that created the ringbuf and owns its kernel eventfd.
-int bpftime_ringbuf_eventfd_owner_pid(int fd);
-#endif
 int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 		       int timeout);
-#if defined(__linux__)
-// Non-blocking scan of userspace-backed epoll sources (ringbuf / software
-// perf events), filling ready events exactly like a kernel poll.
-int bpftime_epoll_poll_userspace(int fd, struct epoll_event *out_evts,
-				 int max_evt);
-// Whether this epoll contains a software perf event source, which has no
-// kernel backing fd and therefore requires the legacy userspace polling loop.
-int bpftime_epoll_requires_userspace_polling(int fd);
-// Drain the kernel eventfds of empty ringbuf sources, with a post-drain
-// re-check. Returns 1 when a ringbuf already has data (the caller must not
-// block in the kernel epoll), 0 when blocking is race-free.
-int bpftime_epoll_prepare_kernel_block(int fd);
-// Remove every userspace entry registered with origin_fd.
-int bpftime_epoll_remove_origin(int epfd, int origin_fd);
-#endif
 
 int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 				    int64_t config);
