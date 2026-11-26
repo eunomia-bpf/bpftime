@@ -474,7 +474,7 @@ int bpftime_shm::add_software_perf_event_to_epoll(int swpe_fd, int epoll_fd,
 	}
 	if (auto ptr = perf_handler.try_get_software_perf_data_weak_ptr();
 	    ptr.has_value()) {
-		epoll_inst.files.emplace_back(ptr.value(), extra_data, swpe_fd);
+		epoll_inst.files.emplace_back(ptr.value(), extra_data);
 		return 0;
 	} else {
 		SPDLOG_ERROR(
@@ -507,7 +507,7 @@ int bpftime_shm::add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd,
 	auto ringbuf_map_impl = map_inst.try_get_ringbuf_map_impl();
 	if (auto val = ringbuf_map_impl.value_or(nullptr)) {
 		epoll_inst.files.emplace_back(val->create_impl_weak_ptr(),
-					      extra_data, ringbuf_fd);
+					      extra_data);
 		SPDLOG_DEBUG("Ringbuf {} added to epoll {}", ringbuf_fd,
 			     epoll_fd);
 		return 0;
