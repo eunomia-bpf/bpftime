@@ -235,15 +235,24 @@ same pull request.
    support a fast, zero-allocation early exit before touching shared memory,
    the logger, or Frida, so inherited injection never slows or breaks
    unrelated child utilities.
-2. **Hot-path "Three Zeros".** In uprobe/syscall callbacks, BPF helpers,
+2. **Hot-path "Four Zeros".** In uprobe/syscall callbacks, BPF helpers,
    ringbuf/map operations, and constructor early-exit/detach paths: (a) zero
-   libc heap allocations (`malloc`/`new`/STL growth/logging allocations);
-   (b) zero dynamic Boost `segment_manager` shared-memory allocations —
-   preallocate at setup; (c) zero non-robust cross-process locks. Prefer
-   preallocated fixed-size lock-free atomics (e.g. fixed atomic PID arrays);
-   where mutual exclusion is unavoidable on Linux, use `pthread_mutex_t` with
-   `PTHREAD_PROCESS_SHARED | PTHREAD_MUTEX_ROBUST`, and forbid bare
-   `pthread_spinlock_t` or non-robust
+   libc heap allocations (`malloc`/`new`/STL growth/logging allocations, and no
+   `static` heap-owning C++ containers whose `__cxa_atexit` destructors race
+   live threads during `exit(0)`); (b) zero dynamic Boost `segment_manager`
+   shared-memory allocations — preallocate at setup; (c) zero non-robust
+   cross-process locks; (d) **zero unapproved active syscalls** (`write`,
+   `read`, `socket`, `connect`, `sendmsg`, `recvmsg`, `open`, `mmap`,
+   `eventfd`, etc.), preserving host `errno` (both to avoid latency/blocking
+   and to prevent `syscall_trace`/seccomp recursion or sandbox traps). Only
+   maintainer-approved exemptions recorded in `DECISIONS.md` are permitted
+   (contended/`EOWNERDEAD` `PTHREAD_MUTEX_ROBUST` `futex`, opt-in
+   `ENABLE_PROBE_READ_CHECK` `process_vm_readv`/`process_vm_writev`, one-time
+   cold TLS/`.bss` identity initialization, and userspace vDSO
+   `clock_gettime`). Prefer preallocated fixed-size lock-free atomics (e.g.
+   fixed atomic PID arrays); where mutual exclusion is unavoidable on Linux,
+   use `pthread_mutex_t` with `PTHREAD_PROCESS_SHARED | PTHREAD_MUTEX_ROBUST`,
+   and forbid bare `pthread_spinlock_t` or non-robust
    `boost::interprocess::interprocess_mutex`.
 3. **No hijacking host global resources in constructors.** Never clobber
    host signal handlers (e.g. `SIGUSR1`); do not spawn unsolicited background

@@ -61,7 +61,7 @@ Fixes # (issue)
 - [ ] No over-engineering: smallest necessary diff (~50-100 prod lines target where feasible), no speculative abstractions, unused config knobs, or unnecessary new `.so` libraries
 - [ ] No over-testing: concise, high-signal regression tests covering the real failure mode without mock/scaffolding bloat
 - [ ] Reverses no entry in `DECISIONS.md`; a new mechanism (lock, shared-memory layout or attach path, thread, constructor, environment variable, protocol) or a change over ~100 production lines links the issue, or the maintainer's comment on this pull request, where a maintainer agreed to it
-- [ ] If touching `runtime/` or `attach/`: verified `LD_PRELOAD` safety redlines and hot-path "Three Zeros" (zero libc heap alloc, zero dynamic Boost SHM alloc, zero non-robust cross-process locks; `O_CLOEXEC`; static TLS guard; silent stdio; fail-open)
+- [ ] If touching `runtime/` or `attach/`: verified `LD_PRELOAD` safety redlines and hot-path "Four Zeros" (zero libc heap alloc / no `__cxa_atexit` static heap containers, zero dynamic Boost SHM alloc, zero non-robust cross-process locks, zero unapproved active syscalls while preserving host `errno`; `O_CLOEXEC`; static TLS guard; silent stdio; fail-open)
 - [ ] I have filled in the benchmark and performance impact section above with measured numbers
 - [ ] New and existing unit tests pass locally with my changes
 - [ ] I have made corresponding changes to the documentation where applicable

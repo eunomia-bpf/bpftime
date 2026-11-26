@@ -6,9 +6,13 @@ ringbufs, syscall emulation (`syscall-server/`), and the injected agent
 Safety Redlines and Host-process safety invariants are binding here.
 
 - Hot paths (uprobe/syscall callbacks, BPF helpers, ringbuf/map operations,
-  constructor early-exit and detach) obey the "Three Zeros": no libc heap
-  allocation, no dynamic Boost `segment_manager` shared-memory allocation
-  (preallocate at setup), and no non-robust cross-process locks.
+  constructor early-exit and detach) obey the "Four Zeros": no libc heap
+  allocation (and no `static` heap-owning C++ containers with `__cxa_atexit`
+  destructors), no dynamic Boost `segment_manager` shared-memory allocation
+  (preallocate at setup), no non-robust cross-process locks, and **no
+  unapproved active syscalls** (`write`, `read`, `socket`, `connect`,
+  `sendmsg`, `recvmsg`, `open`, `mmap`, `eventfd`, etc.; preserve host `errno`
+  — only explicit exemptions in `DECISIONS.md` apply).
 - Prefer preallocated fixed-size lock-free atomics. Where cross-process mutual
   exclusion is required, use `bpftime::robust_shm_mutex` (`pthread_mutex_t`
   with `PTHREAD_PROCESS_SHARED | PTHREAD_MUTEX_ROBUST`); never bare

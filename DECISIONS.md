@@ -2,6 +2,21 @@
 
 Newest first. Read before starting a change. A pull request that reverses an entry is a design problem until a maintainer decides again. Every entry quotes the maintainer verbatim; changing a decision means adding a new entry.
 
+- **2026-11-26: zero active syscalls on `LD_PRELOAD` hot paths ("Four Zeros"); revert `#906` ringbuf eventfd** (#906, #946). Injected `LD_PRELOAD` hot paths (uprobe/uretprobe/syscall callbacks, BPF helpers, ringbuf/map reserve/submit/lookup/update, constructor early-exit and process-exit paths) must issue **zero active syscalls** (`write`, `read`, `socket`, `connect`, `sendmsg`, `recvmsg`, `open`, `mmap`, `eventfd`, etc.), preserve host `errno`, and never hold `static` C++ heap containers whose `__cxa_atexit` destructors race background threads at `exit(0)`. Collector / `syscall-server` consumer wait paths are out of scope. Explicit maintainer-approved exemptions on hot paths are strictly limited to:
+  1. Linux kernel `futex` inside `PTHREAD_MUTEX_ROBUST` only on actual cross-process contention or `EOWNERDEAD` dead-owner recovery (uncontended path is pure userspace atomic CAS);
+  2. `process_vm_readv` / `process_vm_writev` when opt-in fault-checked `bpf_probe_read*` / `bpf_probe_write_user` (`ENABLE_PROBE_READ_CHECK`) is explicitly enabled;
+  3. One-time cold-start per-thread / per-process identity cache initialization into TLS or `constinit` `.bss` (`SYS_gettid`, `readlink("/proc/self/exe")`), never on steady-state events;
+  4. Userspace vDSO `clock_gettime` (`bpf_ktime_get_ns`).
+  Any other hot-path syscall requires explicit prior maintainer approval recorded here. `#906` (`cb271dde`) and `#946` (`e368a0f2`) are reverted verbatim back to pure shared-memory ringbuf submission.
+  > 我们是不是也要要求热路径没有 syscall? 之前 ring buf 不是 event fd 的时候好像没很多 bug?
+  >
+  > 我们现在崩溃是崩溃业务进程还是 collector? collector 问题不大
+  >
+  > 热路径零主动 syscall：除跨进程 PTHREAD_MUTEX_ROBUST 极少数发生真实锁竞争/死锁恢复时进入内核 futex 外，热路径严禁任何 write / read / socket / connect / recvmsg / open / mmap 系统调用（既防耗时与阻塞，也防 syscall_trace/seccomp 递归重入和沙箱拦截）。
+  >
+  > 开 PR reviert 906, 一字不差回复原本的, 确保原本的没 bug 并且能 work, 要真实测试 [workload]; 并且把我的这个话写进去, 除非特批的不然.
+  >
+  > 906 相关的别的 PR 可以关闭了. 顺便也看看我们还有没有别的一些, 比如说同一时间或者最近引入的类似的问题, 修改了原本能 work 的机制没有充分讨论并且违规
 - **2026-11-26: safety rules for the `LD_PRELOAD` agent** (#948, #951). The syscall server is out of scope.
   - **Locks:** only lock-free atomics or fixed arrays, and glibc robust mutexes across processes. On hot paths take them with `trylock`; if the lock is held, skip the event and count it, never wait. (`lock()` blocks while a live holder runs, and forever if the holder is stopped by `SIGSTOP` or a debugger.)
   - **Errors:** every hook entry and `extern "C"` boundary catches all exceptions; injected code contains no `abort`, `exit`, `assert` or `std::terminate`.
