@@ -31,7 +31,9 @@
 #include "bpf/libbpf_common.h"
 #endif
 #include "bpftime_helper_group.hpp"
+#include <atomic>
 #include <cerrno>
+#include <cstdint>
 #ifdef ENABLE_BPFTIME_VERIFIER
 #include "bpftime-verifier.hpp"
 #endif
@@ -308,9 +310,62 @@ int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
 #endif
 }
 
+#if defined(__linux__)
+// Isolated per-thread PRNG state in initial-exec TLS: never touches __tls_get_addr,
+// takes no lock, allocates no heap memory, and leaves host rand() untouched.
+static __thread uint64_t bpftime_prng_state
+	__attribute__((tls_model("initial-exec"))) = 0;
+#else
+static thread_local uint64_t bpftime_prng_state = 0;
+#endif
+static std::atomic<uint64_t> bpftime_prng_seed_seq{ 1 };
+
+static inline uint64_t bpftime_splitmix64(uint64_t z) noexcept
+{
+	z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+	z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+	return z ^ (z >> 31);
+}
+
+// Pure userspace seeding (zero active syscalls, preserving host errno):
+// combines vDSO CLOCK_MONOTONIC, hardware cycle/virtual counter, TLS/stack ASLR
+// addresses, and a monotonic per-seed sequence counter through SplitMix64.
+static uint64_t bpftime_prng_seed_userspace() noexcept
+{
+	const int saved_errno = errno;
+	struct timespec ts {};
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	errno = saved_errno;
+
+	uint64_t hw = 0;
+#if defined(__x86_64__)
+	uint32_t lo = 0, hi = 0;
+	__asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+	hw = (static_cast<uint64_t>(hi) << 32) | lo;
+#elif defined(__aarch64__)
+	__asm__ volatile("mrs %0, cntvct_el0" : "=r"(hw));
+#endif
+	uint64_t z = static_cast<uint64_t>(ts.tv_sec) * 1000000000ULL +
+		     static_cast<uint64_t>(ts.tv_nsec);
+	z ^= bpftime_splitmix64(hw ^ reinterpret_cast<uintptr_t>(&bpftime_prng_state));
+	z ^= bpftime_splitmix64(
+		reinterpret_cast<uintptr_t>(&ts) ^
+		bpftime_prng_seed_seq.fetch_add(0x9E3779B97F4A7C15ULL,
+						std::memory_order_relaxed));
+	z = bpftime_splitmix64(z);
+	return z != 0 ? z : 0x9E3779B97F4A7C15ULL;
+}
+
 uint64_t bpftime_get_prandom_u32()
 {
-	return (uint32_t)rand();
+	uint64_t s = bpftime_prng_state;
+	if (__builtin_expect(s == 0, 0))
+		s = bpftime_prng_seed_userspace();
+	s ^= s >> 12;
+	s ^= s << 25;
+	s ^= s >> 27;
+	bpftime_prng_state = s;
+	return static_cast<uint32_t>(s * 0x2545F4914F6CDD1DULL);
 }
 
 uint64_t bpftime_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
@@ -387,6 +442,7 @@ static thread_local uint64_t bpftime_cached_tid = UINT64_MAX;
 static void bpftime_refresh_cached_identity_in_child()
 {
 	bpftime_cached_tgid = getpid();
+	bpftime_prng_state = 0;
 	// tid is meaningless in the child; the next helper call refills it.
 #if __linux__
 	bpftime_cached_tid = -1;

@@ -47,6 +47,7 @@ set(TEST_SOURCES
     test_process_filter.cpp
     test_cpu_execution.cpp
     test_get_current_pid_tgid.cpp
+    test_prandom_u32.cpp
     test_get_stack.cpp
     test_tracepoint_id.cpp
     test_config.cpp
