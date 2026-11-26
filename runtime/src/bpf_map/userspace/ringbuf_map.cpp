@@ -449,7 +449,21 @@ bool ringbuf::should_wakeup(const void *sample, uint64_t flags) const
 	if (delta == 0)
 		delta = ring_sz;
 	unsigned long record_start = prod - delta;
-	return smp_load_acquire_ul(consumer_pos.get()) == record_start;
+	unsigned long cons = smp_load_acquire_ul(consumer_pos.get());
+	if (cons == record_start)
+		return true;
+	// When reserve() wraps a record to offset 0, it closes the tail of the
+	// previous lap with a synthetic DISCARD padding header that never emits
+	// a wakeup of its own. A consumer parked right at that padding slot was
+	// caught up before this reservation and must still be woken.
+	if (off == 0 && cons < record_start && record_start - cons < ring_sz) {
+		int pad_len = smp_load_acquire_i(
+			(int32_t *)(uintptr_t)(data.get() + (cons & mask())));
+		if ((pad_len & BPF_RINGBUF_DISCARD_BIT) &&
+		    cons + (unsigned long)roundup_len(pad_len) == record_start)
+			return true;
+	}
+	return false;
 #else
 	(void)sample;
 	(void)flags;

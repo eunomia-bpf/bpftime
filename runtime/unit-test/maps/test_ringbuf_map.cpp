@@ -58,10 +58,25 @@ TEST_CASE("Ringbuf record whose header is the last 8 bytes of the ring is "
 	REQUIRE(rb->fetch_data(collect, &got) ==
 		(int)((max_ent - HDR_SZ) / record));
 
-	// This record straddles the end of the ring
+	// This record straddles the end of the ring: reserve() inserts an
+	// 8-byte DISCARD pad at max_ent - 8 and places the sample at offset 0.
+	// A consumer parked at max_ent - 8 was caught up and must still wake.
 	got.clear();
-	produce(*rb, 16, 0xAB);
-	produce(*rb, 16, 0xCD);
+	void *wrapped = rb->reserve(16, MAP_FD);
+	REQUIRE(wrapped != nullptr);
+#if defined(__linux__)
+	REQUIRE(rb->should_wakeup(wrapped, 0));
+#endif
+	std::memset(wrapped, 0xAB, 16);
+	rb->submit(wrapped, false);
+	void *second = rb->reserve(16, MAP_FD);
+	REQUIRE(second != nullptr);
+#if defined(__linux__)
+	// Consumer has not yet drained `wrapped`, so adaptive wakeup stays quiet.
+	REQUIRE_FALSE(rb->should_wakeup(second, 0));
+#endif
+	std::memset(second, 0xCD, 16);
+	rb->submit(second, false);
 	REQUIRE(rb->fetch_data(collect, &got) == 2);
 	REQUIRE(got[0] == std::vector<uint8_t>(16, 0xAB));
 	REQUIRE(got[1] == std::vector<uint8_t>(16, 0xCD));
