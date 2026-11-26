@@ -377,7 +377,17 @@ may cross the syscall-server / attach boundary.
 - Do not introduce speculative abstractions, configuration or environment
   variable matrices, new shared-memory data structures, or new shared libraries
   (`.so`) unless a reproduced problem strictly requires them. Every new
-  component must trace to a concrete failure mode or requirement.
+  component must trace to a concrete failure mode or requirement. In
+  particular:
+  - **No speculative symmetric teardown/GC or hypothetical edge-case queues**
+    when only forward/lazy attachment or insertion is needed and no real
+    production caller exercises runtime removal or duplicate-target queuing;
+  - **No test-only control-plane/IPC backdoors** (never add IPC commands,
+    sockets, flags, or production overloads that stay off or uncalled in
+    production solely to drive unit tests);
+  - **No parallel rewrites of already-idempotent paths** (check whether the
+    existing initializer/lookup already skips instantiated entries before
+    writing a new `reconcile_*` or `refresh_*` state machine).
 - Do not over-test. Add concise, high-signal regression tests that exercise the
   real failure mode; avoid large mock or scaffolding setups, and do not re-test
   wiring, incidental defaults, or behavior that already has coverage.
