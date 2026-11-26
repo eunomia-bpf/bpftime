@@ -18,7 +18,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
-#include <pthread.h>
+#include "robust_shm_mutex.hpp"
 #include <vector>
 
 namespace bpftime
@@ -45,10 +45,9 @@ class ringbuf {
 	int kernel_eventfd = -1;
 	int32_t eventfd_owner_pid = 0;
 #endif
-	// Process-shared reserve lock (PTHREAD_PROCESS_SHARED). On Linux
-	// it is also robust: a killed holder hands the lock to the next
-	// locker via EOWNERDEAD instead of wedging all producers.
-	mutable pthread_mutex_t reserve_lock;
+	// Process-shared reserve lock with zero-overhead CAS fast path and
+	// dead-holder recovery on the slow path.
+	mutable robust_shm_mutex reserve_lock;
 	// raw buffer
 	buf_vec_unique_ptr raw_buffer;
 
@@ -77,16 +76,8 @@ class ringbuf {
 	friend class ringbuf_map_impl;
 	~ringbuf();
 
-	// Test-only seam: hold the lock across a fork+SIGKILL so robust
-	// mutex recovery is exercised deterministically.
-	void lock_for_testing() const
-	{
-		pthread_mutex_lock(&reserve_lock);
-	}
-	void unlock_for_testing() const
-	{
-		pthread_mutex_unlock(&reserve_lock);
-	}
+	void lock_for_testing() const { (void)reserve_lock.lock_and_recover(); }
+	void unlock_for_testing() const { reserve_lock.unlock(); }
 };
 
 using ringbuf_shared_ptr = boost::interprocess::managed_shared_ptr<
