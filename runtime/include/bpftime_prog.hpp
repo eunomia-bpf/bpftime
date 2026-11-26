@@ -31,10 +31,6 @@ struct exec_context_info {
 };
 extern thread_local std::optional<exec_context_info>
 	current_thread_exec_ctx;
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
-std::optional<std::vector<char>> compile_ptx_to_elf(const std::string &ptx_code,
-						    const char *cpu_target);
-#endif
 // executable program for bpf function
 class bpftime_prog {
     public:
@@ -74,15 +70,6 @@ class bpftime_prog {
 	{
 		return name.starts_with("cuda__");
 	}
-	const void *get_cuda_elf_binary() const
-	{
-		return cuda_elf_binary->data();
-	}
-
-	const std::string &get_ptx_code() const
-	{
-		return *ptx_code;
-	}
 #else
 	bool is_cuda() const
 	{
@@ -114,13 +101,6 @@ class bpftime_prog {
 
 	// ufunc ctx
 	struct bpftime_ufunc_ctx *ufunc_ctx;
-
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
-	// ptx code
-	std::optional<std::string> ptx_code;
-	// cuda binary
-	std::optional<std::vector<char>> cuda_elf_binary;
-#endif
 };
 
 } // namespace bpftime

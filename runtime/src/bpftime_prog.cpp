@@ -12,9 +12,6 @@
 #include "bpftime_vm_compat.hpp"
 #include "platform_utils.hpp"
 #include "ebpf-vm.h"
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
-#include "nvPTXCompiler.h"
-#endif
 #include <cstring>
 #include <cstdlib>
 #include <cstdint>
@@ -59,16 +56,6 @@ ubpf_x86_jit_unsafe_fetch_into_r0(const struct ebpf_inst *insn, size_t cnt)
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <cstdio>
-
-#define NVPTXCOMPILER_SAFE_CALL(x)                                             \
-	do {                                                                   \
-		nvPTXCompileResult result = x;                                 \
-		if (result != NVPTXCOMPILE_SUCCESS) {                          \
-			SPDLOG_ERROR("error: {} failed with error code {}",    \
-				     #x, (int)result);                         \
-			return {};                                             \
-		}                                                              \
-	} while (0)
 
 using namespace std;
 namespace bpftime
@@ -169,70 +156,6 @@ class bpf_cpu_execution_guard {
 
 } // namespace
 
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
-std::optional<std::vector<char>> compile_ptx_to_elf(const std::string &ptx_code,
-						    const char *cpu_target)
-{
-	unsigned int minor_version, major_version;
-	NVPTXCOMPILER_SAFE_CALL(
-		nvPTXCompilerGetVersion(&major_version, &minor_version));
-	SPDLOG_INFO("ptx compiler version: {}.{}", major_version,
-		    minor_version);
-	SPDLOG_DEBUG("Starting compiling with ptx code: \n{}", ptx_code);
-	nvPTXCompilerHandle handle = nullptr;
-	NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerCreate(
-		&handle, (size_t)ptx_code.size(), ptx_code.c_str()));
-	const auto deleter = [](struct nvPTXCompiler *ptr) {
-		if (auto err = nvPTXCompilerDestroy(&ptr);
-		    err != NVPTXCOMPILE_SUCCESS) {
-			SPDLOG_ERROR("Unable to destroy compiler: {}",
-				     (int)err);
-		}
-	};
-	std::unique_ptr<struct nvPTXCompiler, decltype(deleter)> compiler(
-		handle, deleter);
-	std::string opt1 = "--gpu-name=";
-	opt1 += cpu_target;
-	const char *compile_options[] = { opt1.c_str(), "--verbose" };
-
-	if (auto result = nvPTXCompilerCompile(compiler.get(),
-					       std::size(compile_options),
-					       compile_options);
-	    result != NVPTXCOMPILE_SUCCESS) {
-		size_t sz;
-		NVPTXCOMPILER_SAFE_CALL(
-			nvPTXCompilerGetErrorLogSize(compiler.get(), &sz));
-		std::string error(sz, 0);
-		if (sz != 0) {
-			NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerGetErrorLog(
-				compiler.get(), (char *)error.c_str()));
-			SPDLOG_ERROR("Unable to compile ptx: {}", error);
-			return {};
-		}
-	}
-	size_t elf_size;
-	NVPTXCOMPILER_SAFE_CALL(
-		nvPTXCompilerGetCompiledProgramSize(compiler.get(), &elf_size));
-	std::vector<char> elf_binary(elf_size, 0);
-	NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerGetCompiledProgram(
-		compiler.get(), (void *)elf_binary.data()));
-
-	{
-		size_t info_size;
-
-		NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerGetInfoLogSize(
-			compiler.get(), &info_size));
-		std::string info(info_size, 0);
-		if (info_size != 0) {
-			NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerGetInfoLog(
-				compiler.get(), (char *)info.c_str()));
-			SPDLOG_INFO("Compiler log: {}", info);
-		}
-	}
-
-	return elf_binary;
-}
-#endif
 thread_local std::optional<uint64_t> current_thread_bpf_cookie;
 thread_local std::optional<uint64_t> current_thread_tail_call_ret;
 thread_local std::optional<exec_context_info> current_thread_exec_ctx;
