@@ -11,7 +11,7 @@
 #include <chrono> // For std::chrono::milliseconds
 #include <cstring> // For strcmp, strerror
 #include <cerrno> // For errno, ENOENT, E2BIG, EINVAL, ENOTSUP
-#include <pthread.h> // For pthread_spinlock_t
+#include <mutex>
 
 // Define a helper structure for testing
 struct TestValue {
@@ -313,8 +313,7 @@ TEST_CASE("Stack Map Conceptual Concurrency Test", "[stack_map][concurrency]")
 		SHARED_MEMORY_SIZE_CONC);
 
 	bpftime::stack_map_impl *s_map_conc = nullptr;
-	pthread_spinlock_t map_lock; // Add spinlock for thread safety
-	pthread_spin_init(&map_lock, 0);
+	std::mutex map_lock;
 
 	try {
 		s_map_conc = shm.construct<bpftime::stack_map_impl>(
@@ -334,10 +333,9 @@ TEST_CASE("Stack Map Conceptual Concurrency Test", "[stack_map][concurrency]")
 			int val_to_push = thread_id * 1000 + i;
 			// Using BPF_EXIST to avoid simple gridlock on full
 			{
-				pthread_spin_lock(&map_lock);
+				std::lock_guard<std::mutex> guard(map_lock);
 				s_map_conc->map_push_elem(&val_to_push,
 							  BPF_EXIST);
-				pthread_spin_unlock(&map_lock);
 			}
 
 			// Brief sleep to increase chance of thread interleaving
@@ -348,9 +346,8 @@ TEST_CASE("Stack Map Conceptual Concurrency Test", "[stack_map][concurrency]")
 			// Try to pop, ignore ENOENT as other threads might
 			// empty it
 			{
-				pthread_spin_lock(&map_lock);
+				std::lock_guard<std::mutex> guard(map_lock);
 				s_map_conc->map_pop_elem(&popped_val);
-				pthread_spin_unlock(&map_lock);
 			}
 		}
 	};
@@ -369,9 +366,11 @@ TEST_CASE("Stack Map Conceptual Concurrency Test", "[stack_map][concurrency]")
 	int final_pop_val;
 	int pop_count = 0;
 	while (true) {
-		pthread_spin_lock(&map_lock);
-		int result = s_map_conc->map_pop_elem(&final_pop_val);
-		pthread_spin_unlock(&map_lock);
+		int result;
+		{
+			std::lock_guard<std::mutex> guard(map_lock);
+			result = s_map_conc->map_pop_elem(&final_pop_val);
+		}
 		if (result == 0) {
 			pop_count++;
 		} else {
@@ -381,18 +380,15 @@ TEST_CASE("Stack Map Conceptual Concurrency Test", "[stack_map][concurrency]")
 	INFO("Final pop count from concurrent stack: " << pop_count);
 
 	{
-		pthread_spin_lock(&map_lock);
+		std::lock_guard<std::mutex> guard(map_lock);
 		errno = 0;
 		REQUIRE(s_map_conc->map_pop_elem(&final_pop_val) == -1);
 		REQUIRE(errno == ENOENT); // Must be empty eventually
-		pthread_spin_unlock(&map_lock);
 	}
 
 	if (s_map_conc) {
 		shm.destroy_ptr(s_map_conc);
 	}
-
-	pthread_spin_destroy(&map_lock);
 }
 
 // Kernel-style tests using bpftime internal API

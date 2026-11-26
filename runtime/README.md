@@ -383,15 +383,6 @@ they cannot preprocessor-collide with the members of the project's own
 constant, mirror it in the shim with the same numeric value and keep the two in
 sync; a missing constant is a compile error on macOS, not a silent divergence.
 
-### Spinlocks
-
-Darwin libpthread does not provide `pthread_spinlock_t`. Code that needs a
-spinlock includes `runtime/include/spinlock_wrapper.hpp`, which supplies a
-`Spinlock`-backed `pthread_spinlock_t` on platforms without
-`_POSIX_SPIN_LOCKS` and forwards to the real pthread spinlock elsewhere.
-Headers that reference `pthread_spinlock_t` must include this wrapper
-directly rather than relying on transitive inclusion.
-
 ### Type strictness differences (libc++ vs libstdc++)
 
 arm64 macOS uses libc++, which rejects `std::min`/`std::max` calls whose
