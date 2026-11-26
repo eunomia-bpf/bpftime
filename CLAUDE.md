@@ -273,27 +273,13 @@ same pull request.
 
 ## Maintainer decisions
 
-Design questions the maintainers have settled, newest first, each with its date
-and the pull requests it came from. Authors and reviewers check every pull
-request against this list. A pull request that reverses an entry is a design
-problem until a maintainer decides again; that new decision is recorded here,
-with its date and pull request, before or in the change that relies on it.
-
-- **2026-11-26 (#927, #935): the `LD_PRELOAD` agent runs no background thread
-  and never blocks or waits.** The auto-refresh thread was removed for this
-  reason (#927), and startup waits and blocking locks moved out of the agent
-  into the external CLI (#935). Work that needs a thread or a wait belongs in
-  the CLI or the syscall server, never in the injected shim.
-- **2026-11-25 (#922, #923, #929): cross-process shared-memory locks are glibc
-  robust mutexes.** Use `pthread_mutex_t` with
-  `PTHREAD_PROCESS_SHARED | PTHREAD_MUTEX_ROBUST`, not a self-written spinlock
-  with liveness probes. The measured cost (about 13-15 ns more per uncontended
-  lock than a spinlock, 1.4-1.7x under contention) is accepted in exchange for
-  dead-holder recovery that the kernel's robust futex list guarantees, across
-  PID namespaces included. (#940 replaced this with an owner-token spinlock;
-  see #948.)
-- **2026-11-25 (#934): every pull request carries a benchmark and a
-  performance impact analysis** (see Development Workflow item 5).
+Design and process questions the maintainers have settled are recorded in
+[`DECISIONS.md`](DECISIONS.md), newest first, each with its date, its pull
+requests and the maintainer's words verbatim. **Read it before starting a
+change.** Authors and reviewers check every pull request against it. A pull
+request that reverses an entry is a design problem until a maintainer decides
+again, and that new decision is added to `DECISIONS.md` before or in the change
+that relies on it.
 
 ## Trap and RISC-V backend constraints
 
@@ -393,8 +379,7 @@ may cross the syscall-server / attach boundary.
 - **Alternative designs in reviews are options.** A review that suggests a
   different design writes it as an option for the maintainers to choose, not
   as a fix the author must make. Until a maintainer chooses it, it does not
-  block the pull request, and once chosen it is recorded under
-  "Maintainer decisions".
+  block the pull request, and once chosen it is recorded in `DECISIONS.md`.
 
 Before opening or updating a pull request, self-review against this checklist:
 
@@ -405,5 +390,5 @@ Before opening or updating a pull request, self-review against this checklist:
 3. Is there any over-testing (boilerplate, mocks, or duplicated coverage)?
 4. Can more than half of the diff be cut while still fixing the root cause?
 5. Are any new shared libraries or cross-process state strictly necessary?
-6. Does it reverse an entry under "Maintainer decisions", or add a new
+6. Does it reverse an entry in `DECISIONS.md`, or add a new
    mechanism without a linked issue or comment where a maintainer agreed?
