@@ -269,73 +269,95 @@ static void start_agent_ipc_server_once()
 					::close(cfd);
 					continue;
 				}
-				bpftime::set_ipc_socket_timeout(cfd, 1000);
-				std::string req;
-				char buf[4096];
-				for (;;) {
-					ssize_t n = ::recv(cfd, buf, sizeof(buf), 0);
-					if (n <= 0)
-						break;
-					req.append(buf, buf + n);
-					if (req.size() > (1 << 20))
-						break;
-				}
-				// Parse: "refresh <k=v;...>" or "detach" or "status".
-				auto trim = [](std::string &s) {
-					while (!s.empty() &&
-					       (s.back() == '\n' || s.back() == '\r' ||
-						s.back() == '\0'))
-						s.pop_back();
-				};
-				trim(req);
-				if (req.rfind("refresh ", 0) == 0) {
-					std::string arg = req.substr(strlen("refresh "));
-					int rc = refresh_attach_session(arg.c_str());
-					if (rc == 0) {
-						(void)::send(cfd, "ok\n", 3,
-							     MSG_NOSIGNAL);
-					} else {
-						std::string out =
-							"err refresh " +
-							std::to_string(rc) +
-							"\n";
+				try {
+					bpftime::set_ipc_socket_timeout(cfd, 1000);
+					std::string req;
+					char buf[4096];
+					for (;;) {
+						ssize_t n = ::recv(cfd, buf,
+								   sizeof(buf), 0);
+						if (n <= 0)
+							break;
+						req.append(buf, buf + n);
+						if (req.size() > (1 << 20))
+							break;
+					}
+					// Parse: "refresh <k=v;...>" or "detach" or "status".
+					auto trim = [](std::string &s) {
+						while (!s.empty() &&
+						       (s.back() == '\n' ||
+							s.back() == '\r' ||
+							s.back() == '\0'))
+							s.pop_back();
+					};
+					trim(req);
+					if (req.rfind("refresh ", 0) == 0) {
+						std::string arg = req.substr(
+							strlen("refresh "));
+						int rc = refresh_attach_session(
+							arg.c_str());
+						if (rc == 0) {
+							(void)::send(cfd, "ok\n",
+								     3,
+								     MSG_NOSIGNAL);
+						} else {
+							std::string out =
+								"err refresh " +
+								std::to_string(rc) +
+								"\n";
+							(void)::send(cfd,
+								     out.data(),
+								     out.size(),
+								     MSG_NOSIGNAL);
+						}
+					} else if (req == "detach") {
+						int rc = perform_detach();
+						if (rc == 0) {
+							(void)::send(cfd, "ok\n",
+								     3,
+								     MSG_NOSIGNAL);
+						} else {
+							std::string out =
+								"err detach " +
+								std::to_string(rc) +
+								"\n";
+							(void)::send(cfd,
+								     out.data(),
+								     out.size(),
+								     MSG_NOSIGNAL);
+						}
+					} else if (req == "status") {
+						uint64_t epoch =
+							shm_holder
+								.global_shared_memory
+								.read_stable_epoch_seq();
+						std::string out;
+						if (epoch ==
+						    BPFTIME_EPOCH_SEQ_MISSING) {
+							out = "epoch_seq=missing\n";
+						} else if (
+							epoch ==
+							BPFTIME_EPOCH_SEQ_UNSTABLE) {
+							out = "epoch_seq=unstable\n";
+						} else {
+							out = "epoch_seq=" +
+							      std::to_string(
+								      epoch) +
+							      "\n";
+						}
 						(void)::send(cfd, out.data(),
 							     out.size(),
 							     MSG_NOSIGNAL);
-					}
-				} else if (req == "detach") {
-					int rc = perform_detach();
-					if (rc == 0) {
-						(void)::send(cfd, "ok\n", 3,
-							     MSG_NOSIGNAL);
 					} else {
-						std::string out =
-							"err detach " +
-							std::to_string(rc) +
-							"\n";
-						(void)::send(cfd, out.data(),
-							     out.size(),
+						(void)::send(cfd, "unknown\n", 8,
 							     MSG_NOSIGNAL);
 					}
-				} else if (req == "status") {
-					uint64_t epoch =
-						shm_holder.global_shared_memory
-							.read_stable_epoch_seq();
-					std::string out;
-					if (epoch == BPFTIME_EPOCH_SEQ_MISSING) {
-						out = "epoch_seq=missing\n";
-					} else if (epoch ==
-						   BPFTIME_EPOCH_SEQ_UNSTABLE) {
-						out = "epoch_seq=unstable\n";
-					} else {
-						out = "epoch_seq=" +
-						      std::to_string(epoch) +
-						      "\n";
-					}
-					(void)::send(cfd, out.data(), out.size(),
+				} catch (...) {
+					// Never let an attach/IPC exception escape a
+					// std::thread in an LD_PRELOAD library and
+					// terminate the host process.
+					(void)::send(cfd, "err exception\n", 14,
 						     MSG_NOSIGNAL);
-				} else {
-					(void)::send(cfd, "unknown\n", 8, MSG_NOSIGNAL);
 				}
 				::close(cfd);
 			}
