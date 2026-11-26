@@ -68,19 +68,10 @@ class bpftime_driver {
 	int bpftime_uprobe_create_server(int server_pid, int fd, int target_pid,
 					 const char *name, uint64_t offset,
 					 bool retprobe, size_t ref_ctr_off);
-	// create tracepoint in the global shared memory
-	//
-	// @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then
-	// the function will allocate a new perf event fd.
-	int bpftime_tracepoint_create_server(int server_pid, int fd, int pid,
-					     int32_t tp_id);
 	// enable the perf event
 	int bpftime_perf_event_enable_server(int server_pid, int fd);
 	// disable the perf event
 	int bpftime_perf_event_disable_server(int server_pid, int fd);
-
-	// load the btf into kernel
-	int bpftime_btf_load_server(int server_pid, int fd);
 
 	void bpftime_close_server(int server_pid, int fd);
 

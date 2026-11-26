@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <functional>
 #if __linux__
+#include <linux/types.h>
 #include <sys/epoll.h>
 #elif __APPLE__
 #include "bpftime_epoll.h"
@@ -228,20 +229,24 @@ void bpftime_initialize_global_shm(bpftime::shm_open_type type);
 void bpftime_destroy_global_shm();
 // remove the global shared memory from system
 void bpftime_remove_global_shm();
+// true while the global SHM segment is constructed/mapped; backed by an
+// ordinary .bss flag, so it stays readable during process teardown after the
+// segment itself has been unmapped. Used to make atexit cleanup teardown-safe.
+bool bpftime_global_shm_is_initialized();
 
-// enable memory protect, e.g. mpk
-void bpftime_protect_enable();
-// disable memory protect
-void bpftime_protect_disable();
+// Cached byte offset of the thread-pointer slot in the synthetic
+// task_struct; fixed fallback when kernel BTF is unusable, -1 elsewhere.
+long bpftime_get_current_task_tpbase_offset() noexcept;
 
-// JSON operations require quiescent handler state (no concurrent readers or
-// writers). Import/load also require process-local map callback registration to
-// remain unchanged. The format stores definitions, not map values or live queues.
-// Import/load reject occupied descriptors and leave existing handlers unchanged
-// on failure. Export commits a regular-file replacement only after encoding and
-// writing succeed. These functions return 0 on success and -1 on failure; no
-// C++ exception crosses this API.
-// import the global shared memory from json file
+// Open the per-thread MPK write window; nested windows keep the outer open.
+// No-ops without MPK or before the global shm exists.
+int bpftime_protect_open_write_window();
+void bpftime_protect_restore(int saved);
+
+// JSON import/load restore definitions, not map values or live queue state.
+// The caller must quiesce the registry (no concurrent readers or writers).
+// Occupied descriptors are rejected. On an operation error, the preexisting
+// registry is unchanged; this is not crash recovery. Returns 0 or -1 (errno).
 int bpftime_import_global_shm_from_json(const char *filename);
 // export the global shared memory to json file
 int bpftime_export_global_shm_to_json(const char *filename);
@@ -345,10 +350,22 @@ long bpftime_map_update_elem(int fd, const void *key, const void *value,
 			     uint64_t flags);
 // use from bpf syscall to delete the elem
 long bpftime_map_delete_elem(int fd, const void *key);
+// Explicit-access-origin variants of the map element shims. from_syscall
+// must be true for an intercepted bpf() syscall (subject to the
+// BPF_F_RDONLY/BPF_F_WRONLY fd-mode checks) and false for a BPF program
+// helper request, including GPU program requests relayed through
+// cuda_shared_mem, which are not restricted by those fd flags.
+const void *bpftime_map_lookup_elem_with_origin(int fd, const void *key,
+						bool from_syscall);
+long bpftime_map_update_elem_with_origin(int fd, const void *key,
+					 const void *value, uint64_t flags,
+					 bool from_syscall);
+long bpftime_map_delete_elem_with_origin(int fd, const void *key,
+					 bool from_syscall);
 
-// use from bpf syscall to lookup and delete the elem (equivalent to pop for
-// queue/stack maps)
-long bpftime_map_lookup_and_delete_elem(int fd, void *value);
+// use from bpf syscall to look up and delete the elem: keyed for the hash
+// map types, keyless (a pop) for queue/stack maps
+long bpftime_map_lookup_and_delete_elem(int fd, const void *key, void *value);
 
 // Queue/stack map helper functions for push/pop/peek operations
 long bpftime_map_push_elem(int fd, const void *value, uint64_t flags);
@@ -396,6 +413,7 @@ int bpftime_add_software_perf_event_fd_to_epoll(int swpe_fd, int epoll_fd,
 						epoll_data_t extra_data);
 
 int bpftime_epoll_create();
+int bpftime_epoll_create_at(int fd);
 void *bpftime_get_ringbuf_consumer_page(int ringbuf_fd);
 void *bpftime_get_ringbuf_producer_page(int ringbuf_fd);
 
@@ -408,6 +426,7 @@ int bpftime_is_epoll_handler(int fd);
 int bpftime_is_perf_event_fd(int fd);
 int bpftime_is_prog_fd(int fd);
 int bpftime_is_map_fd(int fd);
+int bpftime_is_map_referenced_by_prog(int fd);
 int bpftime_is_prog_array(int fd);
 
 void *bpftime_get_array_map_raw_data(int fd);
@@ -416,11 +435,40 @@ void bpftime_close(int fd);
 
 void *bpftime_ringbuf_reserve(int fd, uint64_t size);
 void bpftime_ringbuf_submit(int fd, void *data, int discard);
+// Submit with BPF_RB_NO_WAKEUP / BPF_RB_FORCE_WAKEUP semantics. On Linux a
+// committed record additionally signals the ringbuf kernel eventfd so blocked
+// epoll_wait consumers wake from the kernel.
+void bpftime_ringbuf_submit_with_flags(int fd, void *data, int discard,
+				       uint64_t flags);
+#if defined(__linux__)
+// Kernel eventfd fd owned by the ringbuf creator process (valid only in that
+// process); other processes use bpftime_ringbuf_get_local_eventfd().
+int bpftime_ringbuf_creator_eventfd(int fd);
+// Pid of the process that created the ringbuf and owns its kernel eventfd.
+int bpftime_ringbuf_eventfd_owner_pid(int fd);
+#endif
 int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 		       int timeout);
+#if defined(__linux__)
+// Non-blocking scan of userspace-backed epoll sources (ringbuf / software
+// perf events), filling ready events exactly like a kernel poll.
+int bpftime_epoll_poll_userspace(int fd, struct epoll_event *out_evts,
+				 int max_evt);
+// Whether this epoll contains a software perf event source, which has no
+// kernel backing fd and therefore requires the legacy userspace polling loop.
+int bpftime_epoll_requires_userspace_polling(int fd);
+// Drain the kernel eventfds of empty ringbuf sources, with a post-drain
+// re-check. Returns 1 when a ringbuf already has data (the caller must not
+// block in the kernel epoll), 0 when blocking is race-free.
+int bpftime_epoll_prepare_kernel_block(int fd);
+// Remove every userspace entry registered with origin_fd.
+int bpftime_epoll_remove_origin(int epfd, int origin_fd);
+#endif
 
 int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 				    int64_t config);
+int bpftime_add_software_perf_event_at(int fd, int cpu, int32_t sample_type,
+				       int64_t config);
 int bpftime_is_software_perf_event(int fd);
 void *bpftime_get_software_perf_event_raw_buffer(int fd, size_t expected_size);
 int bpftime_perf_event_output(int fd, const void *buf, size_t sz);
@@ -438,8 +486,23 @@ int bpftime_poll_gpu_ringbuf_map(int mapfd, void *ctx,
 				 void (*)(const void *, uint64_t, void *));
 #endif
 int bpftime_add_memfd_handler(const char *name, int flags);
+int bpftime_add_memfd_handler_at_fd(int fd, const char *name, int flags);
 int bpftime_translate_shared_map_type_to_kernel_map_type(int ty);
 
 }
+
+namespace bpftime {
+class bpftime_shm;
+class shm_write_window_guard {
+	int saved_rights = -1;
+	bpftime_shm *instance = nullptr;
+    public:
+	shm_write_window_guard();
+	explicit shm_write_window_guard(bpftime_shm &shm);
+	~shm_write_window_guard();
+	shm_write_window_guard(const shm_write_window_guard &) = delete;
+	shm_write_window_guard &operator=(const shm_write_window_guard &) = delete;
+};
+} // namespace bpftime
 
 #endif // BPFTIME_SHM_CPP_H

@@ -3,8 +3,7 @@
 ## Run the probe
 
 ```sh
-sudo LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscal
-l-server.so example/sslsniff/sslsniff
+sudo LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so example/tracing/sslsniff/sslsniff
 ```
 
 ## run the example

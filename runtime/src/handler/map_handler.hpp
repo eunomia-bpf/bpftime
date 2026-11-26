@@ -10,14 +10,12 @@
 #include "bpf_map/userspace/ringbuf_map.hpp"
 #include "bpf_map/userspace/stack_trace_map.hpp"
 #include "bpftime_shm.hpp"
+#include "robust_shm_mutex.hpp"
 #include "spdlog/spdlog.h"
 #include <atomic>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/string.hpp>
 #include <boost/interprocess/smart_ptr/unique_ptr.hpp>
-#include <boost/interprocess/sync/interprocess_sharable_mutex.hpp>
-#include <boost/interprocess/sync/scoped_lock.hpp>
-#include <boost/interprocess/sync/sharable_lock.hpp>
 #include <optional>
 #include <unistd.h>
 #include <bpf_map/shared/perf_event_array_kernel_user.hpp>
@@ -30,19 +28,12 @@
 #endif
 namespace bpftime
 {
-// Process-local callbacks. Registration must be quiescent during JSON import.
-extern bpftime_map_ops global_map_ops_table[static_cast<int>(bpf_map_type::BPF_MAP_TYPE_MAX)];
-
 using char_allocator = boost::interprocess::allocator<
 	char, boost::interprocess::managed_shared_memory::segment_manager>;
 
 using boost_shm_string =
 	boost::interprocess::basic_string<char, std::char_traits<char>,
 					  char_allocator>;
-
-using sharable_mutex_ptr = boost::interprocess::managed_unique_ptr<
-	boost::interprocess::interprocess_sharable_mutex,
-	boost::interprocess::managed_shared_memory>::type;
 
 // lock guad for RAII
 class bpftime_lock_guard {
@@ -95,7 +86,6 @@ class bpf_map_handler {
 
 	{
 		SPDLOG_DEBUG("Create map with type {}", type);
-		pthread_spin_init(&map_lock, 0);
 		this->id = id;
 		this->name = name;
 	}
@@ -108,7 +98,6 @@ class bpf_map_handler {
 		  max_entries(other.max_entries), flags(other.flags),
 		  key_size(other.key_size), value_size(other.value_size)
 	{
-		pthread_spin_init(&map_lock, 0);
 		other.map_impl_ptr = nullptr;
 		other.map_refcnt_ptr = nullptr;
 	}
@@ -121,7 +110,6 @@ class bpf_map_handler {
 		type = other.type;
 		name = std::move(other.name);
 		id = other.id;
-		pthread_spin_init(&map_lock, 0);
 		map_impl_ptr = other.map_impl_ptr;
 		map_refcnt_ptr = other.map_refcnt_ptr;
 		max_entries = other.max_entries;
@@ -238,7 +226,7 @@ class bpf_map_handler {
 
 	std::optional<stack_trace_map_impl *>
 	try_get_stack_trace_map_impl() const;
-	pthread_spinlock_t &get_raw_spin_lock() const
+	robust_shm_mutex &get_map_lock() const
 	{
 		return map_lock;
 	}
@@ -269,6 +257,11 @@ class bpf_map_handler {
 			   bool from_syscall = false) const;
 
 	long map_pop_elem(void *value, bool from_syscall = false) const;
+	// BPF_MAP_LOOKUP_AND_DELETE_ELEM: keyed for the hash/LRU/stack-trace
+	// backends, keyless pop for queue/stack, matching the kernel's map-type
+	// dispatch in kernel/bpf/syscall.c:map_lookup_and_delete_elem.
+	long map_lookup_and_delete_elem(const void *key, void *value,
+					 bool from_syscall = false) const;
 
 	long map_peek_elem(void *value, bool from_syscall = false) const;
 
@@ -278,7 +271,7 @@ class bpf_map_handler {
 #endif
     private:
 	int id = 0;
-	mutable pthread_spinlock_t map_lock;
+	mutable robust_shm_mutex map_lock;
 	// The underlying data structure of the map
 	mutable general_map_impl_ptr map_impl_ptr;
 	mutable map_refcount_ptr map_refcnt_ptr = nullptr;

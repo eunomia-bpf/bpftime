@@ -71,6 +71,10 @@ std::optional<std::string> check_probe_target(const void *func_addr);
 uint64_t split_write_count();
 // Skipped probe hits when all preallocated thread slots were occupied.
 uint64_t thread_slot_exhaustion_count();
+// Number of probe/BPF callbacks that threw while running on the SIGTRAP
+// handler frame. Exceptions are contained (never unwind through the signal
+// frame); this makes those otherwise-silent failures observable.
+uint64_t trap_callback_exception_count();
 
 class trap_attach_impl final : public base_attach_impl {
     public:

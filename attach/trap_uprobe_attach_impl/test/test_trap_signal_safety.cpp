@@ -5,6 +5,13 @@
 #include <cstdlib>
 #include <thread>
 #include <vector>
+#include <stdexcept>
+
+extern "C" TRAP_TEST_TARGET int __trap_throw_target(int x)
+{
+	asm("");
+	return x + 1;
+}
 
 using namespace bpftime;
 using namespace bpftime::attach::trap;
@@ -105,4 +112,38 @@ TEST_CASE("Trap backend: new threads get uret stacks without deadlock")
 
 	REQUIRE(hits.load() == 160 * 8 * 2 * 2);
 	REQUIRE(thread_slot_exhaustion_count() == exhausted_before);
+}
+
+TEST_CASE("Trap backend: a throwing probe callback is contained and counted")
+{
+	trap_attach_impl man;
+	const uint64_t before = trap_callback_exception_count();
+
+	REQUIRE(man.create_uprobe_at(
+			(void *)&__trap_throw_target,
+			[](const pt_regs &) {
+				throw std::runtime_error("probe boom");
+			}) >= 0);
+
+	// The SIGTRAP handler must contain the exception, keep the process
+	// alive, and resume the probed function normally.
+	REQUIRE(__trap_throw_target(41) == 42);
+	REQUIRE(trap_callback_exception_count() == before + 1);
+}
+
+TEST_CASE("Trap backend: a normal probe callback does not count an exception")
+{
+	trap_attach_impl man;
+	const uint64_t before = trap_callback_exception_count();
+	std::atomic<int> hits{ 0 };
+
+	REQUIRE(man.create_uprobe_at((void *)&__trap_throw_target,
+				      [&](const pt_regs &) {
+					      hits.fetch_add(
+						      1, std::memory_order_relaxed);
+				      }) >= 0);
+
+	REQUIRE(__trap_throw_target(7) == 8);
+	REQUIRE(hits.load() == 1);
+	REQUIRE(trap_callback_exception_count() == before);
 }

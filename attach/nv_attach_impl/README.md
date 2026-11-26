@@ -163,7 +163,6 @@ These macros are automatically set by CMake when the corresponding option is ena
 | `BPFTIME_ENABLE_CUDA_ATTACH` | `-DBPFTIME_ENABLE_CUDA_ATTACH=ON` | Guards all CUDA-specific code in the runtime, agent, syscall-server, daemon, and tools. |
 | `BPFTIME_ENABLE_GDRCOPY` | `-DBPFTIME_ENABLE_GDRCOPY=ON` | Guards GDRCopy acceleration code paths in `runtime/src/bpf_map/gpu/nv_gpu_gdrcopy.cpp`. |
 | `BPFTIME_HAVE_GDRAPI_H` | Auto-detected (presence of `<gdrapi.h>`) | Set automatically when the GDRCopy header is found during compilation. Enables native `gdr_t`/`gdr_mh_t` type usage instead of the bundled stub declarations. |
-| `BPFTIME_ENABLE_ROCM_ATTACH` | _(future/in-development)_ | Guards ROCm/HIP attachment code paths. Not yet wired to a CMake option; present for forward compatibility. |
 
 ---
 
@@ -189,6 +188,7 @@ These variables are read at process startup (no rebuild required).
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `BPFTIME_PTXPASS_LIBRARIES` | _(bundled default paths)_ | Colon-separated list of PTX-pass shared library (`.so`) paths. When set, overrides the default bundled pass executables. Example: `BPFTIME_PTXPASS_LIBRARIES=/path/to/libptxpass_kprobe.so:/path/to/libptxpass_kretprobe.so`. |
+| `BPFTIME_PTX_COMPILER_LIB` | _(bundled default path)_ | Path to the PTX compiler shared library (`libnv_attach_impl_ptx_compiler.so`). When set to a non-empty value, it fully overrides the default bundled path; unset or empty keeps the default. Use it together with `BPFTIME_PTXPASS_LIBRARIES` when the build-time absolute paths are not valid at runtime (for example, relocated or containerized deployments). |
 
 #### Internal Variables (for reference only)
 

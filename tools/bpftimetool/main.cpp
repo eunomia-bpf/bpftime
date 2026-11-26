@@ -136,7 +136,7 @@ int bpftime_run_ebpf_program(int id, const std::string &data_in_file,
 }
 
 // Main program
-static int run_command(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
 	// Resolve the log destination before anything else logs: until this
 	// runs, SPDLOG_* goes to spdlog's default logger, which writes to
@@ -198,6 +198,7 @@ static int run_command(int argc, char *argv[])
 	} else if (args.program.is_subcommand_used(args.import_cmd)) {
 		bpftime_initialize_global_shm(
 			shm_open_type::SHM_CREATE_OR_OPEN);
+		// Opening an existing segment must not replace its runtime config.
 		auto filename = args.import_cmd.get<std::string>("filename");
 		return bpftime_import_global_shm_from_json(filename.c_str());
 	} else if (args.program.is_subcommand_used(args.remove)) {
@@ -282,17 +283,4 @@ static int run_command(int argc, char *argv[])
 	}
 #endif
 	return EXIT_SUCCESS;
-}
-
-int main(int argc, char *argv[])
-{
-	try {
-		return run_command(argc, argv);
-	} catch (const std::exception &error) {
-		cerr << "Error: " << error.what() << endl;
-		return 1;
-	} catch (...) {
-		cerr << "Error: command execution failed" << endl;
-		return 1;
-	}
 }

@@ -1,0 +1,89 @@
+name: Pick runner
+
+# Picks where a workflow's Linux jobs run: the organization's runners (by
+# default the x64 VM runners, [self-hosted, linux, x64, vm]) when they have
+# room for all of this workflow's jobs now, GitHub's runners otherwise. Room
+# is the runners' slots minus the jobs already running or waiting for them in
+# the newest runs, so a workflow never queues behind a full set of
+# organization runners, and a down cluster, whose jobs keep waiting, sends
+# later runs to GitHub. A fork or any API error also picks GitHub. The
+# repository or organization variable BPFTIME_LINUX_RUNNER, a JSON list of
+# runner labels, overrides the choice for the x64 jobs.
+
+on:
+  workflow_call:
+    inputs:
+      hosted:
+        description: GitHub-hosted runner label used when GitHub is picked
+        type: string
+        required: true
+      jobs:
+        description: Number of jobs this workflow sends to the picked runners
+        type: number
+        required: true
+      local:
+        description: JSON list of the organization runners' labels
+        type: string
+        default: '["self-hosted","linux","x64","vm"]'
+      local-slots:
+        description: Jobs the organization's runners with those labels run at once
+        type: number
+        default: 4
+    outputs:
+      runner:
+        description: JSON value for runs-on
+        value: ${{ jobs.pick.outputs.runner }}
+
+jobs:
+  pick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      runner: ${{ steps.pick.outputs.runner }}
+    steps:
+      - id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HOSTED: ${{ inputs.hosted }}
+          JOBS: ${{ inputs.jobs }}
+          # The override applies to the x64 VM runners' jobs only.
+          FORCED: ${{ inputs.local == '["self-hosted","linux","x64","vm"]' && vars.BPFTIME_LINUX_RUNNER || '' }}
+          LOCAL: ${{ inputs.local }}
+          SLOTS: ${{ inputs.local-slots }}
+        run: |
+          set -u
+          hosted=$(jq -cn --arg l "$HOSTED" '$l')
+          local_labels=$(jq -c . <<<"$LOCAL")
+          pick() { echo "runner=$1" >> "$GITHUB_OUTPUT"; echo "::notice title=Runner::$2"; exit 0; }
+          [ -n "$FORCED" ] && pick "$FORCED" "BPFTIME_LINUX_RUNNER picks $FORCED"
+          [ "$GITHUB_REPOSITORY" = eunomia-bpf/bpftime ] || pick "$hosted" "GitHub: the organization runners serve eunomia-bpf/bpftime only"
+          # A job waiting for the organization runners belongs to a run that
+          # has not completed, and that run's own status is often still
+          # "queued": its picker job finished while its other jobs wait. Both
+          # statuses must be listed, or those waiting jobs are invisible and a
+          # full set of runners looks idle. Newest runs first, stopping as
+          # soon as the runners are known to be full.
+          limit=$((SLOTS - JOBS + 1))
+          busy=0
+          for status in in_progress queued; do
+            for page in 1 2 3; do
+              runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?status=$status&per_page=100&page=$page" \
+                --jq '.workflow_runs[].id') ||
+                pick "$hosted" "GitHub: the Actions API did not answer"
+              [ -n "$runs" ] || break
+              for id in $runs; do
+                # A job is the organization runners' when it carries all their labels.
+                n=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?filter=latest&per_page=100" --jq '
+                  [.jobs[] | select(.status != "completed") |
+                   select(.labels as $l | '"$local_labels"' | all(. as $x | $l | index($x)))] | length') ||
+                  pick "$hosted" "GitHub: the Actions API did not answer"
+                busy=$((busy + n))
+                [ "$busy" -lt "$limit" ] || break 3
+              done
+            done
+          done
+          load="organization runners $busy of $SLOTS slots running or waiting; this workflow $JOBS jobs"
+          [ $((busy + JOBS)) -le "$SLOTS" ] && pick "$local_labels" "Organization runners: $load"
+          pick "$hosted" "GitHub: $load"

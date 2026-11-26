@@ -60,8 +60,6 @@ enum class AttachedToFunction {
 	RegisterFunction,
 	RegisterVariable,
 	RegisterFatbinEnd,
-	CudaMalloc,
-	CudaMallocManaged,
 	CudaMemcpyToSymbol,
 	CudaMemcpyToSymbolAsync
 };
@@ -79,8 +77,6 @@ struct nv_attach_entry {
 	// pass-based execution fields
 	std::map<std::string, std::string> parameters; // arbitrary parameters
 						       // for pass
-	// Extra serialized parameters (JSON string) reserved for future use
-	std::optional<std::string> extras;
 	struct pass_cfg_with_exec_path *config;
 };
 
@@ -148,10 +144,6 @@ class nv_attach_impl final : public base_attach_impl {
 	int create_attach_with_ebpf_callback(
 		ebpf_run_callback &&cb, const attach_private_data &private_data,
 		int attach_type) override;
-	// Register CUDA-specific ext helpers required by LLVM-JIT to resolve
-	// symbols like _bpf_helper_ext_0502/_0503 when compiling programs
-	void register_custom_helpers(
-		ebpf_helper_register_callback register_callback) override;
 	nv_attach_impl(const nv_attach_impl &) = delete;
 	nv_attach_impl &operator=(const nv_attach_impl &) = delete;
 	nv_attach_impl();
@@ -164,10 +156,6 @@ class nv_attach_impl final : public base_attach_impl {
 					  size_t count, size_t offset,
 					  cudaMemcpyKind kind,
 					  cudaStream_t stream, bool async);
-	void mirror_cuda_memcpy_from_symbol(void *dst, const void *symbol,
-					    size_t count, size_t offset,
-					    cudaMemcpyKind kind,
-					    cudaStream_t stream, bool async);
 
 	int find_attach_entry_by_program_name(const char *name) const;
 	int run_attach_entry_on_gpu(int attach_id, int run_count = 1,
@@ -254,15 +242,12 @@ class nv_attach_impl final : public base_attach_impl {
 	std::unordered_map<CUfunction, std::string> kernel_name_by_cufunction;
 
 			std::atomic<bool> enabled{ true };
-			// Late bootstrap needs to be repeatable across trace sessions.
-			// Using a heap-allocated once_flag allows resetting it after detach.
-			std::unique_ptr<std::once_flag> late_bootstrap_once =
-				std::make_unique<std::once_flag>();
+			// Late bootstrap is repeatable across trace sessions:
+			// late_bootstrap_mutex and late_bootstrap_done guard re-runs.
 			std::atomic<bool> late_bootstrap_started{ false };
 			std::atomic<bool> late_bootstrap_done{ false };
 			std::mutex late_bootstrap_mutex;
 			std::once_flag host_symbol_cache_once;
-			mutable std::mutex host_symbol_cache_mutex;
 	// Absolute address sorted list of host function symbols across loaded
 	// modules (best-effort).
 	struct host_symbol_range {

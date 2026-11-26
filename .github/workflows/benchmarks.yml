@@ -6,6 +6,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/benchmarks.yml"
+      - ".github/actions/ccache/**"
       - "benchmark/**"
       - "attach/**"
       - "example/attach_implementation/**"
@@ -21,6 +22,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/benchmarks.yml"
+      - ".github/actions/ccache/**"
       - "benchmark/**"
       - "attach/**"
       - "example/attach_implementation/**"
@@ -33,11 +35,14 @@ on:
       - "Makefile"
       - ".gitmodules"
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages,
+# reading the master baseline artifact and commenting results on PRs
 permissions:
   contents: read
   pages: write
   id-token: write
+  actions: read
+  pull-requests: write
 
 # Allow only one concurrent deployment for the pages part
 concurrency:
@@ -54,6 +59,10 @@ jobs:
       - uses: actions/checkout@v3
         with:
           submodules: "recursive"
+      - name: Enable ccache
+        uses: ./.github/actions/ccache
+        with:
+          variant: benchmarks
 
       - name: install deps
         run: |
@@ -76,8 +85,8 @@ jobs:
       - name: verify llvm-17 installation
         run: llvm-config-17 --version
 
-      - name: clear cmake cache
-        run: rm -rf build
+      # No build tree to clear: every run starts from a fresh checkout, and
+      # deleting build trees defeats the ccache/object reuse policy.
 
       - name: build benchmarks
         run: make benchmark
@@ -88,9 +97,83 @@ jobs:
           python3 benchmark/uprobe/benchmark.py --iter 3
           # run remove to avoid conflict with the previous run
           sudo build/tools/bpftimetool/bpftimetool remove
-          python3 benchmark/syscall/benchmark.py
+          # syscall/benchmark.py exits early unless it runs as root
+          sudo python3 benchmark/syscall/benchmark.py
           sudo build/tools/bpftimetool/bpftimetool remove
           python3 benchmark/mpk/benchmark.py --iter 3
+
+      # The run id, commit and creation time are passed to the summary so an
+      # aged baseline artifact is visible in the table.
+      - name: fetch master baseline
+        id: baseline
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run=$(gh run list --repo "$GITHUB_REPOSITORY" \
+            --workflow benchmarks.yml --branch master --event push \
+            --status success --limit 1 \
+            --json databaseId,headSha,createdAt \
+            --jq '.[0] | select(.) | "\(.databaseId) \(.headSha) \(.createdAt)"')
+          if [ -n "$run" ]; then
+            read -r run_id run_sha run_created <<< "$run"
+            gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+              -n benchmark-summary -D "$RUNNER_TEMP/baseline"
+            {
+              echo "run_id=$run_id"
+              echo "sha=$run_sha"
+              echo "created=$run_created"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: summarize benchmark results
+        env:
+          BASELINE_RUN: ${{ steps.baseline.outputs.run_id }}
+          BASELINE_SHA: ${{ steps.baseline.outputs.sha }}
+          BASELINE_CREATED: ${{ steps.baseline.outputs.created }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/summary"
+          python3 benchmark/ci_summary.py \
+            --baseline "$RUNNER_TEMP/baseline/benchmark-summary.json" \
+            --baseline-run "$BASELINE_RUN" \
+            --baseline-sha "$BASELINE_SHA" \
+            --baseline-created "$BASELINE_CREATED" \
+            --commit "$COMMIT_SHA" \
+            --output-json "$RUNNER_TEMP/summary/benchmark-summary.json" \
+            --output-md "$RUNNER_TEMP/summary/benchmark-summary.md"
+          cat "$RUNNER_TEMP/summary/benchmark-summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: upload benchmark summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-summary
+          path: ${{ runner.temp }}/summary/benchmark-summary.json
+
+      # Fork pull requests get a read-only token, so only comment on
+      # same-repository pull requests. The comment is keyed on a hidden
+      # marker and edited in place on every push instead of duplicated.
+      - name: comment benchmark summary on pull request
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          body="$RUNNER_TEMP/summary/benchmark-summary.md"
+          marker='<!-- bpftime-benchmark-summary -->'
+          comment_id=$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | contains(\"$marker\"))) | .id" \
+            | head -n1)
+          if [ -n "$comment_id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" \
+              -F body=@"$body"
+          else
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+              -F body=@"$body"
+          fi
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

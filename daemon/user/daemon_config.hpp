@@ -18,8 +18,6 @@
 struct daemon_config {
 	// the target pid of eBPF application to trace
 	pid_t pid = 0;
-	// the target uid of eBPF application to trace
-	uid_t uid = 0;
 	// print verbose debug output
 	bool verbose = false;
 	// print open syscalls (default: false)
@@ -30,12 +28,6 @@ struct daemon_config {
 	// enable replace uprobe to make kernel uprobe not break user space
 	// uprobe
 	bool enable_replace_uprobe = true;
-	// use the new uprobe path to replace the old one in original syscall
-	char new_uprobe_path[PATH_LENTH] = "\0";
-	// bpftime cli path for bpftime daemon to create prog and link, maps
-	std::string bpftime_cli_path = "~/.bpftime/bpftime";
-	// bpftime tool path for bpftime daemon to run bpftime
-	std::string bpftime_tool_path = "~/.bpftime/bpftimetool";
 	// should bpftime be involve
 	bool is_driving_bpftime = true;
 	// should trace and submit bpf related detail events

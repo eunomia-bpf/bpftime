@@ -11,9 +11,6 @@
 #include <handler/handler_manager.hpp>
 #include <variant>
 #include <algorithm>
-#if __APPLE__
-#include "spinlock_wrapper.hpp"
-#endif
 namespace bpftime
 {
 handler_manager::handler_manager(managed_shared_memory &mem,
@@ -63,6 +60,7 @@ int handler_manager::set_handler_at_empty_slot(handler_variant &&handler,
 int handler_manager::set_handler(int fd, handler_variant &&handler,
 				 managed_shared_memory &memory)
 {
+	shm_write_window_guard shm_window;
 	if (fd < 0 || (std::size_t)fd >= handlers.size()) {
 		SPDLOG_ERROR("set_handler: fd {} out of range [0, {})", fd, handlers.size());
 		return -ENOSPC;
@@ -81,7 +79,17 @@ int handler_manager::set_handler(int fd, handler_variant &&handler,
 	if (std::holds_alternative<bpf_map_handler>(handlers[fd])) {
 		auto &map_handler = std::get<bpf_map_handler>(handlers[fd]);
 		if (!map_handler.has_map_impl()) {
-			map_handler.map_init(memory);
+			int init_rc = map_handler.map_init(memory);
+			if (init_rc != 0) {
+				// map_init rejected the configuration (e.g. bad
+				// map-in-map value_size). Roll back the slot so the
+				// failed fd is not left as an empty handler that later
+				// lookups would dereference.
+				SPDLOG_ERROR("map_init failed for fd {}: {}", fd,
+					     init_rc);
+				clear_id_at(fd, memory);
+				return init_rc;
+			}
 		}
 	}
 	return fd;
@@ -134,6 +142,7 @@ bool handler_manager::is_allocated(int fd) const
 
 void handler_manager::clear_id_at(int fd, managed_shared_memory &memory)
 {
+	shm_write_window_guard shm_window;
 	if (fd < 0 || (std::size_t)fd >= handlers.size()) {
 		return;
 	}
@@ -196,6 +205,7 @@ int handler_manager::find_minimal_unused_idx() const
 
 void handler_manager::clear_all(managed_shared_memory &memory)
 {
+	shm_write_window_guard shm_window;
 	for (std::size_t i = 0; i < handlers.size(); i++) {
 		if (is_allocated(i)) {
 			clear_id_at(i, memory);

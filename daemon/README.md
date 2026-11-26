@@ -64,7 +64,6 @@ Usage: bpftime_daemon [OPTION...]
 Trace and modify bpf syscalls
 
   -p, --pid=PID              Process ID to trace
-  -u, --uid=UID              User ID to trace  
   -o, --open                 Show open events
   -v, --verbose              Verbose debug output
   -w, --whitelist-uprobe=ADDR
@@ -128,9 +127,6 @@ sudo bpftime_daemon -p 12345
 
 # Only redirect whitelisted uprobe addresses to userspace
 sudo bpftime_daemon -w 0x401234 -w 0x401567
-
-# Trace specific user's processes
-sudo bpftime_daemon -u 1000
 ```
 
 ### Integration with bpftime
@@ -155,7 +151,7 @@ The daemon automatically integrates with bpftime runtime:
 ### Security Considerations
 
 - Requires root privileges to load kernel eBPF programs
-- Can filter by PID/UID to limit scope
+- Can filter by PID to limit scope
 - Whitelist mode restricts which uprobes run in userspace
 - Prevents tracing of the daemon itself to avoid recursion
 

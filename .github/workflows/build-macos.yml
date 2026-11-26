@@ -1,0 +1,87 @@
+name: Build on macOS
+
+# Rootless syscall tracing / seccomp / libbpf-backed features are Linux-only
+# and are guarded by __linux__. This workflow builds and actually runs the
+# cross-platform core on Darwin (Apple Silicon): the runtime, the
+# runtime_library and macos uprobe examples in interpreter and uBPF-JIT
+# modes, bpftimetool and the Frida-gum uprobe attach test suite. A
+# compile-only gate cannot catch Darwin runtime defects such as the
+# non-existent hw.cpulocation sysctl.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, "ci/**"]
+    paths:
+      - ".github/workflows/build-macos.yml"
+      - "runtime/**"
+      - "attach/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "compat/**"
+      - "example/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
+  pull_request:
+    branches: [master]
+    paths:
+      - ".github/workflows/build-macos.yml"
+      - "runtime/**"
+      - "attach/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "compat/**"
+      - "example/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
+
+concurrency:
+  group: build-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+# The job only checks out, builds and runs tests; nothing here needs to write
+# to the repository or to the API.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout repository (with nested submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: brew install cmake ninja boost
+
+      - name: Configure (Darwin, uBPF JIT + Frida, no libbpf/LLVM/CUDA/verifier)
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBPFTIME_BUILD_WITH_LIBBPF=OFF \
+            -DBPFTIME_LLVM_JIT=OFF \
+            -DBPFTIME_UBPF_JIT=ON \
+            -DBUILD_BPFTIME_DAEMON=OFF \
+            -DBPFTIME_ENABLE_FRIDA=ON \
+            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
+            -DBPFTIME_BUILD_RUNTIME_LIBRARY_EXAMPLE=ON \
+            -DBPFTIME_BUILD_MACOS_EXAMPLE=ON \
+            -DBPFTIME_ENABLE_UNIT_TESTING=ON
+
+      # agent/syscall-server pull in Linux-only headers (asm/unistd.h,
+      # sys/epoll.h, GNU --whole-archive) and stay out of the Darwin gate.
+      - name: Build runtime, examples, bpftimetool and Frida tests
+        run: |
+          cmake --build build --target \
+            runtime runtime_library macos_uprobe_demo bpftimetool \
+            bpftime_frida_uprobe_attach_tests
+
+      - name: Run examples and Frida uprobe tests
+        run: |
+          ctest --test-dir build \
+            -R '^(runtime_library_|macos_uprobe_demo_|bpftime_frida_uprobe_attach_tests$)' \
+            --output-on-failure
