@@ -2,6 +2,12 @@
 
 Newest first. Read before starting a change. A pull request that reverses an entry is a design problem until a maintainer decides again. Every entry quotes the maintainer verbatim; changing a decision means adding a new entry.
 
+- **2026-11-26: forbid speculative lifecycle/GC state machines, test-only control-plane/IPC backdoors, and parallel rewrites of idempotent paths; close `#971` into minimal `#970`** (#970, #971). Three forms of speculative bloat are banned across the codebase and treated as `over-engineering` in review:
+  1. **No unrequested symmetric teardown/GC or hypothetical edge-case state machines** without a real production caller or reproduced failure (e.g. `#971`'s runtime SHM link-deletion teardown pass on host `dlopen()` and its heap-allocating `live_uprobe_targets` `std::set` for duplicate same-offset links);
+  2. **No control-plane/IPC commands, flags, or hooks added solely to drive tests** when unused in default production modes (e.g. `#971`'s UNIX socket `"reconcile"` command while `BPFTIME_ENABLE_AGENT_IPC` defaults to off under bare `LD_PRELOAD`);
+  3. **No parallel `reconcile_*` / `refresh_*` rewrites when an existing path is already idempotent** (e.g. `bpf_attach_ctx::instantiate_handler_at()` already skips `instantiated_handlers.contains(id)` in `O(1)`, so `dlopen()` retry wraps it thinly instead of duplicating a 130-line state machine).
+  `#971` is closed, and only the minimal non-blocking `dlopen()` retry of unattached `-ENOENT` uprobes is folded into `#970` alongside skipping `gum_module_load()` on Linux.
+  > #971 里手搓的 30 行运行期反向卸载 GC、70 行 live_uprobe_targets std::set（每次有待挂项都做堆分配）、以及默认根本不开的 UNIX Socket IPC "reconcile" 命令协议，全都可以直接删掉。如何避免这些再发生? 我们是不是要有 rule / desicision 阻止这个. 去合并并且压缩, 关掉 971
 - **2026-11-26: the other hot-path items of the entry from #977 are approved** (#977, #979). These four, listed there without the maintainer's words, now stand:
   1. `process_vm_writev` on every `bpf_probe_write_user` in the default build (`ENABLE_PROBE_WRITE_CHECK` defaults to `ON`);
   2. one-time identity caching: `SYS_gettid` once per thread into TLS and `readlink("/proc/self/exe")` once per process, results cached, host `errno` preserved;
