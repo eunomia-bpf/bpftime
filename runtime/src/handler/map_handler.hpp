@@ -23,9 +23,6 @@
 #include "bpf_map/gpu/nv_gpu_ringbuf_map.hpp"
 #endif
 
-#if __APPLE__
-#include "spinlock_wrapper.hpp"
-#endif
 namespace bpftime
 {
 using char_allocator = boost::interprocess::allocator<
@@ -34,26 +31,6 @@ using char_allocator = boost::interprocess::allocator<
 using boost_shm_string =
 	boost::interprocess::basic_string<char, std::char_traits<char>,
 					  char_allocator>;
-
-// lock guad for RAII
-class bpftime_lock_guard {
-    private:
-	volatile pthread_spinlock_t &spinlock;
-
-    public:
-	explicit bpftime_lock_guard(volatile pthread_spinlock_t &spinlock)
-		: spinlock(spinlock)
-	{
-		pthread_spin_lock(&spinlock);
-	}
-	~bpftime_lock_guard()
-	{
-		pthread_spin_unlock(&spinlock);
-	}
-	// Delete copy constructor and assignment operator
-	bpftime_lock_guard(const bpftime_lock_guard &) = delete;
-	bpftime_lock_guard &operator=(const bpftime_lock_guard &) = delete;
-};
 
 // bpf map handler
 // all map data will be put on shared memory, so it can be accessed by
