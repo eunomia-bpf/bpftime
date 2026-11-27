@@ -13,17 +13,22 @@ Safety Redlines and Host-process safety invariants are binding here.
   unapproved active syscalls** (`write`, `read`, `socket`, `connect`,
   `sendmsg`, `recvmsg`, `open`, `mmap`, `eventfd`, etc.; preserve host `errno`
   — only explicit exemptions in `DECISIONS.md` apply).
-- Prefer preallocated fixed-size lock-free atomics (L0). All cross-process
-  shared-memory lock primitives, RAII guards, and blocking-vs-`trylock`
-  dispatch live **exclusively** in `runtime/include/robust_shm_mutex.hpp`
+- Prefer preallocated fixed-size lock-free atomics (L0). Per-CPU maps
+  (`PERCPU_ARRAY`, `PERCPU_HASH`), fixed-slot/atomic maps (`ARRAY`,
+  `PROG_ARRAY`, `PERF_EVENT_ARRAY`, `BLOOM_FILTER`, `RINGBUF`), and `HASH`
+  must never take a global `bpf_map_handler::map_lock` (`should_lock = false`;
+  `HASH` and `PERCPU_HASH` share preallocated `bpftime_hash_map` with lock-free
+  `lookup` and sharded write stripes). All cross-process shared-memory lock
+  primitives, RAII guards, and blocking-vs-`trylock` dispatch live
+  **exclusively** in `runtime/include/robust_shm_mutex.hpp`
   (`bpftime::robust_shm_mutex`, `PTHREAD_PROCESS_SHARED | PTHREAD_MUTEX_ROBUST`):
   forbid defining or calling raw `pthread_mutex_*`, `pthread_spinlock_t`,
   `boost::interprocess::interprocess_*mutex`, custom spinlocks, or bespoke lock
   wrappers outside `runtime/include/robust_shm_mutex.hpp`, and never nest
-  private inner locks inside container maps (`should_lock = true` delegates
-  locking solely to `bpf_map_handler::map_lock` via `with_robust_shm_lock`,
-  which uses non-blocking `try_lock` on helper hot paths and blocking `lock` on
-  control-plane syscalls). Adding any new lock, new lock callsite, or lock
+  private inner locks inside L2 container maps (`LRU_HASH`, `LPM_TRIE`,
+  `QUEUE`, `STACK`, `STACK_TRACE`, `HASH_OF_MAPS`, where `should_lock = true`
+  delegates locking solely to `bpf_map_handler::map_lock` via
+  `with_robust_shm_lock`). Adding any new lock, new lock callsite, or lock
   policy change outside the approved L0–L3 inventory in `DECISIONS.md` requires
   an explicit recorded reason and prior maintainer approval.
 - Every internal fd (shared memory, eventfd, sockets) is `O_CLOEXEC`/
