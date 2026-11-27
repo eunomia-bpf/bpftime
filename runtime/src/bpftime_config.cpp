@@ -5,8 +5,20 @@
 #include <optional>
 #include <limits>
 #include <type_traits>
+#include <algorithm>
 
 using namespace bpftime;
+
+alignas(std::atomic_ref<uint32_t>::required_alignment)
+uint32_t bpftime::probe_read_window_config_snapshot;
+static_assert(std::atomic_ref<uint32_t>::is_always_lock_free);
+void bpftime::bpftime_set_probe_read_window_config(const runtime_config &config) noexcept
+{
+	const auto bytes = std::min(config.probe_read_window_bytes, 512u);
+	const auto pre = std::min(config.probe_read_lookbehind_bytes, bytes);
+	std::atomic_ref(probe_read_window_config_snapshot)
+		.store((bytes + 1) | (pre << 13), std::memory_order_relaxed);
+}
 
 template <size_t N>
 static bool copy_env(char (&out)[N], const char *name,
@@ -69,7 +81,6 @@ const agent_bootstrap_config &get_agent_bootstrap_config() noexcept
 	return bootstrap_config;
 }
 } // namespace bpftime
-
 // Helper function to parse and validate numeric environment variables
 template<typename T>
 static std::optional<T> parse_numeric_env(const char* env_name, 
@@ -178,6 +189,14 @@ runtime_config bpftime::construct_runtime_config_from_env() noexcept
 	if (getenv("BPFTIME_FRIDA_FUZZY_BACKTRACER") != nullptr) {
 		runtime_config.enable_frida_fuzzy_backtracer = true;
 	}
+
+	if (auto bytes = parse_numeric_env<int>("BPFTIME_PROBE_READ_WINDOW_BYTES", 0, 512))
+		runtime_config.probe_read_window_bytes = *bytes;
+	if (auto pre = parse_numeric_env<int>("BPFTIME_PROBE_READ_LOOKBEHIND_BYTES", 0, 512))
+		runtime_config.probe_read_lookbehind_bytes = *pre;
+	runtime_config.probe_read_lookbehind_bytes =
+		std::min(runtime_config.probe_read_lookbehind_bytes,
+			 runtime_config.probe_read_window_bytes);
 
 	// Parse shared memory size with validation (1MB min, 10GB max)
 	if (auto shm_size = parse_numeric_env<int>("BPFTIME_SHM_MEMORY_MB", 1, 10240)) {

@@ -865,6 +865,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 	// Seed the process-local fallback so get_runtime_config() never
 	// dereferences an empty optional when no shared config exists.
 	local_runtime_config.emplace(config);
+	bpftime_set_probe_read_window_config(config);
 	if (type == shm_open_type::SHM_OPEN_ONLY) {
 		SPDLOG_DEBUG("start: bpftime_shm for client setup");
 		// open the shm
@@ -974,6 +975,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			"NOT creating global shm. This is only for testing purpose.");
 		return;
 	}
+	bpftime_set_probe_read_window_config(get_runtime_config());
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	// Move CommSharedMem from the agent’s local memory to shared memory to
 	// improve performance.
@@ -1198,6 +1200,7 @@ bool bpftime_shm::is_software_perf_event_handler_fd(int fd) const
 
 void bpftime_shm::set_runtime_config(struct runtime_config &&config)
 {
+	bpftime_set_probe_read_window_config(config);
 	shm_write_window_guard shm_window(*this);
 	if (runtime_config == nullptr) {
 		SPDLOG_INFO(
