@@ -2,6 +2,18 @@
 
 Newest first. Read before starting a change. A pull request that reverses an entry is a design problem until a maintainer decides again. Every entry quotes the maintainer verbatim; changing a decision means adding a new entry.
 
+- **2026-11-26: no per-CPU execution locks (`bpftime_cpu_exec_locks` / `bpf_cpu_execution_guard`); `PERCPU_ARRAY` stays lock-free with lazy per-invocation CPU ID pinning** (#730, #937). Remove `#730` and `#937`'s global `bpf_cpu_execution_guard` and `bpftime_cpu_exec_locks` from `bpftime_prog_exec` and shared memory (superseding `bpftime_shm::cpu_exec_locks` in L1 below). `bpftime_prog_exec` must never call `sched_getcpu()` or take any per-CPU lock on entry; `PERCPU_ARRAY` stays completely lock-free (`should_lock = false`), matching the pre-`#730` `#298` design and Linux kernel `migrate_disable()` / sleepable-uprobe semantics where per-CPU slots are not mutex-serialized across preempted tasks. Only when a running BPF program actually calls `my_sched_getcpu()` (`PERCPU_*` maps, `bpf_get_smp_processor_id`, `bpf_perf_event_output`) is the logical CPU queried once and cached in a `thread_local int` for the duration of that outermost `bpftime_prog_exec` call (`0` locks, `0` atomics, `0` syscalls, and `0 ns` `sched_getcpu()` cost for programs that do not touch per-CPU state).
+  > bpf_cpu_execution_guard 每次无条件调 sched_getcpu() + 跨进程 ROBUST 锁加解锁（第二大头，约 90–130 ns）有必要这个吗? per-CPU 状态的程序 也不需要吧? 我觉得我们用户态不应该考虑 cpu, 而是所有的 cpu 模型都会被映射到thread?
+  >
+  > sched_getcpu() 在 PERCPU_ARRAY / PERCPU_HASH 里面那是不是也行?
+  >
+  > 在第一次真正进入 PERCPU_ARRAY / PERCPU_HASH（即 my_sched_getcpu()）时按需调一次并 trylock， 是不是原先就是这样的? 为啥当时改了? 追溯一下完整历史
+  >
+  > PERCPU_ARRAY 完全不拿锁我觉得要.
+  >
+  > Scratch 大结构体被抢占踩脏：线程 A 在核 3 调 lookup 拿到 &data[0][3] 写了一半被时钟中断切走，线程 B 被调度上核 3 调 sched_getcpu() 也会拿到同一个 &data[0][3] 把 A 的半截事件覆盖掉，A 恢复后发进 ringbuf 的就是拼装脏数据。内核会出现这样的吗
+  >
+  > 修了吗? 代码是不是要显著减少? 这个 descision 也需要写进去避免再次弄乱
 
 - **2026-11-27: non-blocking `dlopen()` retry and `L3` lock callsites for unmapped uprobes** (#970). When a Frida uprobe target DSO is not mapped at startup (`-ENOENT`), `bpf_attach_ctx` sets an atomic `has_pending_uprobes` flag and retries pending uprobe links on outermost successful non-`RTLD_NOLOAD` host `dlopen()` calls in the initialized PID, clearing `has_pending_uprobes` once no unmapped uprobe links remain so steady-state `dlopen()` returns before taking any lock or opening any lock file. While `has_pending_uprobes` is set, the `dlopen()` path uses three non-blocking `L3` lock callsites: (1) `detach_mutex` (`std::try_to_lock`) to avoid racing session teardown; (2) shared `shm_lifecycle_lock` (`LOCK_SH | LOCK_NB`) so `dlopen()` never scans SHM across concurrent `syscall-server` segment recreation or final unlink; and (3) `ctx_mutex` (`std::try_to_lock`) to serialize `bpf_attach_ctx` state without blocking the host loader.
   > 测试过了 pytorch 的 cache allocatpr 能 work? 去测一下, 可以的话就这样 pr
@@ -30,7 +42,7 @@ Newest first. Read before starting a change. A pull request that reverses an ent
   2. **No global `map_lock` on per-CPU maps, fixed-slot/atomic maps, or `HASH` / `PERCPU_HASH`:** `PERCPU_ARRAY`, `PERCPU_HASH`, `ARRAY`, `PROG_ARRAY`, `PERF_EVENT_ARRAY`, `BLOOM_FILTER`, `RINGBUF`, and `HASH` must all keep `should_lock = false`. `PERCPU_HASH` shares `bpftime_hash_map`'s preallocated fixed-slot array (with Boost `unordered_map` and `key_templates` removed) so `lookup` and per-CPU in-place updates are lock-free and Four-Zeros-compliant.
   3. **Approved L0–L3 lock layering inventory:**
      - **L0 (lock-free atomics / fixed arrays / seqlock):** `epoch_state` seqlock, `atomic_pid_set`, `ARRAY`, `PERCPU_ARRAY`, `PROG_ARRAY`, `PERF_EVENT_ARRAY`, `BLOOM_FILTER`, `RINGBUF` consumer & submit paths, `HASH` & `PERCPU_HASH` `lookup` / iteration / per-CPU slice updates, and `software_perf_event_data` steady-state TLS shard cache;
-     - **L1 (short pointer-free SHM mutual exclusion via `robust_shm_mutex::lock_and_recover`):** `bpftime_shm::cpu_exec_locks` and `ringbuf::reserve_lock`;
+     - **L1 (short pointer-free SHM mutual exclusion via `robust_shm_mutex::lock_and_recover`):** `ringbuf::reserve_lock`;
      - **L2 (poison-on-death `robust_shm_mutex` via `with_robust_shm_lock` — `try_lock` on `LD_PRELOAD` helper hot paths, blocking `lock` on control-plane/consumer paths):** `bpftime_hash_map` 64 sharded write stripes (`HASH` / `PERCPU_HASH` `update` & `delete`), `bpf_map_handler::map_lock` (`LRU_HASH`, `LPM_TRIE`, `QUEUE`, `STACK`, `STACK_TRACE`, `HASH_OF_MAPS`), and cold-start `software_perf_event_data::shard_lock`;
      - **L3 (control-plane / process-local):** `shm_lifecycle_lock` (`flock` around `/dev/shm` create/destroy) and process-local `std::mutex` (`ctx_mutex`, `g_cuda_watcher_mutex`, GDRCopy mapping state).
   4. **Explicit reason & approval gate:** adding any new lock, adding a new lock callsite outside the inventory above, or changing an existing lock's layer, granularity, or recovery policy requires an explicit reason recorded in `DECISIONS.md` and prior maintainer approval before merge.
@@ -41,8 +53,6 @@ Newest first. Read before starting a change. A pull request that reverses an ent
   > 整体代码需要增加多少? 100 行以内, 包含测试搞定? 都放在一个文件里面, 禁止在这个文件之外加锁?
   >
   > 按你说的去都改掉. 批准把 PERCPU_HASH 统一收敛到 bpftime_hash_map 的预分配定长槽位数组上（净删掉 per_cpu_hash_map 里的 Boost 哈希表与 key_template. 就在这个 PR 里面改; 文档的也要改, per cpu 这种都不要全局锁
-
-
 - **2026-11-26: forbid speculative lifecycle/GC state machines, test-only control-plane/IPC backdoors, and parallel rewrites of idempotent paths; close `#971` into minimal `#970`** (#970, #971). Three forms of speculative bloat are banned across the codebase and treated as `over-engineering` in review:
   1. **No unrequested symmetric teardown/GC or hypothetical edge-case state machines** without a real production caller or reproduced failure (e.g. `#971`'s runtime SHM link-deletion teardown pass on host `dlopen()` and its heap-allocating `live_uprobe_targets` `std::set` for duplicate same-offset links);
   2. **No control-plane/IPC commands, flags, or hooks added solely to drive tests** when unused in default production modes (e.g. `#971`'s UNIX socket `"reconcile"` command while `BPFTIME_ENABLE_AGENT_IPC` defaults to off under bare `LD_PRELOAD`);

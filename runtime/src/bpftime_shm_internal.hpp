@@ -60,22 +60,6 @@ struct bpftime_global_epoch_state {
 	std::uint64_t epoch_seq = 0;
 };
 
-static constexpr int BPFTIME_MAX_CPU_COUNT = 1024;
-
-struct bpftime_cpu_exec_locks {
-#if BPFTIME_ENABLE_MPK
-	// Pad by one page on each side so `locks` can stay on default pkey 0:
-	// BPF code runs with PKRU write-disabled for the SHM pkey while holding
-	// `locks[cpu]`, and Linux's robust-futex exit walk faults (-EFAULT) if
-	// the mutex page carries a write-disabled pkey on SIGKILL.
-	std::byte mpk_head_pad[4096];
-#endif
-	robust_shm_mutex locks[BPFTIME_MAX_CPU_COUNT];
-#if BPFTIME_ENABLE_MPK
-	std::byte mpk_tail_pad[4096];
-#endif
-};
-
 // Fixed-capacity, lock-free PID table stored directly in shared memory.
 // Slot value 0 means empty. Every operation is atomic: no heap/SHM
 // allocation and no interprocess lock, so a process killed mid-operation
@@ -200,7 +184,6 @@ class bpftime_shm {
 	alive_syscall_server_pid_set *alive_syscall_server_pids = nullptr;
 
 	bpftime_global_epoch_state *epoch_state = nullptr;
-	bpftime_cpu_exec_locks *cpu_exec_locks = nullptr;
 
 	// local agent config can be used for test or local process
 	std::optional<struct runtime_config> local_runtime_config;
@@ -279,14 +262,6 @@ class bpftime_shm {
 	// Returns 0 if the epoch object isn't available.
 	// Returns UINT64_MAX if the epoch couldn't be stabilized within max_tries.
 	std::uint64_t read_stable_epoch_seq(int max_tries = 200) const;
-	void unlock_bpf_cpu(int cpu);
-	// Blocking, exception-safe per-CPU lock used on the BPF hot path. It
-	// preserves the serialization semantics of lock() (waits through normal
-	// contention) but catches locking exceptions, returning false instead of
-	// letting one propagate through the Frida C trampoline into
-	// std::terminate. The caller skips BPF execution only on a locking
-	// error, never on ordinary contention.
-	bool acquire_bpf_cpu(int cpu);
 
 	const handler_variant &get_handler(int fd) const;
 	bool is_epoll_fd(int fd) const;

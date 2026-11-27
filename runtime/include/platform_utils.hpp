@@ -29,9 +29,8 @@
 #endif
 
 int my_sched_getcpu();
-int bpftime_get_native_cpu();
-int bpftime_get_current_bpf_cpu();
-void bpftime_set_current_bpf_cpu(int cpu);
+bool bpftime_enter_bpf_exec() noexcept;
+void bpftime_leave_bpf_exec() noexcept;
 
 namespace bpftime::rootless
 {

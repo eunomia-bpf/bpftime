@@ -53,9 +53,6 @@ ubpf_x86_jit_unsafe_fetch_into_r0(const struct ebpf_inst *insn, size_t cnt)
 }
 #endif
 
-#include <atomic>
-#include <chrono>
-#include <functional>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <cstdio>
@@ -88,85 +85,6 @@ bpftime_ubpf_shm_bounds_check(void *context, uint64_t addr, uint64_t size)
 	return shm_holder.global_shared_memory.is_within_shm_segment(
 		addr, size);
 }
-class bpf_cpu_execution_guard {
-    public:
-	bpf_cpu_execution_guard()
-	{
-		if (bpftime_get_current_bpf_cpu() >= 0)
-			return;
-		// Map-free programs may use only process-local runtime config.
-		if (!shm_holder.global_shared_memory.get_manager())
-			return;
-		cpu = bpftime_get_native_cpu();
-		if (cpu < 0) {
-			warn_throttled([] { SPDLOG_WARN("sched_getcpu failed; BPF execution skipped"); });
-			return;
-		}
-		if (cpu >= BPFTIME_MAX_CPU_COUNT) {
-			// `cpu` is a member, so it cannot be captured by a lambda;
-			// copy it into a local first.
-			const int cpu_for_log = cpu;
-			warn_throttled([cpu_for_log] {
-				SPDLOG_WARN(
-					"logical cpu {} exceeds BPFTIME_MAX_CPU_COUNT={}; BPF execution skipped",
-					cpu_for_log, BPFTIME_MAX_CPU_COUNT);
-			});
-			return;
-		}
-		if (!shm_holder.global_shared_memory.acquire_bpf_cpu(cpu)) {
-			const int cpu_for_log = cpu;
-			warn_throttled([cpu_for_log] {
-				SPDLOG_WARN(
-					"per-CPU lock for cpu {} unavailable; BPF execution skipped",
-					cpu_for_log);
-			});
-			return;
-		}
-		bpftime_set_current_bpf_cpu(cpu);
-		owns_lock = true;
-	}
-
-	~bpf_cpu_execution_guard() { release(); }
-
-	bool entered() const
-	{
-		return owns_lock || bpftime_get_current_bpf_cpu() >= 0 ||
-		       !shm_holder.global_shared_memory.get_manager();
-	}
-
-	void release()
-	{
-		if (!owns_lock)
-			return;
-		bpftime_set_current_bpf_cpu(-1);
-		shm_holder.global_shared_memory.unlock_bpf_cpu(cpu);
-		owns_lock = false;
-	}
-
-    private:
-	// Rate-limit degradation warnings: a hot BPF path must not spam the log on
-	// every event when the environment is outside the supported CPU range.
-	// Shared 5s rate limiter; the emit callable runs SPDLOG_WARN only when admitted.
-	template <class F> static void warn_throttled(F &&emit)
-	{
-		static std::atomic<std::int64_t> last_log_ns{0};
-		constexpr std::int64_t MIN_INTERVAL_NS = 5'000'000'000LL;
-		std::int64_t now = std::chrono::duration_cast<std::chrono::nanoseconds>(
-				   std::chrono::steady_clock::now().time_since_epoch())
-				   .count();
-		std::int64_t prev = last_log_ns.load(std::memory_order_relaxed);
-		if (now - prev < MIN_INTERVAL_NS)
-			return;
-		if (!last_log_ns.compare_exchange_strong(prev, now,
-							      std::memory_order_relaxed))
-			return;
-		emit();
-	}
-
-	int cpu = -1;
-	bool owns_lock = false;
-};
-
 } // namespace
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
@@ -413,10 +331,18 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 	uint64_t val = 0;
 	int res = 0;
 	shm_write_window_guard shm_window;
-	bpf_cpu_execution_guard cpu_guard;
-	if (!cpu_guard.entered()) {
-		return -EAGAIN;
-	}
+	struct bpf_cpu_pin_guard {
+		bool outermost;
+		bpf_cpu_pin_guard() noexcept
+			: outermost(bpftime_enter_bpf_exec())
+		{
+		}
+		~bpf_cpu_pin_guard() noexcept
+		{
+			if (outermost)
+				bpftime_leave_bpf_exec();
+		}
+	} cpu_pin;
 	SPDLOG_DEBUG(
 		"Calling bpftime_prog::bpftime_prog_exec, memory={:x}, memory_size={}, return_val={:x}, prog_name={}",
 		(uintptr_t)memory, memory_size, (uintptr_t)return_val,
@@ -434,7 +360,6 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 	}
 	*return_val = current_thread_tail_call_ret.value_or(val);
 	current_thread_tail_call_ret.reset();
-	cpu_guard.release();
 	return res;
 }
 
