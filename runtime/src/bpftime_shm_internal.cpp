@@ -44,10 +44,13 @@ void stop_cuda_watcher_before_shm_unmap();
 #include <sys/mman.h>
 
 static bool global_shm_initialized = false;
+static std::optional<bpftime::runtime_config> uninitialized_shm_config;
 
 extern "C" void bpftime_initialize_global_shm(bpftime::shm_open_type type)
 {
 	using namespace bpftime;
+	reload_agent_bootstrap_config_from_env();
+	uninitialized_shm_config.reset();
 	// Use placement new, which will not allocate memory, but just
 	// call the constructor
 	new (&shm_holder.global_shared_memory) bpftime_shm(type);
@@ -1260,11 +1263,21 @@ const struct runtime_config &bpftime_shm::get_runtime_config()
 
 const bpftime::runtime_config &bpftime_get_runtime_config()
 {
+	if (!global_shm_initialized) {
+		if (!uninitialized_shm_config.has_value())
+			uninitialized_shm_config.emplace(
+				bpftime::construct_runtime_config_from_env());
+		return *uninitialized_shm_config;
+	}
 	return shm_holder.global_shared_memory.get_runtime_config();
 }
 
 void bpftime_set_runtime_config(bpftime::runtime_config &&cfg)
 {
+	if (!global_shm_initialized) {
+		uninitialized_shm_config.emplace(std::move(cfg));
+		return;
+	}
 	shm_holder.global_shared_memory.set_runtime_config(std::move(cfg));
 }
 

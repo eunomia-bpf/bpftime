@@ -1,13 +1,11 @@
 #ifndef _CONFIG_MANAGER_HPP
 #define _CONFIG_MANAGER_HPP
 
-#include <boost/interprocess/containers/string.hpp>
-#include <boost/interprocess/interprocess_fwd.hpp>
-#include <boost/interprocess/managed_shared_memory.hpp>
 #include <cstdlib>
 #include <cstdint>
-#include <string>
-#include <variant>
+#include <cstring>
+#include <cstddef>
+#include <type_traits>
 
 #ifndef DEFAULT_LOGGER_OUTPUT_PATH
 #define DEFAULT_LOGGER_OUTPUT_PATH "~/.bpftime/runtime.log"
@@ -33,13 +31,6 @@ constexpr uint64_t DEFAULT_GPU_GDRCOPY_MAX_PER_KEY_BYTES = 4096;
 
 namespace bpftime
 {
-using char_allocator = boost::interprocess::allocator<
-	char, boost::interprocess::managed_shared_memory::segment_manager>;
-
-using boost_shm_string =
-	boost::interprocess::basic_string<char, std::char_traits<char>,
-					  char_allocator>;
-
 // Verification mode for bpftime userspace verifier
 // Controlled via BPFTIME_VERIFIER_LEVEL environment variable
 enum bpftime_verifier_mode {
@@ -52,6 +43,24 @@ enum bpftime_verifier_mode {
 	// No verification is performed
 	BPFTIME_NO_VERIFY = 2,
 };
+
+// Process-local startup configuration captured once before SHM/logging.
+struct agent_bootstrap_config {
+	char global_shm_name[256];
+	char allow_process[1024];
+	char deny_process[1024];
+	char log_output[LOG_PATH_MAX_LEN];
+	char host_procfs[1024];
+	uint64_t system_analysis_tpbase_offset;
+	bool has_system_analysis_tpbase_offset;
+	bool has_log_output;
+	bool enable_agent_ipc;
+	bool go_seccomp;
+	bool invalid_process_filter;
+};
+static_assert(std::is_trivially_copyable_v<agent_bootstrap_config>);
+const agent_bootstrap_config &get_agent_bootstrap_config() noexcept;
+void reload_agent_bootstrap_config_from_env() noexcept;
 
 // Configuration for the bpftime runtime
 // Initialize the configuration from the environment variables
@@ -105,6 +114,9 @@ struct runtime_config {
 	uint64_t gpu_gdrcopy_max_per_key_bytes =
 		DEFAULT_GPU_GDRCOPY_MAX_PER_KEY_BYTES;
 
+	uint64_t map_gpu_thread_count = 0;
+	bool has_map_gpu_thread_count = false;
+
 	const char *get_logger_output_path() const
 	{
 		return logger_output_path;
@@ -122,6 +134,8 @@ struct runtime_config {
 		return vm_name;
 	}
 };
+
+static_assert(std::is_trivially_copyable_v<runtime_config>);
 
 // Get the bpftime configuration from the environment variables
 // If the shared memory is not int, this should be called first

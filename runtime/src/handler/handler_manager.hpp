@@ -44,7 +44,7 @@ using boost::interprocess::vector;
 
 constexpr const char *DEFAULT_GLOBAL_SHM_NAME = "bpftime_maps_shm";
 constexpr const char *DEFAULT_GLOBAL_HANDLER_NAME = "bpftime_handler";
-constexpr const char *DEFAULT_AGENT_CONFIG_NAME = "bpftime_runtime_config";
+constexpr const char *DEFAULT_AGENT_CONFIG_NAME = "bpftime_runtime_config_v2";
 // The "_v2" suffix marks the lock-free atomic slot layout. A segment left
 // behind by the previous boost::interprocess::set build stores different
 // objects under the old names, so the v2 names resolve to null and PID
@@ -55,11 +55,7 @@ constexpr const char *DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME =
 	"bpftime_alive_syscall_server_pids_v2";
 inline const char *get_global_shm_name()
 {
-	const char *name = getenv("BPFTIME_GLOBAL_SHM_NAME");
-	if (name == nullptr) {
-		return DEFAULT_GLOBAL_SHM_NAME;
-	}
-	return name;
+	return get_agent_bootstrap_config().global_shm_name;
 }
 
 struct shm_remove {
