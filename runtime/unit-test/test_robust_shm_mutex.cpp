@@ -4,10 +4,10 @@
  * All rights reserved.
  */
 #include "catch2/catch_test_macros.hpp"
-#if defined(__linux__)
 #include "robust_shm_mutex.hpp"
-#include <atomic>
 #include <cerrno>
+#if defined(__linux__)
+#include <atomic>
 #include <new>
 #include <sched.h>
 #include <sys/mman.h>
@@ -176,3 +176,16 @@ TEST_CASE("robust SHM mutex waits on live holder in a child PID namespace",
 	munmap(reg, sizeof(*reg));
 }
 #endif
+
+TEST_CASE("robust SHM mutex try_lock skips reentry and preserves errno",
+	  "[robust_shm_mutex]")
+{
+	bpftime::robust_shm_mutex m;
+	const uint64_t before = bpftime::get_shm_trylock_skip_count();
+	errno = 0;
+	REQUIRE(m.try_lock());
+	REQUIRE_FALSE(bpftime::robust_shm_trylock_guard(m).owns_lock());
+	REQUIRE(errno == 0);
+	REQUIRE(bpftime::get_shm_trylock_skip_count() - before == 1);
+	m.unlock();
+}
