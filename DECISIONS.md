@@ -2,6 +2,13 @@
 
 Newest first. Read before starting a change. A pull request that reverses an entry is a design problem until a maintainer decides again. Every entry quotes the maintainer verbatim; changing a decision means adding a new entry.
 
+- **2026-11-27: the probe-read window is configurable and capped at 512 bytes in static TLS** (#984). `BPFTIME_PROBE_READ_WINDOW_BYTES` (0–512, default 512; 0 disables the window) and `BPFTIME_PROBE_READ_LOOKBEHIND_BYTES` (default 64, at most the window size) are read at startup. The per-thread window stays in `initial-exec` TLS, so a probe read never allocates, and 512 bytes keeps a late `dlopen()` of the agent inside glibc's static-TLS surplus. A larger window needs storage outside TLS and a new decision.
+  > bpftime 我们现在 probe read 是不是有缓存? 这个大小长度和方向是不是动态配置更好? 你想想? 这个窗口默认值多少比较好?
+  >
+  > 这个能配置吗? 我觉得要能动态配置
+  >
+  > 先限制在 512
+
 - **2026-11-27: no per-CPU execution locks (`bpftime_cpu_exec_locks` / `bpf_cpu_execution_guard`); `PERCPU_ARRAY` stays lock-free with lazy per-invocation CPU ID pinning** (#730, #937). Remove `#730` and `#937`'s global `bpf_cpu_execution_guard` and `bpftime_cpu_exec_locks` from `bpftime_prog_exec` and shared memory (superseding `bpftime_shm::cpu_exec_locks` in L1 below). `bpftime_prog_exec` must never call `sched_getcpu()` or take any per-CPU lock on entry; `PERCPU_ARRAY` stays completely lock-free (`should_lock = false`), matching the pre-`#730` `#298` design and Linux kernel `migrate_disable()` / sleepable-uprobe semantics where per-CPU slots are not mutex-serialized across preempted tasks. Only when a running BPF program actually calls `my_sched_getcpu()` (`PERCPU_*` maps, `bpf_get_smp_processor_id`, `bpf_perf_event_output`) is the logical CPU queried once and cached in a `thread_local int` for the duration of that outermost `bpftime_prog_exec` call (`0` locks, `0` atomics, `0` syscalls, and `0 ns` `sched_getcpu()` cost for programs that do not touch per-CPU state).
   > bpf_cpu_execution_guard 每次无条件调 sched_getcpu() + 跨进程 ROBUST 锁加解锁（第二大头，约 90–130 ns）有必要这个吗? per-CPU 状态的程序 也不需要吧? 我觉得我们用户态不应该考虑 cpu, 而是所有的 cpu 模型都会被映射到thread?
   >

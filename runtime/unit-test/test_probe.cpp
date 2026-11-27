@@ -623,7 +623,7 @@ TEST_CASE("Test probe write invalidates the read-ahead window")
 
 TEST_CASE("Test probe read-ahead falls back for reads larger than the window")
 {
-	// 8192 bytes exceeds the 4096-byte cap, so the exact path is used and the
+	// 8192 bytes exceeds the 512-byte cap, so the exact path is used and the
 	// result must match the source regardless of window state.
 	constexpr size_t n = 8192;
 	auto *src = new uint8_t[n];

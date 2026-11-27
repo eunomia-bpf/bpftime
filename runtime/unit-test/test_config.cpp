@@ -91,7 +91,7 @@ TEST_CASE("Probe window environment clamps size and lookbehind")
 		const auto cfg = construct_runtime_config_from_env();
 		if (old) setenv(name, saved.c_str(), 1); else unsetenv(name);
 		if (name == std::string("BPFTIME_PROBE_READ_WINDOW_BYTES"))
-			REQUIRE(cfg.probe_read_window_bytes == 4096);
+			REQUIRE(cfg.probe_read_window_bytes == 512);
 		else REQUIRE(cfg.probe_read_lookbehind_bytes == cfg.probe_read_window_bytes);
 	}
 }

@@ -301,7 +301,8 @@ generation, so it can never satisfy a read from a previous event. It installs
 no signal handler, no BPF instruction, and no caller-facing API, and the
 out-of-event exact-read path keeps one syscall and preserves host `errno`.
 
-`BPFTIME_PROBE_READ_WINDOW_BYTES` sets 0–4096 bytes (default 512; 0 disables caching).
+`BPFTIME_PROBE_READ_WINDOW_BYTES` sets 0–512 bytes (default 512; 0 disables caching).
+The window lives in static TLS, so 512 bytes is also its upper bound.
 `BPFTIME_PROBE_READ_LOOKBEHIND_BYTES` sets lookbehind (default 64, capped at window size;
 0 selects forward reads). Descending reads automatically bias the window backward.
 
