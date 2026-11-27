@@ -239,10 +239,10 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 								key);
 						});
 				// Syscall path copies the 4-byte inner fd to
-				// thread-local storage. Both map-in-map types
-				// keep fixed slots that are never freed, so one
-				// atomic load is a consistent snapshot and the
-				// caller's memcpy reads stable storage.
+				// thread-local storage without map_lock: array
+				// slots are never freed, and the hash variant
+				// returns an id copied under its slot
+				// generation check.
 				const int *stored = static_cast<const int *>(
 					impl->elem_lookup_userspace(key));
 				if (stored == nullptr)

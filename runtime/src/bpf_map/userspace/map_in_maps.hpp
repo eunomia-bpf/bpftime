@@ -66,22 +66,19 @@ class hash_map_of_maps_impl {
 
 	void *elem_lookup(const void *key)
 	{
-		auto *stored = static_cast<const int *>(map_impl.elem_lookup(key));
-		if (stored == nullptr)
+		int map_id = 0;
+		if (!map_impl.elem_lookup_copy(key, &map_id))
 			return errno = ENOENT, nullptr;
-		int map_id = __atomic_load_n(stored, __ATOMIC_RELAXED);
 		return (void *)((u_int64_t)map_id);
 	}
-	// See array_map_of_maps_impl::elem_lookup_userspace: return the stored
-	// 4-byte inner fd address for the syscall memcpy path instead of the
-	// pointer-sized helper handle.
+	// Slots are recycled after a delete, so copy the id while the slot
+	// generation is still checked instead of returning the slot address.
 	void *elem_lookup_userspace(const void *key)
 	{
-		auto *stored = static_cast<int *>(map_impl.elem_lookup(key));
-		if (stored == nullptr ||
-		    __atomic_load_n(stored, __ATOMIC_RELAXED) == 0)
+		static thread_local int snapshot;
+		if (!map_impl.elem_lookup_copy(key, &snapshot) || snapshot == 0)
 			return nullptr;
-		return stored;
+		return &snapshot;
 	}
 	// Only the syscall path writes: the handler rejects helper updates and
 	// deletes of map-in-map types.
