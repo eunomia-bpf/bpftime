@@ -1,4 +1,7 @@
 add_subdirectory(bpftimetool)
+if(UNIX)
+  add_subdirectory(bpftime_remote_host)
+endif()
 if(BPFTIME_ENABLE_FRIDA)
   add_subdirectory(cli)
 endif()

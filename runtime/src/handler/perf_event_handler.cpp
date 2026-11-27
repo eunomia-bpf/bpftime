@@ -549,6 +549,41 @@ bool software_perf_event_buffer::copy_next_record_to(
 	return true;
 }
 
+bool software_perf_event_buffer::drain_next_to_heap(std::vector<uint8_t> &out)
+{
+	if (mmap_size() == 0)
+		return false;
+	auto &header = get_header_ref();
+	uint64_t data_tail = smp_load_acquire_u64(&header.data_tail);
+	uint64_t data_head = smp_load_acquire_u64(&header.data_head);
+	if (data_tail == data_head)
+		return false;
+	if (data_head < data_tail) {
+		SPDLOG_ERROR("Invalid perf buffer state: head {} < tail {}",
+			     data_head, data_tail);
+		smp_store_release_u64(&header.data_tail, data_head);
+		return false;
+	}
+
+	perf_event_header record_header;
+	read_wrapped(data_tail, &record_header, sizeof(record_header));
+	if (record_header.size < sizeof(record_header) ||
+	    record_header.size > mmap_size()) {
+		SPDLOG_ERROR("Invalid perf record size {}, dropping data",
+			     record_header.size);
+		smp_store_release_u64(&header.data_tail, data_head);
+		return false;
+	}
+	if (record_header.size > data_head - data_tail)
+		return false;
+
+	out.resize(record_header.size);
+	read_wrapped(data_tail, out.data(), record_header.size);
+	smp_store_release_u64(&header.data_tail,
+			      data_tail + record_header.size);
+	return true;
+}
+
 software_perf_event_shard::software_perf_event_shard(
 	int pid, int64_t tid, uint64_t generation, uint64_t buffer_generation,
 	int pagesize, software_perf_event_buffer::segment_manager *manager,
@@ -689,6 +724,15 @@ bool software_perf_event_data::has_data()
 	if (!drain_producer_shards())
 		return false;
 	return consumer_buffer.has_data();
+}
+
+bool software_perf_event_data::drain_next_to_heap(std::vector<uint8_t> &out)
+{
+	// Same taint policy as has_data(): skip this round rather than read a
+	// consumer_buffer a dead resizer may have left half-published.
+	if (!drain_producer_shards())
+		return false;
+	return consumer_buffer.drain_next_to_heap(out);
 }
 
 const perf_event_mmap_page &
