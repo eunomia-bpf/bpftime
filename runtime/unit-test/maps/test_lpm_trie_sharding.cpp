@@ -115,7 +115,7 @@ TEST_CASE("LPM sharding rolls back the reserved slot when allocation fails",
 			if (rc == 0) {
 				++committed;
 			} else {
-				REQUIRE(errno == ENOMEM || errno == ENOSPC);
+				REQUIRE((errno == ENOMEM || errno == ENOSPC));
 				failed = true;
 			}
 		} catch (const boost::interprocess::bad_alloc &) {
