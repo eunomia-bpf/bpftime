@@ -1,6 +1,12 @@
 add_library(bpftime-agent SHARED
   agent.cpp
 )
+if(APPLE)
+  target_sources(bpftime-agent PRIVATE darwin_agent.cpp)
+endif()
+if(BPFTIME_ENABLE_AGENT_IPC_SERVER)
+  target_compile_definitions(bpftime-agent PRIVATE BPFTIME_ENABLE_AGENT_IPC_SERVER=1)
+endif()
 
 set(AGENT_DEPS spdlog::spdlog)
 if(BPFTIME_ENABLE_FRIDA)
@@ -25,7 +31,13 @@ endif()
 # Force link VM compat libraries so constructor-based factory registration is retained
 if(${BPFTIME_UBPF_JIT})
   add_dependencies(bpftime-agent bpftime_ubpf_vm)
-  target_link_options(bpftime-agent PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_ubpf_vm>" "-Wl,--no-whole-archive")
+  if(APPLE)
+    # Darwin ld has no --whole-archive; -force_load keeps the VM factory
+    # constructor registration objects the same way.
+    target_link_options(bpftime-agent PUBLIC "-Wl,-force_load,$<TARGET_FILE:bpftime_ubpf_vm>")
+  else()
+    target_link_options(bpftime-agent PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_ubpf_vm>" "-Wl,--no-whole-archive")
+  endif()
   target_link_libraries(bpftime-agent PUBLIC bpftime_ubpf_vm)
 endif()
 
@@ -66,13 +78,17 @@ if(${BPFTIME_BUILD_WITH_LIBBPF})
   )
 endif()
 
-# Link libraries
+# Link libraries. Darwin folds pthread and the dl* symbols into libSystem and
+# ships no standalone libdl, so only libm is named explicitly there.
+if(APPLE)
+  set(AGENT_PLATFORM_LIBS -lm)
+else()
+  set(AGENT_PLATFORM_LIBS -lpthread -lm -ldl)
+endif()
 target_link_libraries(bpftime-agent
   PUBLIC
   runtime
-  -lpthread
-  -lm
-  -ldl
+  ${AGENT_PLATFORM_LIBS}
   spdlog::spdlog
   ${EXTRA_LINK_LIBS}
 )
@@ -93,4 +109,8 @@ if(TARGET bpftime_trap_uprobe_attach_impl)
   target_link_libraries(bpftime-agent PUBLIC bpftime_trap_uprobe_attach_impl)
   target_compile_definitions(bpftime-agent PRIVATE BPFTIME_HAVE_TRAP_UPROBE_ATTACH=1)
 endif()
-target_link_options(bpftime-agent PUBLIC "-Wl,-export-dynamic")
+if(APPLE)
+  target_link_options(bpftime-agent PUBLIC "-Wl,-export_dynamic")
+else()
+  target_link_options(bpftime-agent PUBLIC "-Wl,-export-dynamic")
+endif()

@@ -41,11 +41,17 @@ typedef int gboolean;
 #endif
 #include <cstdint>
 #include <dlfcn.h>
-#include <link.h>
 #ifdef __linux__
+#include <link.h>
+#endif
+#if defined(__linux__) || defined(__APPLE__)
 #include <sys/socket.h>
 #include <sys/un.h>
 #include "bpftime_agent_ipc.hpp"
+#endif
+#ifdef __APPLE__
+#include <sys/ucred.h>
+#include "darwin_agent.hpp"
 #endif
 #include "bpftime_shm.hpp"
 #include <spdlog/spdlog.h>
@@ -92,9 +98,21 @@ bool injected_with_frida = true;
 
 static std::once_flag agent_ipc_once;
 static std::atomic<bool> agent_ipc_stop{ false };
-#ifdef __linux__
-static int agent_ipc_fd = -1;
-static std::thread agent_ipc_thread;
+// The IPC worker is a detached thread with no joinable std::thread object: a
+// static std::thread destructor would race live threads at exit() (DECISIONS
+// #977, no static thread/heap-owning destructors). The listening fd is closed
+// from an atexit handler, which unblocks accept() and lets the thread exit.
+static std::atomic<int> agent_ipc_fd{ -1 };
+#if defined(__APPLE__) || defined(__linux__)
+// Fixed .bss copy of the control-socket pathname so process-exit cleanup does
+// no heap allocation: a std::string in an atexit callback could throw
+// bad_alloc after the workload completed and abort the host. Empty until a
+// socket is successfully bound. The owner pid prevents a forked child from
+// unlinking the parent's still-live socket at its own exit.
+#ifdef __APPLE__
+static char agent_ipc_path_storage[104] = {};
+#endif
+static pid_t agent_ipc_owner_pid = 0;
 #endif
 
 static std::mutex detach_mutex;
@@ -183,6 +201,7 @@ static agent_control_fn_t find_other_loaded_agent_control()
 	if (dladdr((void *)&bpftime_agent_control, &self_info) != 0) {
 		self_name = self_info.dli_fname;
 	}
+#ifdef __linux__
 	struct FindCtx {
 		const char *self_name;
 		agent_control_fn_t found;
@@ -212,6 +231,12 @@ static agent_control_fn_t find_other_loaded_agent_control()
 		&ctx);
 
 	return ctx.found;
+#else
+	// Darwin's two-level namespace plus the RTLD_NEXT probe above is
+	// sufficient; dl_iterate_phdr is not available on macOS.
+	(void)self_name;
+	return nullptr;
+#endif
 }
 
 #ifdef __linux__
@@ -226,10 +251,17 @@ static bool try_forward_to_existing_agent(const gchar *data)
 
 static void start_agent_ipc_server_once()
 {
+#if defined(BPFTIME_ENABLE_AGENT_IPC_SERVER) && \
+	(defined(__linux__) || defined(__APPLE__))
 #ifdef __linux__
+	// Linux keeps the runtime opt-in (BPFTIME_ENABLE_AGENT_IPC) for the bare
+	// LD_PRELOAD path; a Frida-injected session always starts the server.
+	// Darwin has no Frida-injected control path, so its preload constructor
+	// calls this directly once SHM-backed initialization succeeds.
 	if (!injected_with_frida &&
 	    !get_agent_bootstrap_config().enable_agent_ipc)
 		return;
+#endif
 	std::call_once(agent_ipc_once, []() {
 		sockaddr_un addr {};
 		socklen_t len = 0;
@@ -237,62 +269,137 @@ static void start_agent_ipc_server_once()
 			SPDLOG_WARN("agent ipc: unable to build socket address");
 			return;
 		}
+#ifdef __APPLE__
+		std::string sock_path =
+			bpftime::agent_ipc_socket_path(getpid());
+		(void)::unlink(sock_path.c_str());
+		int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+#else
 		int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+#endif
 		if (fd < 0) {
-			SPDLOG_WARN("agent ipc: socket() failed: {}", strerror(errno));
+			SPDLOG_WARN("agent ipc: socket() failed: {}",
+				    strerror(errno));
 			return;
 		}
+#ifdef __APPLE__
+		// Darwin lacks MSG_NOSIGNAL; suppress SIGPIPE at the socket.
+		int no_sigpipe = 1;
+		(void)setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &no_sigpipe,
+				 sizeof(no_sigpipe));
+		(void)fcntl(fd, F_SETFD, FD_CLOEXEC);
+#endif
 		if (::bind(fd, (sockaddr *)&addr, len) != 0) {
-			SPDLOG_WARN("agent ipc: bind() failed: {}", strerror(errno));
+			SPDLOG_WARN("agent ipc: bind() failed: {}",
+				    strerror(errno));
 			::close(fd);
 			return;
 		}
 		if (::listen(fd, 8) != 0) {
-			SPDLOG_WARN("agent ipc: listen() failed: {}", strerror(errno));
+			SPDLOG_WARN("agent ipc: listen() failed: {}",
+				    strerror(errno));
 			::close(fd);
+#ifdef __APPLE__
+			::unlink(sock_path.c_str());
+#endif
 			return;
 		}
-		agent_ipc_fd = fd;
-		agent_ipc_stop.store(false, std::memory_order_release);
+#ifdef __APPLE__
+		// Retain the pathname in fixed storage for allocation-free teardown.
+		if (sock_path.size() + 1 <= sizeof(agent_ipc_path_storage))
+			std::memcpy(agent_ipc_path_storage, sock_path.c_str(),
+				    sock_path.size() + 1);
+#endif
+	// Publish the listening fd before the worker starts so its accept()
+	// uses a valid descriptor and the atexit handler can close it.
+	agent_ipc_owner_pid = getpid();
+	agent_ipc_fd.store(fd, std::memory_order_release);
+	agent_ipc_stop.store(false, std::memory_order_release);
 		try {
-			agent_ipc_thread = std::thread([]() {
+			std::thread([]() {
+#ifdef __APPLE__
+			constexpr int send_flags = 0;
+#else
+			constexpr int send_flags = MSG_NOSIGNAL;
+#endif
 			for (;;) {
-				if (agent_ipc_stop.load(std::memory_order_acquire))
+				if (agent_ipc_stop.load(
+					    std::memory_order_acquire))
 					return;
-				int cfd = ::accept4(agent_ipc_fd, nullptr, nullptr,
+				const int listen_fd =
+					agent_ipc_fd.load(
+						std::memory_order_acquire);
+#ifdef __APPLE__
+				int cfd = ::accept(listen_fd, nullptr, nullptr);
+				if (cfd >= 0) {
+					int no_sigpipe = 1;
+					(void)setsockopt(cfd, SOL_SOCKET,
+							 SO_NOSIGPIPE,
+							 &no_sigpipe,
+							 sizeof(no_sigpipe));
+					(void)fcntl(cfd, F_SETFD,
+						    FD_CLOEXEC);
+				}
+#else
+				int cfd = ::accept4(listen_fd, nullptr, nullptr,
 						    SOCK_CLOEXEC);
+#endif
 				if (cfd < 0) {
 					if (errno == EINTR)
 						continue;
+#ifdef __APPLE__
+					// The listening fd was closed at exit.
+					return;
+#else
 					usleep(10 * 1000);
 					continue;
+#endif
 				}
 				// Basic auth: allow same uid or root.
+#ifdef __APPLE__
+				struct xucred cred {};
+				socklen_t clen = sizeof(cred);
+				if (getsockopt(cfd, 0, LOCAL_PEERCRED,
+					       &cred, &clen) != 0 ||
+				    (cred.cr_uid != 0 &&
+				     cred.cr_uid != geteuid())) {
+					::close(cfd);
+					continue;
+				}
+#else
 				struct ucred cred {};
 				socklen_t clen = sizeof(cred);
-				if (getsockopt(cfd, SOL_SOCKET, SO_PEERCRED, &cred,
-					       &clen) != 0) {
+				if (getsockopt(cfd, SOL_SOCKET, SO_PEERCRED,
+					       &cred, &clen) != 0) {
 					::close(cfd);
 					continue;
 				}
-				if (cred.uid != 0 && (uid_t)cred.uid != geteuid()) {
+				if (cred.uid != 0 &&
+				    (uid_t)cred.uid != geteuid()) {
 					::close(cfd);
 					continue;
 				}
+#endif
 				try {
-					bpftime::set_ipc_socket_timeout(cfd, 1000);
+					bpftime::set_ipc_socket_timeout(cfd,
+									1000);
 					std::string req;
 					char buf[4096];
+					// Clients half-close (shutdown SHUT_WR)
+					// after the request, so recv returns 0
+					// once the full token has arrived.
 					for (;;) {
-						ssize_t n = ::recv(cfd, buf,
-								   sizeof(buf), 0);
+						ssize_t n = ::recv(
+							cfd, buf, sizeof(buf),
+							0);
 						if (n <= 0)
 							break;
 						req.append(buf, buf + n);
 						if (req.size() > (1 << 20))
 							break;
 					}
-					// Parse: "refresh <k=v;...>" or "detach" or "status".
+					// Parse: "refresh <k=v;...>", "detach"
+					// or "status".
 					auto trim = [](std::string &s) {
 						while (!s.empty() &&
 						       (s.back() == '\n' ||
@@ -309,32 +416,32 @@ static void start_agent_ipc_server_once()
 						if (rc == 0) {
 							(void)::send(cfd, "ok\n",
 								     3,
-								     MSG_NOSIGNAL);
+								     send_flags);
 						} else {
 							std::string out =
 								"err refresh " +
 								std::to_string(rc) +
 								"\n";
-							(void)::send(cfd,
-								     out.data(),
-								     out.size(),
-								     MSG_NOSIGNAL);
+							(void)::send(
+								cfd, out.data(),
+								out.size(),
+								send_flags);
 						}
 					} else if (req == "detach") {
 						int rc = perform_detach();
 						if (rc == 0) {
 							(void)::send(cfd, "ok\n",
 								     3,
-								     MSG_NOSIGNAL);
+								     send_flags);
 						} else {
 							std::string out =
 								"err detach " +
 								std::to_string(rc) +
 								"\n";
-							(void)::send(cfd,
-								     out.data(),
-								     out.size(),
-								     MSG_NOSIGNAL);
+							(void)::send(
+								cfd, out.data(),
+								out.size(),
+								send_flags);
 						}
 					} else if (req == "status") {
 						uint64_t epoch =
@@ -357,44 +464,52 @@ static void start_agent_ipc_server_once()
 						}
 						(void)::send(cfd, out.data(),
 							     out.size(),
-							     MSG_NOSIGNAL);
+							     send_flags);
 					} else {
 						(void)::send(cfd, "unknown\n", 8,
-							     MSG_NOSIGNAL);
+							     send_flags);
 					}
 				} catch (...) {
-					// Never let an attach/IPC exception escape a
-					// std::thread in an LD_PRELOAD library and
-					// terminate the host process.
+					// Never let an attach/IPC exception
+					// escape a worker thread in an injected
+					// library and terminate the host.
 					(void)::send(cfd, "err exception\n", 14,
-						     MSG_NOSIGNAL);
+						     send_flags);
 				}
 				::close(cfd);
 			}
-			});
+			}).detach();
 		} catch (...) {
 			agent_ipc_stop.store(true, std::memory_order_release);
 			::close(fd);
-			agent_ipc_fd = -1;
+			agent_ipc_fd.store(-1, std::memory_order_release);
+#ifdef __APPLE__
+			::unlink(sock_path.c_str());
+#endif
 			return;
 		}
-		std::atexit([]() {
-			agent_ipc_stop.store(true, std::memory_order_release);
-			if (agent_ipc_fd >= 0) {
-				::close(agent_ipc_fd);
-				agent_ipc_fd = -1;
-			}
-			if (agent_ipc_thread.joinable())
-				agent_ipc_thread.detach();
+		std::atexit([]() noexcept {
+			agent_ipc_stop.store(true,
+					 std::memory_order_release);
+			int lfd = agent_ipc_fd.exchange(
+				-1, std::memory_order_acq_rel);
+			if (lfd >= 0)
+				::close(lfd);
+#ifdef __APPLE__
+			// Fixed-storage pathname: no allocation at exit. Only the
+			// process that bound the socket may unlink it, so a forked
+			// child never removes the parent's live control endpoint.
+			if (agent_ipc_path_storage[0] != '\0' &&
+			    agent_ipc_owner_pid == getpid())
+				::unlink(agent_ipc_path_storage);
+#endif
 		});
 		try {
-			SPDLOG_INFO("agent ipc: listening (abstract) for pid {}",
+			SPDLOG_INFO("agent ipc: listening for pid {}",
 				    (int)getpid());
 		} catch (...) {
 		}
 	});
-#else
-	(void)0;
 #endif
 }
 
@@ -477,6 +592,9 @@ static void bpftime_agent_main_impl(const gchar *data,
 				    gboolean *stay_resident);
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
 
+#ifdef __linux__
+// glibc/musl preload interposition. Darwin has no __libc_start_main to hook;
+// its entry point is the dyld constructor bpftime_darwin_agent_entry() below.
 static void initialize_preloaded_agent()
 {
 	int stay_resident = 0;
@@ -514,6 +632,7 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 	return orig(bpftime_hooked_main, argc, argv, init, fini, rtld_fini,
 		    stack_end);
 }
+#endif
 // Simple "k=v" pairs separated by ';', space or tab. Each pair is split at
 // the first '=' and passed to the callback in original order; a callback
 // returning false stops the iteration.
@@ -952,6 +1071,61 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	injected_with_frida = true;
 	bpftime_agent_main_impl(data, stay_resident);
 }
+
+#ifdef __APPLE__
+// At process exit dyld may finalize the agent dylib's C++ statics (including
+// std::mutex objects) around the atexit handlers. Never take a process-local
+// lock or run Frida teardown here: a forked child can inherit a locked
+// detach_mutex whose owning thread is gone, which would make a blocking
+// perform_detach() hang forever. Use the lock-free quiesce path and skip
+// teardown entirely in a child whose PID is not the initialized PID.
+static void darwin_detach_at_process_exit_safe() noexcept
+{
+	try {
+		const pid_t init_pid =
+			agent_init_pid.load(std::memory_order_acquire);
+		if (init_pid == 0 || getpid() != init_pid)
+			return;
+		quiesce_agent_for_process_exit();
+	} catch (...) {
+	}
+}
+
+// dyld runs this after all images are mapped; there is no __libc_start_main
+// interposition on macOS. Probe shared memory first and stay fully inert when
+// the host did not set this process up: no maps file, no dyld callback, no
+// syscall beyond the single open_only SHM check. When SHM exists, publish the
+// dyld module snapshot, run the standard attach path and optionally start the
+// filesystem control socket. The whole entry is synchronous and never blocks.
+__attribute__((constructor))
+static void bpftime_darwin_agent_entry()
+{
+	try {
+		// Allocation-free early admission (env-only). A denied utility
+		// stays fully inert before the SHM probe, maps snapshot, or dyld
+		// callback, so excluded children never publish agent state.
+		if (agent::should_skip_agent_process())
+			return;
+		if (!agent_darwin::global_shm_ready_once())
+			return;
+		agent_darwin::write_process_maps_file();
+		agent_darwin::register_image_add_callback();
+
+		int stay_resident = 0;
+		injected_with_frida = false;
+		bpftime_agent_main_impl("", &stay_resident);
+		if (std::atexit(darwin_detach_at_process_exit_safe) != 0)
+			SPDLOG_WARN(
+				"Unable to register bpftime process-exit cleanup");
+
+		if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) ==
+		    AGENT_READY)
+			start_agent_ipc_server_once();
+	} catch (...) {
+		// A constructor must never throw into the dynamic loader.
+	}
+}
+#endif
 
 #ifdef __linux__
 extern "C" __attribute__((visibility("default"))) void *

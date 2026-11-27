@@ -32,3 +32,28 @@ if(BPFTIME_ENABLE_UNIT_TESTING)
     set_tests_properties(macos_uprobe_demo_${mode} PROPERTIES TIMEOUT 60)
   endforeach()
 endif()
+
+# Darwin preload-constructor test: a controller pre-populates SHM and spawns a
+# suspended victim that the injected agent attaches to via DYLD_INSERT_LIBRARIES.
+# Linux has no dyld constructor path, so this test is Darwin-only.
+if(APPLE)
+  add_executable(macos_preload_victim preload_victim.cpp)
+  target_link_libraries(macos_preload_victim PRIVATE bpftime_macos_demo_target)
+  set_target_properties(macos_preload_victim PROPERTIES
+    CXX_STANDARD 20
+    BUILD_RPATH "$<TARGET_FILE_DIR:bpftime_macos_demo_target>")
+
+  add_executable(macos_preload_driver preload_driver.cpp)
+  target_link_libraries(macos_preload_driver PRIVATE runtime)
+  set_target_properties(macos_preload_driver PROPERTIES CXX_STANDARD 20)
+
+  if(BPFTIME_ENABLE_UNIT_TESTING)
+    add_test(NAME macos_preload_constructor
+      COMMAND macos_preload_driver
+        $<TARGET_FILE:bpftime-agent>
+        $<TARGET_FILE:macos_preload_victim>
+        $<TARGET_FILE:bpftime_macos_demo_target>
+        100)
+    set_tests_properties(macos_preload_constructor PROPERTIES TIMEOUT 60)
+  endif()
+endif()
