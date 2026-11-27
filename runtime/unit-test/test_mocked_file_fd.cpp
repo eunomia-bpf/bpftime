@@ -10,6 +10,7 @@
 #endif
 #include "syscall_context.hpp"
 #include "syscall_server_utils.hpp"
+#include "seccomp_bpf_compat.hpp"
 #include <boost/scope_exit.hpp>
 #include <cstddef>
 #include <cstring>
