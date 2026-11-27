@@ -3,20 +3,27 @@
 
 #if defined(__linux__)
 #include "bpftime_shm.hpp"
+#include "bpftime_shm_internal.hpp"
+#include "handler/handler_manager.hpp"
 #if defined(__x86_64__) || defined(__aarch64__)
 #include "synthetic_kallsyms.hpp"
 #endif
 #include "syscall_context.hpp"
 #include "syscall_server_utils.hpp"
 #include <boost/scope_exit.hpp>
+#include <cstddef>
 #include <cstring>
 #include <cerrno>
 #include <fcntl.h>
 #include <filesystem>
 #include <linux/bpf.h>
+#include <linux/filter.h>
+#include <linux/perf_event.h>
+#include <linux/seccomp.h>
 #include <linux/stat.h>
 #include <string>
 #include <sys/mman.h>
+#include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
@@ -309,5 +316,98 @@ TEST_CASE("synthetic fs private directory is removed at normal exit",
 	std::error_code ec;
 	REQUIRE_FALSE(
 		std::filesystem::exists(std::filesystem::path(buffer), ec));
+}
+
+TEST_CASE("uprobe map_files EPERM fallback stores logical backing path",
+	  "[rootless][map_files][uprobe]")
+{
+	char tmp_path[] = "/tmp/bpftime-uprobe-mf.XXXXXX";
+	int tmp_fd = mkstemp(tmp_path);
+	REQUIRE(tmp_fd >= 0);
+	BOOST_SCOPE_EXIT_ALL(&)
+	{
+		close(tmp_fd);
+		unlink(tmp_path);
+	};
+	REQUIRE(ftruncate(tmp_fd, 4096) == 0);
+	void *mapping =
+		mmap(nullptr, 4096, PROT_READ, MAP_PRIVATE, tmp_fd, 0);
+	REQUIRE(mapping != MAP_FAILED);
+	BOOST_SCOPE_EXIT_ALL(&) { munmap(mapping, 4096); };
+
+	int pipefd[2];
+	REQUIRE(pipe(pipefd) == 0);
+	pid_t child = fork();
+	REQUIRE(child >= 0);
+	if (child == 0) {
+		close(pipefd[0]);
+		{
+			shm_fixture child_shm;
+			syscall_context ctx;
+			const auto addr =
+				(unsigned long long)(uintptr_t)mapping;
+			char map_files[128];
+			snprintf(map_files, sizeof(map_files),
+				 "/proc/%d/map_files/%llx-%llx", (int)getpid(),
+				 addr, addr + 4096ULL);
+			struct sock_filter filter[] = {
+				BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+					 offsetof(struct seccomp_data, nr)),
+				BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+					 SYS_readlinkat, 0, 1),
+				BPF_STMT(BPF_RET | BPF_K,
+					 SECCOMP_RET_ERRNO | EPERM),
+				BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+			};
+			struct sock_fprog prog = {
+				(unsigned short)(sizeof(filter) /
+						 sizeof(filter[0])),
+				filter,
+			};
+			if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 ||
+			    prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog) !=
+				    0)
+				_exit(2);
+			perf_event_attr attr = {};
+			attr.type = (uint32_t)
+				bpftime::determine_uprobe_perf_type();
+			attr.config1 = (uint64_t)(uintptr_t)map_files;
+			attr.config2 = 0x10;
+			int id = ctx.handle_perfevent(&attr, -1, 0, -1, 0);
+			if (id < 0)
+				_exit(3);
+			const auto *mgr = bpftime::shm_holder
+						  .global_shared_memory
+						  .get_manager();
+			if (!mgr || !mgr->is_allocated(id))
+				_exit(4);
+			const auto &perf =
+				std::get<bpftime::bpf_perf_event_handler>(
+					mgr->get_handler(id));
+			const auto &uprobe =
+				std::get<bpftime::uprobe_perf_event_data>(
+					perf.data);
+			const char *mod = uprobe._module_name.c_str();
+			(void)write(pipefd[1], mod, strlen(mod));
+		}
+		close(pipefd[1]);
+		_exit(0);
+	}
+	close(pipefd[1]);
+	char resolved[512] = {};
+	size_t total = 0;
+	for (;;) {
+		ssize_t n = read(pipefd[0], resolved + total,
+				 sizeof(resolved) - 1 - total);
+		if (n <= 0)
+			break;
+		total += (size_t)n;
+	}
+	close(pipefd[0]);
+	int status = 0;
+	REQUIRE(waitpid(child, &status, 0) == child);
+	REQUIRE(WIFEXITED(status));
+	REQUIRE(WEXITSTATUS(status) == 0);
+	REQUIRE(std::string(resolved, total) == tmp_path);
 }
 #endif
