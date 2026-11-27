@@ -1,0 +1,205 @@
+#!/bin/bash
+# SPDX-License-Identifier: MIT
+#
+# bpftime-macos - run stock Linux eBPF tools (bpftrace, BCC/python3,
+# clang -target bpf + libbpf, ...) inside the ARM64 bpftime-vz VM against
+# native macOS processes through the bpftime-darwin-host bridge.
+#
+# The wrapper makes sure, on every invocation:
+#   1. the bpftime-vz VM is reachable over SSH (it never starts/stops the VM);
+#   2. virtiofs (/Users) and binfmt_misc (Mach-O interpreter) are ready;
+#   3. the VM-side libbpftime-syscall-server.so is built (first run only);
+#   4. bpftime-darwin-host is listening on the macOS host;
+# then it execs the requested tool in the VM with the bridge environment
+# preloaded and streams its live output back to this terminal.
+#
+# Examples:
+#   tools/macos_vz_vm/bpftime-macos bpftrace -e 'uprobe:libc:malloc { ... }' \
+#       -c /Users/me/victim
+#   tools/macos_vz_vm/bpftime-macos python3 trace.py
+#   tools/macos_vz_vm/bpftime-macos --rebuild bpftrace --version
+#
+# Environment overrides:
+#   BPFTIME_VM_DIR       VM state directory holding vm-info.json
+#                        (default: $HOME/.bpftime/macos-vm)
+#   BPFTIME_BUILD_DIR    host build directory (default: <repo>/build)
+#   BPFTIME_DARWIN_PORT  host TCP port (default 49512)
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+VM_DIR="${BPFTIME_VM_DIR:-$HOME/.bpftime/macos-vm}"
+BUILD_DIR="${BPFTIME_BUILD_DIR:-$REPO_ROOT/build}"
+PORT="${BPFTIME_DARWIN_PORT:-49512}"
+VM_BUILD_REL='bpftime-build'
+VM_SRC_REL='bpftime-src'
+STATE_DIR="${TMPDIR:-/tmp}/bpftime-macos"
+HOST_BIN="$BUILD_DIR/tools/bpftime_darwin_host/bpftime-darwin-host"
+AGENT_DYLIB="$BUILD_DIR/runtime/agent/libbpftime-agent.dylib"
+
+FORCE_REBUILD=0
+if [[ "${1:-}" == "--rebuild" ]]; then
+	FORCE_REBUILD=1
+	shift
+fi
+if [[ $# -eq 0 ]]; then
+	echo "usage: bpftime-macos [--rebuild] <tool> [args...]" >&2
+	exit 2
+fi
+
+mkdir -p "$STATE_DIR"
+
+json_field() {
+	python3 - "$VM_DIR/vm-info.json" "$1" <<'PY'
+import json, sys
+print(json.load(open(sys.argv[1]))[sys.argv[2]])
+PY
+}
+
+log() { printf '\033[36m[bpftime-macos]\033[0m %s\n' "$*" >&2; }
+fail() {
+	printf '\033[31m[bpftime-macos]\033[0m %s\n' "$*" >&2
+	exit 1
+}
+
+[[ -f "$VM_DIR/vm-info.json" ]] || fail "vm-info.json not found under $VM_DIR; start bpftime-vz first (the wrapper never controls the VM lifecycle)."
+VM_IP="$(json_field vm_ip)"
+GW_IP="$(json_field gateway_ip)"
+SSH_KEY="$(json_field ssh_key)"
+SSH_USER="$(json_field ssh_user)"
+chmod 0600 "$SSH_KEY" 2>/dev/null || true
+
+SSH_OPTS=(-i "$SSH_KEY" -o BatchMode=yes -o StrictHostKeyChecking=no
+	-o UserKnownHostsFile=/dev/null -o ConnectTimeout=8)
+vssh() { ssh "${SSH_OPTS[@]}" "$SSH_USER@$VM_IP" "$@"; }
+
+# 1. VM reachability (no VM start/stop: the running VM is shared infra).
+ssh "${SSH_OPTS[@]}" -q "$SSH_USER@$VM_IP" true ||
+	fail "VM $VM_IP unreachable over SSH; is 'bpftime-vz run' alive?"
+log "VM reachable at $VM_IP"
+
+# 2. Remote source/build, virtiofs, binfmt_misc readiness.
+REMOTE_READY_SNIPPET="set -e
+BUILD=\"\$HOME/$VM_BUILD_REL\"
+SRC=\"\$HOME/$VM_SRC_REL\"
+if [[ ! -d \"\$SRC\" ]]; then echo MISSING_SRC; exit 0; fi
+if [[ $FORCE_REBUILD -eq 1 || ! -f \"\$BUILD/runtime/syscall-server/libbpftime-syscall-server.so\" ]]; then
+	cmake -G Ninja -S \"\$SRC\" -B \"\$BUILD\" \\
+		-DBPFTIME_ENABLE_FRIDA=OFF -DBPFTIME_LLVM_JIT=OFF \\
+		-DBPFTIME_UBPF_JIT=ON -DBUILD_BPFTIME_DAEMON=OFF \\
+		-DENABLE_EBPF_VERIFIER=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo
+	ninja -C \"\$BUILD\" bpftime-syscall-server bpftime-macos-exec
+	sudo cp -f \"\$BUILD/tools/macos_vz_vm/bpftime-macos-exec\" /usr/local/bin/bpftime-macos-exec
+	sudo chmod +x /usr/local/bin/bpftime-macos-exec
+fi
+mountpoint -q /Users || sudo mount -t virtiofs host_users /Users
+if [[ ! -e /proc/sys/fs/binfmt_misc/bpftime_macho64 ]]; then
+	sudo \"\$SRC/tools/macos_vz_vm/register_binfmt.sh\" /usr/local/bin/bpftime-macos-exec
+fi
+echo REMOTE_READY"
+
+if [[ "$(vssh "$REMOTE_READY_SNIPPET" 2>&1 | tail -1)" == "MISSING_SRC" ]]; then
+	log "syncing bpftime source to VM (~first run)"
+	rsync -az --delete -e "ssh ${SSH_OPTS[*]}" \
+		--exclude='build/' --exclude='.git/' --exclude='results/' \
+		--exclude='*.o' --exclude='*.dylib' --exclude='*.so' \
+		"$REPO_ROOT/" "$SSH_USER@$VM_IP:\$HOME/$VM_SRC_REL/"
+	vssh "$REMOTE_READY_SNIPPET" >/dev/null
+fi
+log "VM build, virtiofs and binfmt_misc ready"
+
+# 3. bpftime-darwin-host on the macOS host.
+[[ -x "$HOST_BIN" ]] || fail "missing $HOST_BIN; build the macOS targets first:
+  cmake --build $BUILD_DIR --target bpftime-agent bpftime-darwin-host"
+HOST_PIDFILE="$STATE_DIR/host.$PORT.pid"
+host_port_open() {
+	bash -c "exec 3<>/dev/tcp/127.0.0.1/$PORT" 2>/dev/null
+}
+if ! host_port_open; then
+	log "starting bpftime-darwin-host on 0.0.0.0:$PORT"
+	BPFTIME_DARWIN_PORT="$PORT" BPFTIME_AGENT_DYLIB="$AGENT_DYLIB" \
+		nohup "$HOST_BIN" >"$STATE_DIR/host.$PORT.log" 2>&1 &
+	echo $! >"$HOST_PIDFILE"
+	for _ in $(seq 1 60); do
+		host_port_open && break
+		sleep 0.5
+	done
+	host_port_open || fail "darwin-host did not open port $PORT; see $STATE_DIR/host.$PORT.log"
+else
+	log "darwin-host already listening on port $PORT"
+fi
+# The VM must be able to reach the host across the VZ NAT gateway.
+vssh "bash -c 'exec 3<>/dev/tcp/$GW_IP/$PORT'" ||
+	fail "VM cannot reach darwin-host at $GW_IP:$PORT"
+log "bridge endpoint $GW_IP:$PORT reachable from VM"
+
+# 4. Build the remote run script. It is base64-encoded and decoded into a
+#    temp file on the VM so that (a) sudo's env_reset/LD_PRELOAD blocklist
+#    cannot strip bridge variables, (b) no nested ssh/sudo quoting is needed,
+#    and (c) the tool keeps the terminal as its stdin. A /Users cwd maps 1:1
+#    over virtiofs so relative -c paths keep working.
+QUOTED_ARGS=""
+for a in "$@"; do
+	QUOTED_ARGS+=" $(printf '%q' "$a")"
+done
+
+GO_SECCOMP_LINE=""
+if [[ -n "${BPFTIME_GO_SECCOMP:-}" ]]; then
+	GO_SECCOMP_LINE="export BPFTIME_GO_SECCOMP=1"
+fi
+
+CWD_SNIPPET=""
+if [[ "$(pwd)" == /Users/* ]]; then
+	CWD_SNIPPET="cd $(printf '%q' "$(pwd)")"
+fi
+
+# Use the absolute /home/<user> path: under `sudo bash` $HOME is /root, so a
+# $HOME-relative LD_PRELOAD would resolve to a nonexistent /root path and ld.so
+# silently ignores the preload, disabling the whole bridge. In this unquoted
+# heredoc, \$ stays literal for remote expansion while local gateway/build
+# values are injected directly.
+PAYLOAD="$(cat <<EOF
+export LD_PRELOAD="/home/$SSH_USER/$VM_BUILD_REL/runtime/syscall-server/libbpftime-syscall-server.so"
+export BPFTIME_DARWIN_HOST="$GW_IP:$PORT"
+export BPFTIME_TARGET_OSX=1
+export BPFTIME_SHM_MEMORY_MB=1024
+export BPFTIME_VM_BUILD="/home/$SSH_USER/$VM_BUILD_REL"
+$GO_SECCOMP_LINE
+$CWD_SNIPPET
+exec$QUOTED_ARGS
+EOF
+)"
+B64="$(printf '%s' "$PAYLOAD" | base64 | tr -d '\n')"
+
+# bpftrace and the bcc-tools collection insist on uid 0; the cloud image
+# grants passwordless sudo. Running `sudo bash <script>` keeps every export.
+SUDO_PREFIX=""
+# Scan every argument (not just $1) so a `timeout ... bpftrace` wrapper is
+# still detected. Basename via expansion for BSD/macOS portability.
+for a in "$@"; do
+	case "${a##*/}" in
+	bpftrace|execsnoop|opensnoop|funclatency|bashreadline|biolatency|biosnoop|bitesize)
+		SUDO_PREFIX="sudo -n" ;;
+	esac
+done
+case "${BPFTIME_MACOS_SUDO:-auto}" in
+1) SUDO_PREFIX="sudo -n" ;;
+0) SUDO_PREFIX="" ;;
+esac
+
+# Allocate a PTY whenever sudo is used (the guest sudoers sets use_pty), and
+# otherwise whenever our own stdin is a terminal, so interactive CTRL-C and
+# bpftrace output behave like a local session.
+if [[ -n "$SUDO_PREFIX" || -t 0 ]]; then
+	TTY_OPT=(-tt)
+else
+	TTY_OPT=(-T)
+fi
+exec ssh "${TTY_OPT[@]}" "${SSH_OPTS[@]}" "$SSH_USER@$VM_IP" \
+"RUNNER_SH=\$(mktemp /tmp/bpftime-macos.XXXXXX.sh)
+echo '$B64' | base64 -d > \"\$RUNNER_SH\"
+$SUDO_PREFIX bash \"\$RUNNER_SH\"
+rc=\$?
+rm -f \"\$RUNNER_SH\"
+exit \$rc"
