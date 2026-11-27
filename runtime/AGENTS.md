@@ -19,7 +19,10 @@ Safety Redlines and Host-process safety invariants are binding here.
   must never take a global `bpf_map_handler::map_lock` (`should_lock = false`;
   `HASH` and `PERCPU_HASH` share preallocated `bpftime_hash_map` with lock-free
   `lookup` and sharded write stripes, and `LPM_TRIE` shards `prefixlen >= 32`
-  sub-tries across 64 `robust_shm_mutex` stripes (`should_lock = false`)). All
+  sub-tries across 64 `robust_shm_mutex` stripes plus one shared fallback
+  stripe for shorter prefixes (`should_lock = false`; a long-prefix lookup
+  holds its own stripe and nests the fallback stripe only in the fixed
+  long->fallback order when short entries exist, never the reverse)). All
   cross-process shared-memory lock primitives, RAII guards, and
   blocking-vs-`trylock` dispatch live **exclusively** in
   `runtime/include/robust_shm_mutex.hpp`

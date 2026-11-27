@@ -196,41 +196,38 @@ lpm_trie_map_impl::get_node_value_data(const lpm_trie_node *node) const
 	return node->data.data() + _data_size;
 }
 
-lpm_trie_node *lpm_trie_map_impl::lookup_shard(size_t shard,
-					       const bpf_lpm_trie_key *lpm_key,
-					       bool from_syscall,
-					       bool &locked) noexcept
+void *lpm_trie_map_impl::find_value_locked(size_t shard,
+					   const bpf_lpm_trie_key *lpm_key)
 {
-	return with_robust_shm_lock(
-		true, from_syscall, stripes_[shard],
-		[&]() -> lpm_trie_node * {
-			locked = true;
-			lpm_trie_node *node = boost::interprocess::ipcdetail::
-				to_raw_pointer(roots_[shard].get());
-			lpm_trie_node *found = nullptr;
-			while (node) {
-				size_t matchlen =
-					longest_prefix_match(node, lpm_key);
-				if (matchlen == _max_prefixlen) {
-					found = node;
-					break;
-				}
-				if (matchlen < node->prefixlen)
-					break;
-				if (!node->is_intermediate)
-					found = node;
-				if (matchlen >= lpm_key->prefixlen)
-					break;
-				node = boost::interprocess::ipcdetail::
-					to_raw_pointer(
-						node->child[extract_bit(
-								    lpm_key->data,
-								    node->prefixlen)]
-							.get());
-			}
-			return found;
-		},
-		"lpm_trie_map");
+	lpm_trie_node *node = boost::interprocess::ipcdetail::to_raw_pointer(
+		roots_[shard].get());
+	lpm_trie_node *found = nullptr;
+	while (node) {
+		size_t matchlen = longest_prefix_match(node, lpm_key);
+		if (matchlen == _max_prefixlen) {
+			found = node;
+			break;
+		}
+		if (matchlen < node->prefixlen)
+			break;
+		if (!node->is_intermediate)
+			found = node;
+		if (matchlen >= lpm_key->prefixlen)
+			break;
+		node = boost::interprocess::ipcdetail::to_raw_pointer(
+			node->child[extract_bit(lpm_key->data, node->prefixlen)]
+				.get());
+	}
+	if (!found)
+		return nullptr;
+	// Resolve the inline value while the stripe is still held so a
+	// concurrent logical delete cannot flip is_intermediate underneath us.
+	// The value lives in the node itself rather than a per-thread copy-out
+	// buffer: a second lookup must not clobber a first result, and this path
+	// is reachable from a malloc callback while libc holds an arena lock, so
+	// no allocation is permitted here. Logical delete never frees node
+	// storage, so the returned address stays valid after the stripe unlocks.
+	return get_node_value_data(found);
 }
 
 void *lpm_trie_map_impl::elem_lookup(const void *key, bool from_syscall)
@@ -254,39 +251,46 @@ void *lpm_trie_map_impl::elem_lookup(const void *key, bool from_syscall)
 	}
 
 	const size_t shard = shard_for(lpm_key);
-	bool locked = false;
-	lpm_trie_node *found =
-		lookup_shard(shard, lpm_key, from_syscall, locked);
-	if (!locked)
-		return nullptr;
-	if (!found && shard != NUM_SHARDS &&
-	    short_entries_.load(std::memory_order_acquire) > 0) {
-		bool short_locked = false;
-		found = lookup_shard(NUM_SHARDS, lpm_key, from_syscall,
-				     short_locked);
-		if (!short_locked)
-			return nullptr;
-	}
+	bool outer_locked = false;
+	bool fallback_skipped = false;
+	// The long-prefix stripe stays held for the whole resolution. When the
+	// key may also match a shorter (<32-bit) prefix stored in the fallback
+	// stripe, that stripe is acquired nested in the fixed order
+	// long -> fallback; it cannot deadlock because the fallback stripe never
+	// takes a long-prefix stripe. Helper trylock on either stays non-blocking.
+	void *result = with_robust_shm_lock(
+		true, from_syscall, stripes_[shard],
+		[&]() -> void * {
+			outer_locked = true;
+			void *value = find_value_locked(shard, lpm_key);
+			if (value || shard == NUM_SHARDS ||
+			    short_entries_.load(std::memory_order_acquire) == 0)
+				return value;
+			bool fallback_locked = false;
+			void *short_value = with_robust_shm_lock(
+				true, from_syscall, stripes_[NUM_SHARDS],
+				[&]() -> void * {
+					fallback_locked = true;
+					return find_value_locked(NUM_SHARDS,
+								 lpm_key);
+				},
+				"lpm_trie_map");
+			if (!fallback_locked)
+				fallback_skipped = true;
+			return short_value;
+		},
+		"lpm_trie_map");
 
-	if (!found) {
+	// Helper trylock miss on either stripe: skip the event while the
+	// gateway has already restored host errno.
+	if (!outer_locked || fallback_skipped)
+		return nullptr;
+	if (!result) {
 		if (from_syscall)
 			errno = ENOENT;
 		return nullptr;
 	}
-
-	// Return the value where it lives in the node. A copy-out buffer aliases
-	// across lookups: one buffer per thread means a second lookup by the
-	// same program overwrites the first result, which the kernel never
-	// does. A per-thread buffer also had to stay clear of the allocator,
-	// because this lookup is reachable from a malloc callback while libc
-	// holds an arena lock. Pointing into the node satisfies both: distinct
-	// storage per key, and no allocation on this path.
-	uint8_t *value_data = get_node_value_data(found);
-	if (!value_data) {
-		errno = ENOENT;
-		return nullptr;
-	}
-	return value_data;
+	return result;
 }
 
 long lpm_trie_map_impl::elem_update(const void *key, const void *value,
@@ -335,6 +339,27 @@ long lpm_trie_map_impl::update_shard(size_t shard,
 {
 	node_unique_ptr &root = roots_[shard];
 
+	// Rolls a reserved entry slot back when the insertion fails or throws
+	// before committing. Stack-only: no heap allocation and no syscall.
+	struct slot_rollback {
+		lpm_trie_map_impl &self;
+		const size_t shard;
+		bool armed;
+		slot_rollback(lpm_trie_map_impl &s, size_t sh)
+			: self(s), shard(sh), armed(true)
+		{
+		}
+		~slot_rollback()
+		{
+			if (armed)
+				self.release_slot(shard);
+		}
+		void commit()
+		{
+			armed = false;
+		}
+	};
+
 	// Helper lambdas
 	auto is_exact_match = [&](const lpm_trie_node *n) -> bool {
 		return n && n->prefixlen == lpm_key->prefixlen &&
@@ -358,10 +383,13 @@ long lpm_trie_map_impl::update_shard(size_t shard,
 			return errno = ENOENT, -1;
 		if (!reserve_slot(shard))
 			return errno = ENOSPC, -1;
+		slot_rollback rollback(*this, shard);
 		auto new_node = alloc_keyed(lpm_key->prefixlen, value, false);
 		auto im_node = alloc_keyed(matchlen, nullptr, true);
-		if (!new_node || !im_node)
-			return release_slot(shard), errno = ENOMEM, -1;
+		if (!new_node || !im_node) {
+			errno = ENOMEM;
+			return -1;
+		}
 		if (extract_bit(lpm_key->data, matchlen)) {
 			im_node->child[0] = std::move(*slot);
 			im_node->child[1] = std::move(new_node);
@@ -370,6 +398,7 @@ long lpm_trie_map_impl::update_shard(size_t shard,
 			im_node->child[1] = std::move(*slot);
 		}
 		*slot = std::move(im_node);
+		rollback.commit();
 		return 0;
 	};
 
@@ -383,13 +412,14 @@ long lpm_trie_map_impl::update_shard(size_t shard,
 			errno = ENOSPC;
 			return -1;
 		}
+		slot_rollback rollback(*this, shard);
 		auto new_node = alloc_keyed(lpm_key->prefixlen, value, false);
 		if (!new_node) {
-			release_slot(shard);
 			errno = ENOMEM;
 			return -1;
 		}
 		root = std::move(new_node);
+		rollback.commit();
 		return 0;
 	}
 
@@ -428,8 +458,13 @@ long lpm_trie_map_impl::update_shard(size_t shard,
 					errno = ENOSPC;
 					return -1;
 				}
-				node->is_intermediate = false;
+				slot_rollback rollback(*this, shard);
+				// Grow storage before marking the node real: a
+				// throwing resize leaves it intermediate and the
+				// reserved slot is rolled back.
 				node->data.resize(_data_size + _value_size);
+				node->is_intermediate = false;
+				rollback.commit();
 			}
 			copy_value_data(node, value);
 			return 0;
@@ -447,13 +482,14 @@ long lpm_trie_map_impl::update_shard(size_t shard,
 			errno = ENOSPC;
 			return -1;
 		}
+		slot_rollback rollback(*this, shard);
 		auto new_node = alloc_keyed(lpm_key->prefixlen, value, false);
 		if (!new_node) {
-			release_slot(shard);
 			errno = ENOMEM;
 			return -1;
 		}
 		*slot = std::move(new_node);
+		rollback.commit();
 		return 0;
 	}
 
@@ -467,9 +503,9 @@ long lpm_trie_map_impl::update_shard(size_t shard,
 			errno = ENOSPC;
 			return -1;
 		}
+		slot_rollback rollback(*this, shard);
 		auto new_node = alloc_keyed(lpm_key->prefixlen, value, false);
 		if (!new_node) {
-			release_slot(shard);
 			errno = ENOMEM;
 			return -1;
 		}
@@ -477,6 +513,7 @@ long lpm_trie_map_impl::update_shard(size_t shard,
 			extract_bit(get_node_prefix_data(node), matchlen);
 		new_node->child[next_bit] = std::move(*slot);
 		*slot = std::move(new_node);
+		rollback.commit();
 		return 0;
 	}
 
