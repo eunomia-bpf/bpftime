@@ -2,6 +2,8 @@
 
 Newest first. Read before starting a change. A pull request that reverses an entry is a design problem until a maintainer decides again. Every entry quotes the maintainer verbatim; changing a decision means adding a new entry.
 
+- **2026-11-27: remove `has_pending_uprobe` latch and defer `shm_lifecycle_lock` on `dlopen()`** (#970 follow-up; closes #1016). Delete the process-local `has_pending_uprobe` / `has_pending_uprobes()` latch introduced in #970 instead of adding a shared-memory generation counter (#1016): a boolean set only from startup `-ENOENT` misses uprobe links registered in SHM after target startup. On outermost successful non-`RTLD_NOLOAD` host `dlopen()`, the agent takes only non-blocking process-local `try_to_lock(detach_mutex)` + `try_to_lock(ctx_mutex)`, skips already-instantiated and unmapped DSOs (`is_module_mapped`) in memory (`0` syscalls, `0` heap allocations), and lazily acquires shared `shm_lifecycle_lock` (`LOCK_SH | LOCK_NB`) only when an uninstantiated mapped uprobe actually needs to be attached.
+
 - **2026-11-27: the probe-read window is configurable and capped at 512 bytes in static TLS** (#984). `BPFTIME_PROBE_READ_WINDOW_BYTES` (0–512, default 512; 0 disables the window) and `BPFTIME_PROBE_READ_LOOKBEHIND_BYTES` (default 64, at most the window size) are read at startup. The per-thread window stays in `initial-exec` TLS, so a probe read never allocates, and 512 bytes keeps a late `dlopen()` of the agent inside glibc's static-TLS surplus. A larger window needs storage outside TLS and a new decision.
   > bpftime 我们现在 probe read 是不是有缓存? 这个大小长度和方向是不是动态配置更好? 你想想? 这个窗口默认值多少比较好?
   >

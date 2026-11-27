@@ -239,4 +239,78 @@ TEST_CASE(
 	REQUIRE(WIFEXITED(status));
 	REQUIRE(WEXITSTATUS(status) == 0);
 }
+
+TEST_CASE(
+	"Preloaded agent attaches uprobe links registered in SHM after startup on subsequent dlopen",
+	"[agent][dlopen]")
+{
+	shm_fixture shm;
+	const auto initial_sym = dso_symbol_offset("libc.so.6", "getpgid");
+	const auto late_sym = dso_symbol_offset(
+		BPFTIME_AGENT_DLOPEN_TARGET_LIB, "bpftime_dlopen_target_func");
+	REQUIRE(create_array_map(MAP_A_FD, "dlopen_post_map_a") >= 0);
+	REQUIRE(create_hit_prog(PROG_A_FD, MAP_A_FD, "dlopen_post_prog_a") >= 0);
+	create_uprobe_link(PROG_A_FD, initial_sym.path.c_str(),
+			   initial_sym.offset);
+
+	int ctrl_pipe[2];
+	int out_pipe[2];
+	REQUIRE(pipe(ctrl_pipe) == 0);
+	REQUIRE(pipe(out_pipe) == 0);
+	pid_t child = fork();
+	REQUIRE(child >= 0);
+	if (child == 0) {
+		close(ctrl_pipe[1]);
+		close(out_pipe[0]);
+		dup2(out_pipe[1], STDOUT_FILENO);
+		close(out_pipe[1]);
+		setenv("LD_PRELOAD", BPFTIME_AGENT_LIBRARY, 1);
+		unsetenv("BPFTIME_ENABLE_AGENT_IPC");
+		unsetenv("BPFTIME_AGENT_DENY_PROCESS");
+		unsetenv("BPFTIME_AGENT_ALLOW_PROCESS");
+		std::string fd_arg = std::to_string(ctrl_pipe[0]);
+		execl(BPFTIME_AGENT_DLOPEN_HELPER,
+		      "bpftime-agent-dlopen-helper", late_sym.path.c_str(),
+		      fd_arg.c_str(), nullptr);
+		_exit(127);
+	}
+	close(ctrl_pipe[0]);
+	close(out_pipe[1]);
+	struct child_cleanup {
+		pid_t pid;
+		int input, output;
+		~child_cleanup()
+		{
+			if (pid > 0) {
+				kill(pid, SIGKILL);
+				waitpid(pid, nullptr, 0);
+			}
+			close(input);
+			close(output);
+		}
+	} cleanup{ child, ctrl_pipe[1], out_pipe[0] };
+
+	REQUIRE(read_line(out_pipe[0]) == "ready");
+	REQUIRE(read_map_value(MAP_A_FD) == 1);
+
+	// Register the second uprobe link AFTER the child has already finished
+	// startup with zero startup -ENOENT uprobes.
+	REQUIRE(create_array_map(MAP_B_FD, "dlopen_post_map_b") >= 0);
+	REQUIRE(create_hit_prog(PROG_B_FD, MAP_B_FD, "dlopen_post_prog_b") >= 0);
+	create_uprobe_link(PROG_B_FD, late_sym.path.c_str(), late_sym.offset);
+
+	char cmd = 'l';
+	REQUIRE(write(ctrl_pipe[1], &cmd, 1) == 1);
+	REQUIRE(read_line(out_pipe[0]) == "done");
+	REQUIRE(read_map_value(MAP_A_FD) == 2);
+	REQUIRE(read_map_value(MAP_B_FD) == 1);
+
+	cmd = 'q';
+	REQUIRE(write(ctrl_pipe[1], &cmd, 1) == 1);
+	int status = 0;
+	REQUIRE(waitpid(child, &status, 0) == child);
+	cleanup.pid = -1;
+	REQUIRE(WIFEXITED(status));
+	REQUIRE(WEXITSTATUS(status) == 0);
+}
 #endif
