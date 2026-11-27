@@ -304,6 +304,94 @@ TEST_CASE("LRU hash map flags distinguish helper and syscall access",
 	segment.destroy_ptr(manager);
 }
 
+// The handler enforces the flags for every backend, not only the
+// flag-aware hash maps: check an array and a queue map.
+TEST_CASE("map handler enforces fd flags on array and queue maps",
+	  "[map_flags]")
+{
+	static const char *shm_name = "_ARRAY_QUEUE_HANDLER_FLAGS_TEST";
+	::shm_remove remover(shm_name);
+	managed_shared_memory segment(create_only, shm_name, 8 << 20);
+	auto *manager = segment.construct<handler_manager>(
+		"_array_queue_flags_handler_manager")(segment,
+						      MIN_MAX_FD_COUNT);
+
+	constexpr int array_rdonly_fd = 1, array_wronly_fd = 2;
+	constexpr int queue_rdonly_fd = 3, queue_wronly_fd = 4;
+	const auto add = [&](int fd, int type, uint32_t key_size,
+			     uint64_t flags) {
+		REQUIRE(manager->set_handler(
+				fd,
+				bpf_map_handler(fd, type, key_size,
+						sizeof(uint64_t), 4, flags,
+						"flags_map", segment),
+				segment) == fd);
+	};
+	add(array_rdonly_fd, BPF_MAP_TYPE_ARRAY, sizeof(uint32_t),
+	    BPF_F_RDONLY);
+	add(array_wronly_fd, BPF_MAP_TYPE_ARRAY, sizeof(uint32_t),
+	    BPF_F_WRONLY);
+	add(queue_rdonly_fd, BPF_MAP_TYPE_QUEUE, 0, BPF_F_RDONLY);
+	add(queue_wronly_fd, BPF_MAP_TYPE_QUEUE, 0, BPF_F_WRONLY);
+
+	uint32_t key = 0, next_key = 0;
+	uint64_t value = 1234, out = 0;
+	const auto map_at = [&](int fd) -> bpf_map_handler & {
+		return std::get<bpf_map_handler>((*manager)[fd]);
+	};
+	const auto require_eperm = [](long ret) {
+		REQUIRE(ret == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+	};
+
+	{
+		auto &map = map_at(array_rdonly_fd);
+		errno = 0;
+		require_eperm(map.map_update_elem(&key, &value, BPF_ANY, true));
+		require_eperm(map.map_delete_elem(&key, true));
+		REQUIRE(map.map_lookup_elem(&key, true) != nullptr);
+		// The BPF program keeps write access.
+		REQUIRE(map.map_update_elem(&key, &value, BPF_ANY, false) == 0);
+	}
+	{
+		auto &map = map_at(array_wronly_fd);
+		errno = 0;
+		REQUIRE(map.map_lookup_elem(&key, true) == nullptr);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		require_eperm(map.bpf_map_get_next_key(nullptr, &next_key, true));
+		REQUIRE(map.map_update_elem(&key, &value, BPF_ANY, true) == 0);
+		// The BPF program keeps read access.
+		REQUIRE(map.map_lookup_elem(&key, false) != nullptr);
+	}
+	{
+		auto &map = map_at(queue_rdonly_fd);
+		errno = 0;
+		require_eperm(map.map_push_elem(&value, BPF_ANY, true));
+		require_eperm(map.map_pop_elem(&out, true));
+		REQUIRE(map.map_push_elem(&value, BPF_ANY, false) == 0);
+		REQUIRE(map.map_peek_elem(&out, true) == 0);
+		REQUIRE(out == value);
+	}
+	{
+		auto &map = map_at(queue_wronly_fd);
+		errno = 0;
+		REQUIRE(map.map_push_elem(&value, BPF_ANY, true) == 0);
+		require_eperm(map.map_peek_elem(&out, true));
+		require_eperm(map.map_lookup_and_delete_elem(nullptr, &out,
+							     true));
+		// The rejected pop left the element in place for the program.
+		REQUIRE(map.map_pop_elem(&out, false) == 0);
+		REQUIRE(out == value);
+	}
+
+	for (int fd : { array_rdonly_fd, array_wronly_fd, queue_rdonly_fd,
+			queue_wronly_fd })
+		manager->clear_id_at(fd, segment);
+	segment.destroy_ptr(manager);
+}
+
 #if __linux__
 // End-to-end through the global C shim, the layer shared by the intercepted
 // bpf() syscall (syscall_context, from_syscall=true via the plain wrappers)

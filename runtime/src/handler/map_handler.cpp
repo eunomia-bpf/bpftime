@@ -9,7 +9,9 @@
 #include "bpf_map/userspace/per_cpu_hash_map.hpp"
 #include "bpf_map/userspace/stack_trace_map.hpp"
 #include "bpftime_shm_internal.hpp"
+#include "linux/bpf.h"
 #include <algorithm>
+#include <cerrno>
 #include <cstdlib>
 #include <string>
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
@@ -54,6 +56,20 @@ namespace {
 // is copied here while map_lock is held, so the caller's subsequent memcpy
 // cannot read a hash node freed by a concurrent delete.
 thread_local int tl_map_in_map_fd_snapshot;
+
+// BPF_F_RDONLY/BPF_F_WRONLY restrict only fd-based syscall access (the
+// kernel's map fd mode checks); BPF helpers call with from_syscall == false
+// and are governed by the *_PROG flags, which are not enforced. Checked here
+// so every backend, including external map ops, gets the same semantics.
+bool syscall_access_denied(uint64_t map_flags, bool from_syscall,
+			   uint64_t denied_by)
+{
+	if (from_syscall && (map_flags & denied_by)) {
+		errno = EPERM;
+		return true;
+	}
+	return false;
+}
 } // namespace
 
 bpftime_map_ops global_map_ops_table[(int)bpf_map_type::BPF_MAP_TYPE_MAX] = {
@@ -108,6 +124,8 @@ bpf_map_handler::try_get_nv_gpu_ringbuf_map_impl() const
 const void *bpf_map_handler::map_lookup_elem(const void *key,
 					     bool from_syscall) const
 {
+	if (syscall_access_denied(flags, from_syscall, BPF_F_WRONLY))
+		return nullptr;
 	shm_write_window_guard shm_window;
 	const auto do_lookup = [&](auto *impl) -> const void * {
 		if (impl->should_lock) {
@@ -302,6 +320,8 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 long bpf_map_handler::map_update_elem(const void *key, const void *value,
 				      uint64_t flags, bool from_syscall) const
 {
+	if (syscall_access_denied(this->flags, from_syscall, BPF_F_RDONLY))
+		return -1;
 	shm_write_window_guard shm_window;
 	const auto do_update = [&](auto *impl) -> long {
 		if (impl->should_lock) {
@@ -489,6 +509,8 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 					  bool from_syscall) const
 {
+	if (syscall_access_denied(flags, from_syscall, BPF_F_WRONLY))
+		return -1;
 	shm_write_window_guard shm_window;
 	const auto do_get_next_key = [&](auto *impl) -> int {
 		if (impl->should_lock) {
@@ -657,6 +679,8 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 
 long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 {
+	if (syscall_access_denied(flags, from_syscall, BPF_F_RDONLY))
+		return -1;
 	shm_write_window_guard shm_window;
 	const auto do_delete = [&](auto *impl) -> long {
 		if (impl->should_lock) {
@@ -1489,6 +1513,8 @@ int bpftime_register_map_ops(int map_type, bpftime_map_ops *ops)
 long bpf_map_handler::map_push_elem(const void *value, uint64_t flags,
 				    bool from_syscall) const
 {
+	if (syscall_access_denied(this->flags, from_syscall, BPF_F_RDONLY))
+		return -1;
 	shm_write_window_guard shm_window;
 	const auto do_push = [&](auto *impl) -> long {
 		if (impl->should_lock) {
@@ -1522,6 +1548,9 @@ long bpf_map_handler::map_push_elem(const void *value, uint64_t flags,
 
 long bpf_map_handler::map_pop_elem(void *value, bool from_syscall) const
 {
+	if (syscall_access_denied(flags, from_syscall,
+				  BPF_F_RDONLY | BPF_F_WRONLY))
+		return -1;
 	shm_write_window_guard shm_window;
 	const auto do_pop = [&](auto *impl) -> long {
 		if (impl->should_lock) {
@@ -1551,6 +1580,10 @@ long bpf_map_handler::map_pop_elem(void *value, bool from_syscall) const
 long bpf_map_handler::map_lookup_and_delete_elem(const void *key, void *value,
 						 bool from_syscall) const
 {
+	// Reads the value and deletes the entry: needs both permissions.
+	if (syscall_access_denied(flags, from_syscall,
+				  BPF_F_RDONLY | BPF_F_WRONLY))
+		return -1;
 	shm_write_window_guard shm_window;
 	// The kernel dispatches by map type: queue/stack take the keyless pop
 	// path, the hash variants (HASH, PERCPU_HASH, LRU_HASH,
@@ -1623,6 +1656,8 @@ long bpf_map_handler::map_lookup_and_delete_elem(const void *key, void *value,
 
 long bpf_map_handler::map_peek_elem(void *value, bool from_syscall) const
 {
+	if (syscall_access_denied(flags, from_syscall, BPF_F_WRONLY))
+		return -1;
 	const auto do_peek = [&](auto *impl) -> long {
 		if (impl->should_lock) {
 			bpftime_lock_guard guard(map_lock);
