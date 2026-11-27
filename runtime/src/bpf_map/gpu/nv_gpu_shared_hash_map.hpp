@@ -23,10 +23,6 @@ class nv_gpu_shared_hash_map_impl {
 	// Host-side buffer for all of keys
 	bytes_vec key_buffer;
 
-	// The `array_map` will be locked in bpf_map_handler, so we ensure the
-	// thread-safety internally.
-	mutable pthread_spinlock_t map_lock;
-
 	inline size_t get_elem_offset(size_t index) const
 	{
 		return index * (4 + _key_size);
@@ -65,9 +61,8 @@ class nv_gpu_shared_hash_map_impl {
 	void *key_lookup(const void *key);
 
     public:
-	// The `array_map` will be locked in bpf_map_handler, so we ensure the
-	// thread-safety internally.
-	const static bool should_lock = false;
+	// Delegated to bpf_map_handler::map_lock like all container maps.
+	const static bool should_lock = true;
 
 	nv_gpu_shared_hash_map_impl(
 		boost::interprocess::managed_shared_memory &memory,
@@ -89,7 +84,7 @@ class nv_gpu_shared_hash_map_impl {
 	{
 		return 1;
 	}
-	virtual ~nv_gpu_shared_hash_map_impl();
+	~nv_gpu_shared_hash_map_impl();
 
 	CUdeviceptr try_initialize_for_agent_and_get_mapped_address();
 };

@@ -45,7 +45,7 @@ typedef int gboolean;
 #ifdef __linux__
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <sys/types.h>
+#include "bpftime_agent_ipc.hpp"
 #endif
 #include "bpftime_shm.hpp"
 #include <spdlog/spdlog.h>
@@ -75,9 +75,9 @@ enum agent_init_state {
 	AGENT_UNINITIALIZED = 0,
 	AGENT_INITIALIZING = 1,
 	AGENT_READY = 2,
+	AGENT_EXITING = 3,
 };
 static int initialized = AGENT_UNINITIALIZED;
-static std::atomic<bool> initialized_by_rocprofiler{ false };
 
 using agent_control_fn_t = void (*)(const gchar *);
 
@@ -130,7 +130,10 @@ static void install_agent_bootstrap_logger() noexcept
 	if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) !=
 	    AGENT_UNINITIALIZED)
 		return;
-	const char *logger_target = getenv("BPFTIME_LOG_OUTPUT");
+	const char *logger_target =
+		get_agent_bootstrap_config().has_log_output ?
+			get_agent_bootstrap_config().log_output :
+			nullptr;
 	bpftime_set_logger(logger_target == nullptr ? DEFAULT_LOGGER_OUTPUT_PATH :
 						     logger_target);
 }
@@ -209,83 +212,25 @@ static agent_control_fn_t find_other_loaded_agent_control()
 }
 
 #ifdef __linux__
-static bool make_agent_ipc_addr(pid_t pid, sockaddr_un &addr, socklen_t &len)
-{
-	memset(&addr, 0, sizeof(addr));
-	addr.sun_family = AF_UNIX;
-	std::string name = "bpftime-agent-" + std::to_string((int)pid);
-	if (name.size() + 1 > sizeof(addr.sun_path))
-		return false;
-	addr.sun_path[0] = '\0'; // abstract namespace
-	memcpy(addr.sun_path + 1, name.data(), name.size());
-	len = (socklen_t)(offsetof(sockaddr_un, sun_path) + 1 + name.size());
-	return true;
-}
-
-static bool try_send_agent_ipc(pid_t pid, const std::string &request,
-			       std::string *response_out = nullptr)
-{
-	int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-	if (fd < 0)
-		return false;
-	sockaddr_un addr {};
-	socklen_t len = 0;
-	if (!make_agent_ipc_addr(pid, addr, len)) {
-		::close(fd);
-		return false;
-	}
-	if (::connect(fd, (sockaddr *)&addr, len) != 0) {
-		::close(fd);
-		return false;
-	}
-	const char *buf = request.data();
-	size_t left = request.size();
-	while (left > 0) {
-		ssize_t n = ::send(fd, buf, left, MSG_NOSIGNAL);
-		if (n < 0) {
-			::close(fd);
-			return false;
-		}
-		buf += (size_t)n;
-		left -= (size_t)n;
-	}
-	(void)::shutdown(fd, SHUT_WR);
-	if (response_out) {
-		std::string resp;
-		char rbuf[4096];
-		for (;;) {
-			ssize_t n = ::recv(fd, rbuf, sizeof(rbuf), 0);
-			if (n <= 0)
-				break;
-			resp.append(rbuf, rbuf + n);
-		}
-		*response_out = std::move(resp);
-	}
-	::close(fd);
-	return true;
-}
-
 static bool try_forward_to_existing_agent(const gchar *data)
 {
 	std::string req("refresh ");
 	if (data != nullptr)
 		req += data;
-	return try_send_agent_ipc(getpid(), req);
+	return bpftime::try_send_agent_ipc(getpid(), req);
 }
 #endif
 
 static void start_agent_ipc_server_once()
 {
 #ifdef __linux__
-	const char *enable_ipc = getenv("BPFTIME_ENABLE_AGENT_IPC");
 	if (!injected_with_frida &&
-	    (enable_ipc == nullptr || enable_ipc[0] == '\0' ||
-	     strcmp(enable_ipc, "0") == 0))
+	    !get_agent_bootstrap_config().enable_agent_ipc)
 		return;
 	std::call_once(agent_ipc_once, []() {
 		sockaddr_un addr {};
 		socklen_t len = 0;
-		if (!make_agent_ipc_addr(getpid(), addr, len)) {
+		if (!bpftime::make_agent_ipc_addr(getpid(), addr, len)) {
 			SPDLOG_WARN("agent ipc: unable to build socket address");
 			return;
 		}
@@ -331,72 +276,95 @@ static void start_agent_ipc_server_once()
 					::close(cfd);
 					continue;
 				}
-				std::string req;
-				char buf[4096];
-				for (;;) {
-					ssize_t n = ::recv(cfd, buf, sizeof(buf), 0);
-					if (n <= 0)
-						break;
-					req.append(buf, buf + n);
-					if (req.size() > (1 << 20))
-						break;
-				}
-				// Parse: "refresh <k=v;...>" or "detach" or "status".
-				auto trim = [](std::string &s) {
-					while (!s.empty() &&
-					       (s.back() == '\n' || s.back() == '\r' ||
-						s.back() == '\0'))
-						s.pop_back();
-				};
-				trim(req);
-				if (req.rfind("refresh ", 0) == 0) {
-					std::string arg = req.substr(strlen("refresh "));
-					int rc = refresh_attach_session(arg.c_str());
-					if (rc == 0) {
-						(void)::send(cfd, "ok\n", 3,
-							     MSG_NOSIGNAL);
-					} else {
-						std::string out =
-							"err refresh " +
-							std::to_string(rc) +
-							"\n";
+				try {
+					bpftime::set_ipc_socket_timeout(cfd, 1000);
+					std::string req;
+					char buf[4096];
+					for (;;) {
+						ssize_t n = ::recv(cfd, buf,
+								   sizeof(buf), 0);
+						if (n <= 0)
+							break;
+						req.append(buf, buf + n);
+						if (req.size() > (1 << 20))
+							break;
+					}
+					// Parse: "refresh <k=v;...>" or "detach" or "status".
+					auto trim = [](std::string &s) {
+						while (!s.empty() &&
+						       (s.back() == '\n' ||
+							s.back() == '\r' ||
+							s.back() == '\0'))
+							s.pop_back();
+					};
+					trim(req);
+					if (req.rfind("refresh ", 0) == 0) {
+						std::string arg = req.substr(
+							strlen("refresh "));
+						int rc = refresh_attach_session(
+							arg.c_str());
+						if (rc == 0) {
+							(void)::send(cfd, "ok\n",
+								     3,
+								     MSG_NOSIGNAL);
+						} else {
+							std::string out =
+								"err refresh " +
+								std::to_string(rc) +
+								"\n";
+							(void)::send(cfd,
+								     out.data(),
+								     out.size(),
+								     MSG_NOSIGNAL);
+						}
+					} else if (req == "detach") {
+						int rc = perform_detach();
+						if (rc == 0) {
+							(void)::send(cfd, "ok\n",
+								     3,
+								     MSG_NOSIGNAL);
+						} else {
+							std::string out =
+								"err detach " +
+								std::to_string(rc) +
+								"\n";
+							(void)::send(cfd,
+								     out.data(),
+								     out.size(),
+								     MSG_NOSIGNAL);
+						}
+					} else if (req == "status") {
+						uint64_t epoch =
+							shm_holder
+								.global_shared_memory
+								.read_stable_epoch_seq();
+						std::string out;
+						if (epoch ==
+						    BPFTIME_EPOCH_SEQ_MISSING) {
+							out = "epoch_seq=missing\n";
+						} else if (
+							epoch ==
+							BPFTIME_EPOCH_SEQ_UNSTABLE) {
+							out = "epoch_seq=unstable\n";
+						} else {
+							out = "epoch_seq=" +
+							      std::to_string(
+								      epoch) +
+							      "\n";
+						}
 						(void)::send(cfd, out.data(),
 							     out.size(),
 							     MSG_NOSIGNAL);
-					}
-				} else if (req == "detach") {
-					int rc = perform_detach();
-					if (rc == 0) {
-						(void)::send(cfd, "ok\n", 3,
-							     MSG_NOSIGNAL);
 					} else {
-						std::string out =
-							"err detach " +
-							std::to_string(rc) +
-							"\n";
-						(void)::send(cfd, out.data(),
-							     out.size(),
+						(void)::send(cfd, "unknown\n", 8,
 							     MSG_NOSIGNAL);
 					}
-				} else if (req == "status") {
-					uint64_t epoch =
-						shm_holder.global_shared_memory
-							.read_stable_epoch_seq();
-					std::string out;
-					if (epoch == BPFTIME_EPOCH_SEQ_MISSING) {
-						out = "epoch_seq=missing\n";
-					} else if (epoch ==
-						   BPFTIME_EPOCH_SEQ_UNSTABLE) {
-						out = "epoch_seq=unstable\n";
-					} else {
-						out = "epoch_seq=" +
-						      std::to_string(epoch) +
-						      "\n";
-					}
-					(void)::send(cfd, out.data(), out.size(),
+				} catch (...) {
+					// Never let an attach/IPC exception escape a
+					// std::thread in an LD_PRELOAD library and
+					// terminate the host process.
+					(void)::send(cfd, "err exception\n", 14,
 						     MSG_NOSIGNAL);
-				} else {
-					(void)::send(cfd, "unknown\n", 8, MSG_NOSIGNAL);
 				}
 				::close(cfd);
 			}
@@ -475,30 +443,50 @@ static void stop_syscall_dispatch_at_exit() noexcept
 	reset_syscall_trace_global();
 }
 
+static void quiesce_agent_for_process_exit() noexcept
+{
+	const int saved_errno = errno;
+	static std::atomic<bool> exit_quiesced{ false };
+	if (exit_quiesced.exchange(true, std::memory_order_acq_rel)) {
+		errno = saved_errno;
+		return;
+	}
+	bpftime::attach::process_attach_callbacks_suppressed.store(
+		true, std::memory_order_release);
+	stop_syscall_dispatch_at_exit();
+	if (global_ctx_constructed.load(std::memory_order_acquire) &&
+	    bpftime_global_shm_is_initialized()) {
+		try {
+			shm_holder.global_shared_memory
+				.remove_pid_from_alive_agent_set(getpid());
+		} catch (...) {
+		}
+	}
+	__atomic_store_n(&initialized, AGENT_EXITING, __ATOMIC_SEQ_CST);
+	errno = saved_errno;
+}
+
 syscall_hooker_func_t orig_hooker;
 
 static void bpftime_agent_main_impl(const gchar *data,
 				    gboolean *stay_resident);
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
 
-static void detach_agent_at_process_exit()
-{
-	(void)perform_detach();
-}
-
 static void initialize_preloaded_agent()
 {
 	int stay_resident = 0;
 	injected_with_frida = false;
 	bpftime_agent_main_impl("", &stay_resident);
-	if (std::atexit(detach_agent_at_process_exit) != 0)
+	if (std::atexit(quiesce_agent_for_process_exit) != 0)
 		SPDLOG_WARN("Unable to register bpftime process-exit cleanup");
 }
 
 extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
 {
 	initialize_preloaded_agent();
-	return orig_main_func(argc, argv, envp);
+	int rc = orig_main_func(argc, argv, envp);
+	quiesce_agent_for_process_exit();
+	return rc;
 }
 
 extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
@@ -743,38 +731,31 @@ static void bpftime_agent_main_impl(const gchar *data,
 
 			SPDLOG_DEBUG("Entered bpftime_agent_main");
 
-			// SHM can race with the loader process; retry a bit to avoid
-			// flakiness in "spawn loader then inject agent" workflows.
-			std::string last_err;
-			bool shm_ok = false;
-			std::unique_ptr<shm_lifecycle_lock> shm_lock;
-			for (int attempt = 0; attempt < 60; attempt++) {
-				try {
-					shm_lock =
-						std::make_unique<shm_lifecycle_lock>(
-							get_global_shm_name());
-					bpftime_initialize_global_shm(
-						shm_open_type::SHM_OPEN_ONLY);
-					shm_ok = true;
-					break;
-				} catch (const std::exception &ex) {
-					last_err = ex.what();
-					shm_lock.reset();
-					std::this_thread::sleep_for(
-						std::chrono::milliseconds(
-							50));
-				}
-			}
-			if (!shm_ok) {
-				SPDLOG_ERROR(
-					"Unable to initialize shared memory: {}",
-					last_err);
-				init_fail();
-				return;
+			// Never block in preload init: fail open on unavailable SHM.
+			std::optional<shm_lifecycle_lock> shm_lock(
+				std::in_place, get_global_shm_name(), true);
+			if (!shm_lock->owns_lock())
+				return init_fail();
+			try {
+				bpftime_initialize_global_shm(
+					shm_open_type::SHM_OPEN_ONLY);
+			} catch (const std::exception &ex) {
+				SPDLOG_ERROR("Unable to initialize shared memory: {}",
+					     ex.what());
+				return init_fail();
 			}
 			auto &runtime_config = bpftime_get_runtime_config();
-			bpftime_set_logger(std::string(
-				runtime_config.get_logger_output_path()));
+			std::string shm_logger(
+				runtime_config.get_logger_output_path());
+			const char *env_logger =
+				get_agent_bootstrap_config().has_log_output ?
+					get_agent_bootstrap_config().log_output :
+					nullptr;
+			if (shm_logger != "console" || injected_with_frida ||
+			    (env_logger != nullptr &&
+			     strcmp(env_logger, "console") == 0)) {
+				bpftime_set_logger(shm_logger);
+			}
 			apply_injected_kv_overrides(data);
 			ctx_holder.init();
 			ctx_constructed = true;
@@ -921,7 +902,6 @@ static void bpftime_agent_main_impl(const gchar *data,
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 			syscall_trace_impl_ptr->dispatch_process_exec();
 #endif
-			srand(std::random_device()());
 
 			if (!shm_holder.global_shared_memory
 				     .add_pid_into_alive_agent_set(getpid())) {
@@ -932,7 +912,7 @@ static void bpftime_agent_main_impl(const gchar *data,
 			recorded_alive_pid = true;
 			shm_lock.reset();
 			start_agent_ipc_server_once();
-			std::atexit(stop_syscall_dispatch_at_exit);
+			std::atexit(quiesce_agent_for_process_exit);
 			/* We don't want our library to be unloaded after we return. */
 			*stay_resident = TRUE;
 			setenv("BPFTIME_USED", "1", 0);
@@ -968,7 +948,6 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 #ifdef BPFTIME_ENABLE_ROCM_ATTACH
 static bool initialize_rocm_agent() noexcept
 {
-	initialized_by_rocprofiler = true;
 	injected_with_frida = false;
 	// This path shares normal agent initialization, but must not initialize
 	// HIP/HSA or replace host signal handlers during SDK registration.

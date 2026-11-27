@@ -140,7 +140,7 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 					auto ptr =
 					bpftime_map_lookup_elem_with_origin(
 						map_fd, req.key, false);
-					resp.value = nullptr;
+					resp.value = 0;
 					if (ptr) {
 						const auto host_ptr =
 							reinterpret_cast<
@@ -162,7 +162,7 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 
 						if (is_device_ptr) {
 							// GPU maps can return a CUDA device pointer directly.
-							resp.value = const_cast<void *>(ptr);
+							resp.value = host_ptr;
 						} else {
 							const auto comm_host_base =
 								reinterpret_cast<
@@ -178,11 +178,10 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 									intptr_t>(
 									comm_host_base);
 							resp.value =
-								reinterpret_cast<void *>(
-									static_cast<uintptr_t>(
-										static_cast<intptr_t>(
-											comm_device_base) +
-										offset));
+								static_cast<uintptr_t>(
+									static_cast<intptr_t>(
+										comm_device_base) +
+									offset);
 						}
 					}
 					SPDLOG_DEBUG(

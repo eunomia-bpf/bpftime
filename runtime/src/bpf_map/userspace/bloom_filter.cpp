@@ -265,7 +265,9 @@ void bloom_filter_map_impl::set_bit(uint32_t bit_index)
 	size_t bit_offset = bit_index % 8;
 
 	if (byte_index < bit_array.size()) {
-		bit_array[byte_index] |= (1 << bit_offset);
+		__atomic_fetch_or(&bit_array[byte_index],
+				  static_cast<uint8_t>(1U << bit_offset),
+				  __ATOMIC_RELEASE);
 	}
 }
 
@@ -275,7 +277,9 @@ bool bloom_filter_map_impl::test_bit(uint32_t bit_index) const
 	size_t bit_offset = bit_index % 8;
 
 	if (byte_index < bit_array.size()) {
-		return (bit_array[byte_index] & (1 << bit_offset)) != 0;
+		return (__atomic_load_n(&bit_array[byte_index],
+					__ATOMIC_ACQUIRE) &
+			static_cast<uint8_t>(1U << bit_offset)) != 0;
 	}
 	return false;
 }

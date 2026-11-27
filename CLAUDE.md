@@ -114,6 +114,7 @@ The codebase is organized into distinct components that interact through well-de
 1. **Shared Memory Architecture**: Uses boost::interprocess for zero-copy IPC between processes
    - Central `handler_manager` registry in shared memory
    - File descriptor abstraction for kernel compatibility
+   - Shared-memory objects are constructed through `bpftime::shm_construct` / `bpftime::shm_find_or_construct` (`runtime/include/bpftime_shm_safe.hpp`), where `shm_safe_type<T>` rejects `virtual` functions/`vptr`, raw/member pointers (including `mmap` addresses and `CUcontext`/`CUstream` handles), C++ references, and process-local STL heap containers or `std::mutex` at compile time, and `shm_init_ctx` prevents constructors from storing `managed_shared_memory &`. Plain `int` OS file descriptors pass C++ integer traits and are forbidden inside SHM objects by review rule; per-process OS/driver handles belong in `.bss` tables outside SHM.
 
 2. **Handler Pattern**: All eBPF objects (programs, maps, links) managed through handlers
    - Consistent interface for create/destroy/access
@@ -235,16 +236,36 @@ same pull request.
    support a fast, zero-allocation early exit before touching shared memory,
    the logger, or Frida, so inherited injection never slows or breaks
    unrelated child utilities.
-2. **Hot-path "Three Zeros".** In uprobe/syscall callbacks, BPF helpers,
+2. **Hot-path "Four Zeros".** In uprobe/syscall callbacks, BPF helpers,
    ringbuf/map operations, and constructor early-exit/detach paths: (a) zero
-   libc heap allocations (`malloc`/`new`/STL growth/logging allocations);
-   (b) zero dynamic Boost `segment_manager` shared-memory allocations —
-   preallocate at setup; (c) zero non-robust cross-process locks. Prefer
-   preallocated fixed-size lock-free atomics (e.g. fixed atomic PID arrays);
-   where mutual exclusion is unavoidable on Linux, use `pthread_mutex_t` with
-   `PTHREAD_PROCESS_SHARED | PTHREAD_MUTEX_ROBUST`, and forbid bare
-   `pthread_spinlock_t` or non-robust
-   `boost::interprocess::interprocess_mutex`.
+   libc heap allocations (`malloc`/`new`/STL growth/logging allocations, and no
+   `static` heap-owning C++ containers whose `__cxa_atexit` destructors race
+   live threads during `exit(0)`); (b) zero dynamic Boost `segment_manager`
+   shared-memory allocations — preallocate at setup; (c) zero non-robust
+   cross-process locks; (d) **zero unapproved active syscalls** (`write`,
+   `read`, `socket`, `connect`, `sendmsg`, `recvmsg`, `open`, `mmap`,
+   `eventfd`, etc.), preserving host `errno` (both to avoid latency/blocking
+   and to prevent `syscall_trace`/seccomp recursion or sandbox traps). Only
+   maintainer-approved exemptions recorded in `DECISIONS.md` are permitted
+   (contended/`EOWNERDEAD` `PTHREAD_MUTEX_ROBUST` `futex`; `process_vm_readv`
+   for probe reads in the default build (`ENABLE_PROBE_READ_CHECK`), once per
+   miss of the 128-byte per-event read-ahead window and once per read outside
+   an event; `process_vm_writev` once per `bpf_probe_write_user`
+   (`ENABLE_PROBE_WRITE_CHECK`); one-time
+   cold TLS/`.bss` identity initialization, and userspace vDSO
+   `clock_gettime`). Prefer preallocated fixed-size lock-free atomics (L0, e.g.
+   fixed atomic PID arrays, `epoch_state` seqlock, `ARRAY`, `PERCPU_ARRAY`,
+   `PERF_EVENT_ARRAY`, `BLOOM_FILTER`, and lock-free `HASH` / `PERCPU_HASH`
+   lookups; per-CPU maps and primary hash/array/bloom maps must never use a
+   global `map_lock`). All cross-process shared-memory lock primitives, guards,
+   and blocking-vs-`trylock` dispatch live exclusively in
+   `runtime/include/robust_shm_mutex.hpp` (`PTHREAD_PROCESS_SHARED |
+   PTHREAD_MUTEX_ROBUST`); defining or calling raw `pthread_mutex_*`,
+   `pthread_spinlock_t`, `boost::interprocess::interprocess_*mutex`, custom
+   spinlocks, or bespoke lock wrappers outside `runtime/include/robust_shm_mutex.hpp`
+   is forbidden. Adding any new lock, new lock callsite, or changing any
+   existing lock in the L0–L3 inventory requires recording the explicit reason
+   in `DECISIONS.md` and obtaining prior maintainer approval.
 3. **No hijacking host global resources in constructors.** Never clobber
    host signal handlers (e.g. `SIGUSR1`); do not spawn unsolicited background
    threads under `LD_PRELOAD`; preserve `errno`; avoid reentrant `malloc`.
@@ -265,7 +286,21 @@ same pull request.
 8. **Fail open, zero blocking.** On unavailable shared memory, a full
    ringbuf, or an `ENOTRECOVERABLE` mutex, degrade cleanly and skip tracing:
    never block indefinitely, never `abort()`, never alter the host exit
-   status.
+   status. Constructor/`__libc_start_main`/`SHM_OPEN_ONLY` init paths must
+   never use `sleep`/`usleep`/`nanosleep`/`sleep_for` polling retries,
+   unbounded `flock(LOCK_EX)`, or untimed IPC socket waits (`SO_SNDTIMEO` /
+   `SO_RCVTIMEO` + `MSG_NOSIGNAL` are mandatory); use non-blocking acquisition
+   and move startup ordering into the external CLI/orchestrator.
+
+## Maintainer decisions
+
+Design and process questions the maintainers have settled are recorded in
+[`DECISIONS.md`](DECISIONS.md), newest first, each with its date, its pull
+requests and the maintainer's words verbatim. **Read it before starting a
+change.** Authors and reviewers check every pull request against it. A pull
+request that reverses an entry is a design problem until a maintainer decides
+again, and that new decision is added to `DECISIONS.md` before or in the change
+that relies on it.
 
 ## Trap and RISC-V backend constraints
 
@@ -324,8 +359,17 @@ Cross-layer coupling is allowed only through the existing function-pointer
 seam (`get_call_hook`/`set_call_hook`). No new link dependency or `#include`
 may cross the syscall-server / attach boundary.
 
-## Minimal Change, Anti-Over-Engineering & Anti-Over-Testing
+## Single-Purpose PRs, Minimal Change, Anti-Over-Engineering & Anti-Over-Testing
 
+- **One PR, one thing (strictly no `and` bundling).** Every pull request must
+  solve one independent root cause or deliver one cohesive capability (together
+  with its own regression coverage and corresponding documentation). Never
+  bundle two orthogonal changes that can be built, tested, merged, and reverted
+  independently into a single PR (for example, combining a dependency update
+  with runtime behavior changes, mixing two distinct bug fixes or refactors, or
+  coupling a runtime/attach fix with unrelated CI workflow expansion). If a PR
+  title needs `and` to join separate topics or its diff spans independent
+  subsystems, split it immediately into separate atomic PRs against `master`.
 - Make the smallest change that satisfies the task. Prefer deleting dead or
   duplicated code over adding new code.
 - Do not modify files unrelated to the change. A refactor that moves a module
@@ -342,15 +386,40 @@ may cross the syscall-server / attach boundary.
 - Do not introduce speculative abstractions, configuration or environment
   variable matrices, new shared-memory data structures, or new shared libraries
   (`.so`) unless a reproduced problem strictly requires them. Every new
-  component must trace to a concrete failure mode or requirement.
+  component must trace to a concrete failure mode or requirement. In
+  particular:
+  - **No speculative symmetric teardown/GC or hypothetical edge-case queues**
+    when only forward/lazy attachment or insertion is needed and no real
+    production caller exercises runtime removal or duplicate-target queuing;
+  - **No test-only control-plane/IPC backdoors** (never add IPC commands,
+    sockets, flags, or production overloads that stay off or uncalled in
+    production solely to drive unit tests);
+  - **No parallel rewrites of already-idempotent paths** (check whether the
+    existing initializer/lookup already skips instantiated entries before
+    writing a new `reconcile_*` or `refresh_*` state machine).
 - Do not over-test. Add concise, high-signal regression tests that exercise the
   real failure mode; avoid large mock or scaffolding setups, and do not re-test
   wiring, incidental defaults, or behavior that already has coverage.
+- **New mechanisms need a maintainer's agreement first.** Before writing a
+  new lock or other synchronization primitive, a new shared-memory layout or
+  attach path, a new thread, constructor, environment variable or protocol, or
+  a change of more than about 100 production lines, describe the problem and
+  the approach and get a maintainer's agreement: in an issue, or in a
+  maintainer's comment on the pull request. The pull request links that issue
+  or comment.
+- **Alternative designs in reviews are options.** A review that suggests a
+  different design writes it as an option for the maintainers to choose, not
+  as a fix the author must make. Until a maintainer chooses it, it does not
+  block the pull request, and once chosen it is recorded in `DECISIONS.md`.
 
 Before opening or updating a pull request, self-review against this checklist:
 
-1. Is there any over-engineering (speculative abstractions, unused config knobs,
+1. Does this PR do strictly one thing (no independent changes bundled with
+   `and` across unrelated files or subsystems)?
+2. Is there any over-engineering (speculative abstractions, unused config knobs,
    unrelated refactors)?
-2. Is there any over-testing (boilerplate, mocks, or duplicated coverage)?
-3. Can more than half of the diff be cut while still fixing the root cause?
-4. Are any new shared libraries or cross-process state strictly necessary?
+3. Is there any over-testing (boilerplate, mocks, or duplicated coverage)?
+4. Can more than half of the diff be cut while still fixing the root cause?
+5. Are any new shared libraries or cross-process state strictly necessary?
+6. Does it reverse an entry in `DECISIONS.md`, or add a new
+   mechanism without a linked issue or comment where a maintainer agreed?

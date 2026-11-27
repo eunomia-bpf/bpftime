@@ -95,7 +95,6 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 		if (seq == BPFTIME_EPOCH_SEQ_UNSTABLE) {
 			SPDLOG_INFO(
 				"bpftime: shm epoch_seq is unstable before handler scan; retrying");
-			usleep(50 * 1000);
 			continue;
 		}
 		// Detect shm session switch and rebind.
@@ -197,7 +196,6 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				"bpftime: shm epoch_seq is unstable after handler scan; retrying");
 			destroy_all_attach_links_unlocked();
 			reset_instantiated_state_unlocked();
-			usleep(50 * 1000);
 			continue;
 		}
 		if (epoch_after == epoch_before || epoch_after == last_epoch_seq_seen) {
@@ -228,7 +226,6 @@ bpf_attach_ctx::~bpf_attach_ctx()
 // create a probe context
 bpf_attach_ctx::bpf_attach_ctx()
 {
-	current_id = CURRENT_ID_OFFSET;
 	SPDLOG_INFO("bpf_attach_ctx constructed");
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	if (auto ctx = cuda::create_cuda_context(); ctx) {
@@ -700,7 +697,6 @@ void bpf_attach_ctx::reset_instantiated_state_unlocked()
 	instantiated_attach_links.clear();
 	instantiated_perf_events.clear();
 	instantiated_handlers.clear();
-	current_id = CURRENT_ID_OFFSET;
 }
 
 } // namespace bpftime

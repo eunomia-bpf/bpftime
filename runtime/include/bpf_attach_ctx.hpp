@@ -84,7 +84,9 @@ union HelperCallResponse {
 		int result;
 	} map_update, map_delete, trace_printk, puts;
 	struct {
-		const void *value;
+		// Device-side address returned to the GPU helper, stored as an
+		// integer rather than a host pointer inside cross-process SHM.
+		uintptr_t value;
 	} map_lookup;
 	struct {
 		uint64_t result;
@@ -233,9 +235,6 @@ private:
 	std::unique_ptr<cuda::CUDAContext> cuda_ctx;
 	std::thread cuda_watcher_thread;
 #endif
-
-	constexpr static int CURRENT_ID_OFFSET = 65536;
-	volatile int current_id = CURRENT_ID_OFFSET;
 
 	// Helpers provided by attach impls
 	std::map<int, bpftime_helper_info> helpers;

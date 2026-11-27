@@ -15,8 +15,8 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <optional>
-#include <pthread.h>
 #include <thread>
 #include <unistd.h>
 #include <vector>
@@ -611,27 +611,15 @@ TEST_CASE("test_map_stress (kernel)", "[kernel]")
 #define DO_UPDATE 1
 #define DO_DELETE 0
 
-struct pthread_spinlock_guard {
-	pthread_spinlock_t &lock;
-	pthread_spinlock_guard(pthread_spinlock_t &lock) : lock(lock)
-	{
-		pthread_spin_lock(&lock);
-	}
-	~pthread_spinlock_guard()
-	{
-		pthread_spin_unlock(&lock);
-	}
-};
-
 static int map_update_retriable(var_size_hash_map_impl &map, const void *key,
 				const void *value, int flags, int attempts,
-				pthread_spinlock_t &lock)
+				std::mutex &lock)
 {
 	int delay = rand() % MIN_DELAY_RANGE_US;
 
 	while (true) {
 		{
-			pthread_spinlock_guard guard(lock);
+			std::lock_guard<std::mutex> guard(lock);
 			if (map.elem_update(key, value, flags) == 0)
 				break;
 		}
@@ -649,13 +637,13 @@ static int map_update_retriable(var_size_hash_map_impl &map, const void *key,
 }
 
 static int map_delete_retriable(var_size_hash_map_impl &map, const void *key,
-				int attempts, pthread_spinlock_t &lock)
+				int attempts, std::mutex &lock)
 {
 	int delay = rand() % MIN_DELAY_RANGE_US;
 
 	while (true) {
 		{
-			pthread_spinlock_guard guard(lock);
+			std::lock_guard<std::mutex> guard(lock);
 			if (map.elem_delete(key) == 0)
 				break;
 		}
@@ -674,7 +662,7 @@ static int map_delete_retriable(var_size_hash_map_impl &map, const void *key,
 
 static void test_update_delete(unsigned int fn, int do_update,
 			       var_size_hash_map_impl &map,
-			       const char *shm_name, pthread_spinlock_t &lock)
+			       const char *shm_name, std::mutex &lock)
 {
 	int i, key, value, err;
 
@@ -714,8 +702,7 @@ TEST_CASE("test_map_parallel (kernel)", "[kernel][large_memory]")
 
 	var_size_hash_map_impl map(mem, sizeof(key), sizeof(value), MAP_SIZE,
 				   0);
-	pthread_spinlock_t lock;
-	pthread_spin_init(&lock, 0);
+	std::mutex lock;
 again:
 	/* Use the same fd in children to add elements to this map:
 	 * child_0 adds key=0, key=1024, key=2048, ...
@@ -765,7 +752,6 @@ again:
 	map.elem_delete(&key);
 	if (j++ < 5)
 		goto again;
-	pthread_spin_destroy(&lock);
 }
 
 TEST_CASE("test_map_rdonly (kernel)", "[kernel]")

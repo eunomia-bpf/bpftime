@@ -70,7 +70,7 @@ class nv_gpu_ringbuf_map_impl {
 	{
 		return thread_count;
 	}
-	virtual ~nv_gpu_ringbuf_map_impl();
+	~nv_gpu_ringbuf_map_impl();
 
 	CUdeviceptr try_initialize_for_agent_and_get_mapped_address();
 };

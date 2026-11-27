@@ -9,7 +9,7 @@
 #include "bpf_map/userspace/ringbuf_map.hpp"
 #include "bpf_map/userspace/stack_trace_map.hpp"
 #include <boost/interprocess/managed_shared_memory.hpp>
-#include <boost/interprocess/sync/interprocess_mutex.hpp>
+#include "robust_shm_mutex.hpp"
 #include <atomic>
 #include <cerrno>
 #include <cstddef>
@@ -37,8 +37,10 @@ namespace bpftime
 
 class shm_lifecycle_lock {
     public:
-	explicit shm_lifecycle_lock(const char *shm_name) noexcept;
+	explicit shm_lifecycle_lock(const char *shm_name,
+				    bool shared_non_blocking = false) noexcept;
 	~shm_lifecycle_lock();
+	bool owns_lock() const noexcept { return lock_fd >= 0; }
 
 	shm_lifecycle_lock(const shm_lifecycle_lock &) = delete;
 	shm_lifecycle_lock &operator=(const shm_lifecycle_lock &) = delete;
@@ -61,7 +63,17 @@ struct bpftime_global_epoch_state {
 static constexpr int BPFTIME_MAX_CPU_COUNT = 1024;
 
 struct bpftime_cpu_exec_locks {
-	boost::interprocess::interprocess_mutex locks[BPFTIME_MAX_CPU_COUNT];
+#if BPFTIME_ENABLE_MPK
+	// Pad by one page on each side so `locks` can stay on default pkey 0:
+	// BPF code runs with PKRU write-disabled for the SHM pkey while holding
+	// `locks[cpu]`, and Linux's robust-futex exit walk faults (-EFAULT) if
+	// the mutex page carries a write-disabled pkey on SIGKILL.
+	std::byte mpk_head_pad[4096];
+#endif
+	robust_shm_mutex locks[BPFTIME_MAX_CPU_COUNT];
+#if BPFTIME_ENABLE_MPK
+	std::byte mpk_tail_pad[4096];
+#endif
 };
 
 // Fixed-capacity, lock-free PID table stored directly in shared memory.
@@ -182,7 +194,7 @@ class bpftime_shm {
 	struct bpftime::runtime_config *runtime_config = nullptr;
 
 	// Record which pids are injected by agent
-	alive_agent_pids *injected_pids;
+	alive_agent_pids *injected_pids = nullptr;
 
 	// Record which pids own or use the syscall-server side of this shm.
 	alive_syscall_server_pid_set *alive_syscall_server_pids = nullptr;
@@ -276,7 +288,6 @@ class bpftime_shm {
 	// Returns 0 if the epoch object isn't available.
 	// Returns UINT64_MAX if the epoch couldn't be stabilized within max_tries.
 	std::uint64_t read_stable_epoch_seq(int max_tries = 200) const;
-	void lock_bpf_cpu(int cpu);
 	void unlock_bpf_cpu(int cpu);
 	// Blocking, exception-safe per-CPU lock used on the BPF hot path. It
 	// preserves the serialization semantics of lock() (waits through normal
@@ -418,8 +429,8 @@ public:
 	int translate_shared_map_type_to_kernel_map_type(int type);
 
 #if BPFTIME_ENABLE_MPK
-	int open_mpk_write_window();
-	void restore_mpk_rights(int saved);
+	int open_mpk_write_window() const;
+	void restore_mpk_rights(int saved) const;
 #endif
 
 	// initialize the shared memory globally

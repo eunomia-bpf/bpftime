@@ -140,6 +140,25 @@ TEST_CASE("intercepted lookup preserves the backend errno", "[map_syscall]")
 	REQUIRE(field(result.fields, "missing_errno") == ENOENT);
 }
 
+TEST_CASE("intercepted bpf() with a NULL attr fails like the kernel",
+	  "[map_syscall]")
+{
+	const std::string shm_name = shm_name_for("null-attr");
+	remove(("/dev/shm/" + shm_name).c_str());
+	auto result = run_map_helper("null-attr", shm_name.c_str());
+	remove(("/dev/shm/" + shm_name).c_str());
+
+	// The caller survives both calls.
+	REQUIRE(result.status == 0);
+	// size 0 is the all-zero request: an unspecified map type is rejected.
+	REQUIRE(field(result.fields, "zero_size_ret") == -1);
+	REQUIRE(field(result.fields, "zero_size_errno") != 0);
+	REQUIRE(field(result.fields, "zero_size_errno") != ENOSYS);
+	// A non-zero size reads through the NULL pointer: EFAULT.
+	REQUIRE(field(result.fields, "sized_ret") == -1);
+	REQUIRE(field(result.fields, "sized_errno") == EFAULT);
+}
+
 TEST_CASE("intercepted lookup-and-delete is keyed for hash maps",
 	  "[map_syscall]")
 {

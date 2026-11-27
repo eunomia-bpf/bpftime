@@ -44,7 +44,7 @@ long perf_event_array_map_impl::elem_update(const void *key, const void *value,
 		return -1;
 	}
 	int32_t v = *(int32_t *)value;
-	data[k] = v;
+	__atomic_store_n(&data[k], v, __ATOMIC_RELEASE);
 	return 0;
 }
 
@@ -55,7 +55,7 @@ long perf_event_array_map_impl::elem_delete(const void *key)
 		errno = EINVAL;
 		return -1;
 	}
-	data[k] = -1;
+	__atomic_store_n(&data[k], -1, __ATOMIC_RELEASE);
 	return 0;
 }
 

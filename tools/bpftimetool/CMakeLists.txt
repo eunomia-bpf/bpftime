@@ -2,6 +2,12 @@ add_executable(bpftimetool
   main.cpp
 )
 target_link_libraries(bpftimetool PRIVATE argparse)
+if(BPFTIME_LLVM_JIT)
+  # The factory registers from a constructor; no ordinary symbol reference
+  # pulls its archive member into this executable.
+  target_link_libraries(bpftimetool PRIVATE
+    "$<LINK_LIBRARY:WHOLE_ARCHIVE,bpftime_llvm_vm>")
+endif()
 if(${BPFTIME_ENABLE_CUDA_ATTACH})
   include(../../cmake/cuda.cmake)
   find_cuda()

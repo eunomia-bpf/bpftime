@@ -56,7 +56,9 @@ struct attach_entry {
 		};
 		active_callbacks.fetch_add(1);
 		callback_scope scope{ active_callbacks };
-		if (!enabled.load())
+		if (!enabled.load() ||
+		    process_attach_callbacks_suppressed.load(
+			    std::memory_order_acquire))
 			return;
 		current_signal_callback->function_ip =
 			(callback_index == ATTACH_UPROBE_INDEX ||

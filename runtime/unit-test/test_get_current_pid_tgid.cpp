@@ -1,4 +1,5 @@
 #include "catch2/catch_test_macros.hpp"
+#include "bpftime_config.hpp"
 #include <cstdint>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -115,6 +116,7 @@ TEST_CASE("PID namespace identity translates on cache fill and refreshes on fork
 	if (child == 0) {
 		if (setenv("BPFTIME_HOST_PROCFS", dir, 1) != 0)
 			_exit(1);
+		bpftime::reload_agent_bootstrap_config_from_env();
 		const uint64_t first = (uint64_t(40001) << 32) | 40002;
 		if (call_helper() != first)
 			_exit(2);
@@ -147,6 +149,7 @@ TEST_CASE("PID namespace identity falls back when procfs is unavailable")
 	REQUIRE(child >= 0);
 	if (child == 0) {
 		setenv("BPFTIME_HOST_PROCFS", "/nonexistent/bpftime-procfs", 1);
+		bpftime::reload_agent_bootstrap_config_from_env();
 		_exit(helper_matches_this_process() ? 0 : 1);
 	}
 	int status = 0;

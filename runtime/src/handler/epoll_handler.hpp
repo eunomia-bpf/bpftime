@@ -22,13 +22,8 @@ using file_ptr_variant =
 struct epoll_file {
 	file_ptr_variant file;
 	epoll_data_t data;
-	// The mocked map/perf fd this entry was registered with, so the
-	// syscall server can mirror epoll ops on the kernel backing fd
-	// (ringbuf eventfd) without reverse-looking-up the shared object.
-	int origin_fd = -1;
-	epoll_file(const file_ptr_variant &&ptr, int origin_fd = -1);
-	epoll_file(const file_ptr_variant &&ptr, epoll_data_t data,
-		   int origin_fd = -1);
+	epoll_file(const file_ptr_variant &&ptr);
+	epoll_file(const file_ptr_variant &&ptr, epoll_data_t data);
 };
 using file_allocator = boost::interprocess::allocator<
 	epoll_file, boost::interprocess::managed_shared_memory::segment_manager>;

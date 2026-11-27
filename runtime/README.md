@@ -25,6 +25,15 @@ The runtime implements a sophisticated shared memory architecture using Boost.In
 
 ## Implementation Details
 
+### Startup configuration
+
+`bpftime_config.hpp` defines process-local `agent_bootstrap_config` in `.bss`
+for pre-SHM admission, SHM naming, explicit log output, rootless seccomp, host
+procfs, and task TLS offset, preserving `errno` without retaining `getenv`
+pointers. Shared settings continue to use `runtime_config` through
+`bpftime_get_runtime_config()` (`bpftime_runtime_config_v2` in SHM) without an
+extra local copy.
+
 ### Core APIs (`include/bpftime.hpp`)
 
 The main runtime API provides C interfaces for:
@@ -382,15 +391,6 @@ they cannot preprocessor-collide with the members of the project's own
 `enum class bpf_map_type` in `bpftime_shm.hpp`. When adding a new kernel uapi
 constant, mirror it in the shim with the same numeric value and keep the two in
 sync; a missing constant is a compile error on macOS, not a silent divergence.
-
-### Spinlocks
-
-Darwin libpthread does not provide `pthread_spinlock_t`. Code that needs a
-spinlock includes `runtime/include/spinlock_wrapper.hpp`, which supplies a
-`Spinlock`-backed `pthread_spinlock_t` on platforms without
-`_POSIX_SPIN_LOCKS` and forwards to the real pthread spinlock elsewhere.
-Headers that reference `pthread_spinlock_t` must include this wrapper
-directly rather than relying on transitive inclusion.
 
 ### Type strictness differences (libc++ vs libstdc++)
 

@@ -48,12 +48,17 @@ guidelines:
 
 ### DOs
 
-* **DO** create one pull request per Issue, and ensure that the Issue is linked
-in the pull request. You can follow the Pull Request Template
+* **DO** keep each pull request focused on one root cause or cohesive capability
+(splitting broad Issues into separate atomic pull requests when needed), and ensure
+that the Issue is linked in the pull request. You can follow the Pull Request Template
 for this.
 
 * **DO** follow our [Coding and Style](#style-guidelines) guidelines, and keep code
 changes as small as possible.
+
+* **DO** read [DECISIONS.md](DECISIONS.md) before starting a change. It records
+the design questions the maintainers have settled; a pull request that reverses
+one of them needs a new maintainer decision first.
 
 * **DO** include corresponding tests whenever possible.
 
@@ -73,7 +78,7 @@ Describe any manual testing you performed to validate your change.
 
 ### DO NOTs
 
-* **DO NOT** merge multiple changes into one PR unless they have the same root cause.
+* **DO NOT** bundle orthogonal changes into one PR (**one PR, one thing**). Keep a change together with its own tests and documentation, and never combine unrelated changes with `and` (such as distinct bug fixes, refactors, dependency updates, or unrelated CI changes); split independent work into separate atomic PRs against `master`.
 
 > Submitting a pull request for an approved Issue is not a guarantee it will be approved.
 > The change must meet our high bar for code quality, architecture and performance.

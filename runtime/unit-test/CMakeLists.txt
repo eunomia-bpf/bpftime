@@ -28,7 +28,9 @@ set(TEST_SOURCES
     maps/test_bloom_filter_map.cpp
     maps/test_lpm_trie_map.cpp
     maps/test_ringbuf_map.cpp
+    maps/test_ringbuf_reserve.cpp
     maps/test_lpm_trie_inline_value.cpp
+    maps/test_map_lock_dead_owner.cpp
 
     maps/test_lru_var_hash_map.cpp
     maps/test_lru_hash_map.cpp
@@ -46,17 +48,18 @@ set(TEST_SOURCES
     test_process_filter.cpp
     test_cpu_execution.cpp
     test_get_current_pid_tgid.cpp
+    test_prandom_u32.cpp
     test_get_stack.cpp
     test_tracepoint_id.cpp
     test_config.cpp
     test_shm_allocation_failure.cpp
     test_atomic_pid_set.cpp
+    test_shm_type_safety.cpp
     test_software_perf_event.cpp
     test_software_perf_event_cache.cpp
     test_ringbuf_tail_wrap.cpp
     test_epoll.cpp
     test_unregistered_helper.cpp
-    test_ringbuf_eventfd_epoll.cpp
     test_xdp_adjust_head.cpp
     test_synthetic_kallsyms.cpp
     test_mocked_file_fd.cpp

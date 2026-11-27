@@ -24,14 +24,14 @@ static constexpr uint32_t LPM_KEY_SIZE_MIN =
 static constexpr uint32_t LPM_KEY_SIZE_MAX =
 	sizeof(uint32_t) + LPM_DATA_SIZE_MAX;
 
-lpm_trie_map_impl::lpm_trie_map_impl(
-	boost::interprocess::managed_shared_memory &memory,
-	unsigned int key_size, unsigned int value_size,
-	unsigned int max_entries)
+lpm_trie_map_impl::lpm_trie_map_impl(const shm_init_ctx &ctx,
+				     unsigned int key_size,
+				     unsigned int value_size,
+				     unsigned int max_entries)
 	: _key_size(key_size), _value_size(value_size),
 	  _max_entries(max_entries),
-	  root(nullptr, node_deleter_type(memory.get_segment_manager())),
-	  n_entries(0), memory(memory)
+	  root(nullptr, node_deleter_type(ctx.segment_manager())),
+	  n_entries(0), segment_manager_(ctx.segment_manager())
 {
 	// Validate parameters
 	if (key_size < LPM_KEY_SIZE_MIN || key_size > LPM_KEY_SIZE_MAX) {
@@ -91,18 +91,16 @@ lpm_trie_map_impl::longest_prefix_match(const lpm_trie_node *node,
 node_unique_ptr lpm_trie_map_impl::create_node(const void *value,
 					       bool is_intermediate)
 {
-	// Create node in shared memory
-	lpm_trie_node *raw_node = memory.construct<lpm_trie_node>(
-		boost::interprocess::anonymous_instance)(memory);
+	segment_manager_type *sm = segment_manager_.get();
+	// Create node in shared memory via position-independent segment_manager
+	lpm_trie_node *raw_node = sm->construct<lpm_trie_node>(
+		boost::interprocess::anonymous_instance)(sm);
 	if (!raw_node) {
-		return node_unique_ptr(
-			nullptr,
-			node_deleter_type(memory.get_segment_manager()));
+		return node_unique_ptr(nullptr, node_deleter_type(sm));
 	}
 
 	// Create unique_ptr with proper deleter
-	node_unique_ptr node(raw_node,
-			     node_deleter_type(memory.get_segment_manager()));
+	node_unique_ptr node(raw_node, node_deleter_type(sm));
 
 	node->is_intermediate = is_intermediate;
 
@@ -167,9 +165,6 @@ lpm_trie_map_impl::get_node_value_data(const lpm_trie_node *node) const
 
 void *lpm_trie_map_impl::elem_lookup(const void *key)
 {
-	robust_shm_lock_guard lock(mapSpin, "LPM trie map");
-	if (!lock.owns_lock())
-		return nullptr;
 	if (!key) {
 		SPDLOG_ERROR(
 			"LPM Trie elem_lookup failed: key pointer is nullptr");
@@ -247,9 +242,6 @@ void *lpm_trie_map_impl::elem_lookup(const void *key)
 long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 				    uint64_t flags)
 {
-	robust_shm_lock_guard lock(mapSpin, "LPM trie map");
-	if (!lock.owns_lock())
-		return -1;
 	if (!key || !value) {
 		SPDLOG_ERROR(
 			"LPM Trie elem_update failed: key ({:p}) or value ({:p}) pointer is nullptr",
@@ -492,9 +484,6 @@ long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 
 long lpm_trie_map_impl::elem_delete(const void *key)
 {
-	robust_shm_lock_guard lock(mapSpin, "LPM trie map");
-	if (!lock.owns_lock())
-		return -1;
 	if (!key) {
 		SPDLOG_ERROR(
 			"LPM Trie elem_delete failed: key pointer is nullptr");
@@ -548,9 +537,6 @@ long lpm_trie_map_impl::elem_delete(const void *key)
 
 int lpm_trie_map_impl::map_get_next_key(const void *key, void *next_key)
 {
-	robust_shm_lock_guard lock(mapSpin, "LPM trie map");
-	if (!lock.owns_lock())
-		return -1;
 	if (!next_key) {
 		SPDLOG_ERROR(
 			"LPM Trie map_get_next_key failed: next_key pointer is nullptr");

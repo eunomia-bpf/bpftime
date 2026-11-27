@@ -207,17 +207,6 @@ bool frida_internal_attach_entry::has_override() const
 	return false;
 }
 
-bool frida_internal_attach_entry::has_uprobe_or_uretprobe() const
-{
-	for (auto v : user_attaches) {
-		if (v->get_type() == ATTACH_UPROBE ||
-		    v->get_type() == ATTACH_URETPROBE) {
-			return true;
-		}
-	}
-	return false;
-}
-
 void frida_internal_attach_entry::run_filter_callback(const pt_regs &regs) const
 {
 	attach_callback_scope callback_scope;
@@ -273,19 +262,22 @@ extern "C" void *__bpftime_frida_attach_manager__override_handler()
 	bpftime::pt_regs regs;
 
 	ctx = gum_interceptor_get_current_invocation();
-	convert_gum_cpu_context_to_pt_regs(*ctx->cpu_context, regs);
-	auto hook_entry = (frida_internal_attach_entry *)
-		gum_invocation_context_get_replacement_data(ctx);
-	hook_entry->is_overrided = false;
-	curr_thread_override_return_callback =
-		hook_entry->override_return_callback;
-
 	auto arg0 = gum_invocation_context_get_nth_argument(ctx, 0);
 	auto arg1 = gum_invocation_context_get_nth_argument(ctx, 1);
 	auto arg2 = gum_invocation_context_get_nth_argument(ctx, 2);
 	auto arg3 = gum_invocation_context_get_nth_argument(ctx, 3);
 	auto arg4 = gum_invocation_context_get_nth_argument(ctx, 4);
 	ufunc_func func = (ufunc_func)ctx->function;
+	if (process_attach_callbacks_suppressed.load(std::memory_order_acquire))
+		return func((void *)arg0, (void *)arg1, (void *)arg2,
+			    (void *)arg3, (void *)arg4);
+
+	convert_gum_cpu_context_to_pt_regs(*ctx->cpu_context, regs);
+	auto hook_entry = (frida_internal_attach_entry *)
+		gum_invocation_context_get_replacement_data(ctx);
+	hook_entry->is_overrided = false;
+	curr_thread_override_return_callback =
+		hook_entry->override_return_callback;
 
 	SPDLOG_DEBUG("Setting current thread gum cpu context");
 	current_thread_gum_cpu_context = ctx->cpu_context;
@@ -303,10 +295,16 @@ extern "C" void *__bpftime_frida_attach_manager__override_handler()
 			return (void *)value;
 		}
 	} catch (const std::exception &e) {
-		SPDLOG_ERROR("frida override callback threw: {}", e.what());
+		if (!process_attach_callbacks_suppressed.load(
+			    std::memory_order_acquire))
+			SPDLOG_ERROR("frida override callback threw: {}",
+				     e.what());
 		current_thread_gum_cpu_context.reset();
 	} catch (...) {
-		SPDLOG_ERROR("frida override callback threw an unknown exception");
+		if (!process_attach_callbacks_suppressed.load(
+			    std::memory_order_acquire))
+			SPDLOG_ERROR(
+				"frida override callback threw an unknown exception");
 		current_thread_gum_cpu_context.reset();
 	}
 	return func((void *)arg0, (void *)arg1, (void *)arg2, (void *)arg3,
@@ -316,6 +314,8 @@ extern "C" void *__bpftime_frida_attach_manager__override_handler()
 static void uprobe_listener_on_enter(GumInvocationContext *ctx,
 				     gpointer user_data)
 {
+	if (process_attach_callbacks_suppressed.load(std::memory_order_acquire))
+		return;
 	auto *hook_entry = static_cast<frida_internal_attach_entry *>(user_data);
 	SPDLOG_TRACE("Handle uprobe at uprobe_listener_on_enter");
 	bpftime::pt_regs regs;
@@ -328,9 +328,15 @@ static void uprobe_listener_on_enter(GumInvocationContext *ctx,
 		current_thread_gum_cpu_context = ctx->cpu_context;
 		hook_entry->iterate_uprobe_callbacks(regs);
 	} catch (const std::exception &e) {
-		SPDLOG_ERROR("frida uprobe callback threw: {}", e.what());
+		if (!process_attach_callbacks_suppressed.load(
+			    std::memory_order_acquire))
+			SPDLOG_ERROR("frida uprobe callback threw: {}",
+				     e.what());
 	} catch (...) {
-		SPDLOG_ERROR("frida uprobe callback threw an unknown exception");
+		if (!process_attach_callbacks_suppressed.load(
+			    std::memory_order_acquire))
+			SPDLOG_ERROR(
+				"frida uprobe callback threw an unknown exception");
 	}
 	SPDLOG_DEBUG("Resetting current thread gum cpu context");
 	current_thread_gum_cpu_context.reset();
@@ -339,6 +345,8 @@ static void uprobe_listener_on_enter(GumInvocationContext *ctx,
 static void uprobe_listener_on_leave(GumInvocationContext *ctx,
 				     gpointer user_data)
 {
+	if (process_attach_callbacks_suppressed.load(std::memory_order_acquire))
+		return;
 	auto *hook_entry = static_cast<frida_internal_attach_entry *>(user_data);
 	SPDLOG_TRACE("Handle uretprobe at uprobe_listener_on_leave");
 	bpftime::pt_regs regs;
@@ -346,8 +354,14 @@ static void uprobe_listener_on_leave(GumInvocationContext *ctx,
 	try {
 		hook_entry->iterate_uretprobe_callbacks(regs);
 	} catch (const std::exception &e) {
-		SPDLOG_ERROR("frida uretprobe callback threw: {}", e.what());
+		if (!process_attach_callbacks_suppressed.load(
+			    std::memory_order_acquire))
+			SPDLOG_ERROR("frida uretprobe callback threw: {}",
+				     e.what());
 	} catch (...) {
-		SPDLOG_ERROR("frida uretprobe callback threw an unknown exception");
+		if (!process_attach_callbacks_suppressed.load(
+			    std::memory_order_acquire))
+			SPDLOG_ERROR(
+				"frida uretprobe callback threw an unknown exception");
 	}
 }

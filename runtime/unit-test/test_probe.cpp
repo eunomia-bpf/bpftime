@@ -4,6 +4,7 @@
 #include <malloc.h>
 #endif
 #include "bpftime_helper_group.hpp"
+#include "bpftime_config.hpp"
 #include "base_attach_impl.hpp"
 #include <algorithm>
 #include "catch2/catch_test_macros.hpp"
@@ -308,6 +309,7 @@ TEST_CASE("Task storage covers host BTF and the no-BTF fallback")
 		const size_t offset = expected - sizeof(void *);
 		const std::string text = std::to_string(offset);
 		setenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET", text.c_str(), 1);
+		bpftime::reload_agent_bootstrap_config_from_env();
 		auto *task = reinterpret_cast<uint8_t *>(bpftime_get_current_task(0, 0, 0, 0, 0));
 		if (task == nullptr || malloc_usable_size(task) < expected ||
 		    reinterpret_cast<uintptr_t>(task) % 64 != 0)
@@ -429,7 +431,7 @@ TEST_CASE("Test probe read-ahead serves overlapping reads in one event")
 
 TEST_CASE("Test probe read-ahead keeps one coherent view per event")
 {
-	uint64_t src[4] = { 1, 2, 3, 4 };
+	alignas(32) uint64_t src[4] = { 1, 2, 3, 4 };
 	uint64_t dst[4] = {};
 	{
 		bpftime::attach::attach_callback_scope scope;
@@ -454,7 +456,7 @@ TEST_CASE("Test probe read-ahead keeps one coherent view per event")
 
 TEST_CASE("Test probe read-ahead is fresh across separate events")
 {
-	uint64_t src[4] = { 1, 2, 3, 4 };
+	alignas(32) uint64_t src[4] = { 1, 2, 3, 4 };
 	uint64_t dst[4] = {};
 	// First event populates the window for this address.
 	{
@@ -655,10 +657,11 @@ TEST_CASE("Test probe read-ahead pins the in-event destination trust contract")
 	// memcpy. The destination is the BPF program's own trusted buffer; an
 	// intentionally invalid in-event destination is a contract violation that
 	// raises SIGSEGV in the child, pinned here via fork so the test host lives.
-	uint64_t src[2] = { 1, 2 };
+	alignas(16) uint64_t src[2] = { 1, 2 };
 	pid_t child = fork();
 	REQUIRE(child >= 0);
 	if (child == 0) {
+		signal(SIGSEGV, SIG_DFL);
 		bpftime::attach::attach_callback_scope scope;
 		if (!scope.entered())
 			_exit(20);

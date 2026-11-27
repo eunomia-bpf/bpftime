@@ -69,7 +69,6 @@ set(sources
   src/ufunc.cpp
   src/bpf_helper.cpp
   src/platform_utils.cpp
-  src/ringbuf_eventfd.cpp
 
   src/bpf_map/userspace/array_map.cpp
   src/bpf_map/userspace/fix_hash_map.cpp

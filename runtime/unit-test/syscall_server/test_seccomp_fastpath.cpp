@@ -213,6 +213,7 @@ TEST_CASE("Rootless seccomp cBPF argument fast-path", "[seccomp]")
 	// Still trapped and emulated: fake-kernel semantics must survive.
 	CHECK(outcome.checks.at("bpf_map_create") == 0);
 	CHECK(outcome.checks.at("fcntl_dupfd_cloexec_map") == 0);
+	CHECK(outcome.checks.at("fork_child_close_passthrough") == 0);
 	CHECK(outcome.checks.at("mmap_ringbuf_map") == 0);
 	CHECK(outcome.checks.at("ioctl_perf_event_enable") == 0);
 }

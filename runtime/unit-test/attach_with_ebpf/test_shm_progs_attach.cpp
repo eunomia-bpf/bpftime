@@ -202,7 +202,7 @@ __attribute__((optnone)) TEST_CASE("Test shm progs attach")
 	bpftime::shm_remove remover(SHM_NAME);
 
 	// The side that creates the mapping
-	managed_shared_memory segment(create_only, SHM_NAME, 1 << 20);
+	managed_shared_memory segment(create_only, SHM_NAME, 1 << 21);
 	// Use default max_fd_count for tests
 	const size_t test_max_fd_count = DEFAULT_MAX_FD_COUNT;
 	auto manager =

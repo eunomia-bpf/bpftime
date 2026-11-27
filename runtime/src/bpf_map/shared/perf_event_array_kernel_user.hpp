@@ -39,7 +39,7 @@ class perf_event_array_kernel_user_impl {
 		boost::interprocess::managed_shared_memory &memory,
 		uint32_t key_size, uint32_t value_size, uint32_t max_entries,
 		int kernel_perf_id);
-	virtual ~perf_event_array_kernel_user_impl();
+	~perf_event_array_kernel_user_impl();
 
 	void *elem_lookup(const void *key);
 

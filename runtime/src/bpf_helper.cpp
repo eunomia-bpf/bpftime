@@ -31,13 +31,9 @@
 #include "bpf/libbpf_common.h"
 #endif
 #include "bpftime_helper_group.hpp"
-#ifndef BPF_RB_NO_WAKEUP
-#define BPF_RB_NO_WAKEUP (1ULL << 0)
-#endif
-#ifndef BPF_RB_FORCE_WAKEUP
-#define BPF_RB_FORCE_WAKEUP (1ULL << 1)
-#endif
+#include <atomic>
 #include <cerrno>
+#include <cstdint>
 #ifdef ENABLE_BPFTIME_VERIFIER
 #include "bpftime-verifier.hpp"
 #endif
@@ -314,9 +310,62 @@ int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
 #endif
 }
 
+#if defined(__linux__)
+// Isolated per-thread PRNG state in initial-exec TLS: never touches __tls_get_addr,
+// takes no lock, allocates no heap memory, and leaves host rand() untouched.
+static __thread uint64_t bpftime_prng_state
+	__attribute__((tls_model("initial-exec"))) = 0;
+#else
+static thread_local uint64_t bpftime_prng_state = 0;
+#endif
+static std::atomic<uint64_t> bpftime_prng_seed_seq{ 1 };
+
+static inline uint64_t bpftime_splitmix64(uint64_t z) noexcept
+{
+	z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+	z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+	return z ^ (z >> 31);
+}
+
+// Pure userspace seeding (zero active syscalls, preserving host errno):
+// combines vDSO CLOCK_MONOTONIC, hardware cycle/virtual counter, TLS/stack ASLR
+// addresses, and a monotonic per-seed sequence counter through SplitMix64.
+static uint64_t bpftime_prng_seed_userspace() noexcept
+{
+	const int saved_errno = errno;
+	struct timespec ts {};
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	errno = saved_errno;
+
+	uint64_t hw = 0;
+#if defined(__x86_64__)
+	uint32_t lo = 0, hi = 0;
+	__asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+	hw = (static_cast<uint64_t>(hi) << 32) | lo;
+#elif defined(__aarch64__)
+	__asm__ volatile("mrs %0, cntvct_el0" : "=r"(hw));
+#endif
+	uint64_t z = static_cast<uint64_t>(ts.tv_sec) * 1000000000ULL +
+		     static_cast<uint64_t>(ts.tv_nsec);
+	z ^= bpftime_splitmix64(hw ^ reinterpret_cast<uintptr_t>(&bpftime_prng_state));
+	z ^= bpftime_splitmix64(
+		reinterpret_cast<uintptr_t>(&ts) ^
+		bpftime_prng_seed_seq.fetch_add(0x9E3779B97F4A7C15ULL,
+						std::memory_order_relaxed));
+	z = bpftime_splitmix64(z);
+	return z != 0 ? z : 0x9E3779B97F4A7C15ULL;
+}
+
 uint64_t bpftime_get_prandom_u32()
 {
-	return (uint32_t)rand();
+	uint64_t s = bpftime_prng_state;
+	if (__builtin_expect(s == 0, 0))
+		s = bpftime_prng_seed_userspace();
+	s ^= s >> 12;
+	s ^= s << 25;
+	s ^= s >> 27;
+	bpftime_prng_state = s;
+	return static_cast<uint32_t>(s * 0x2545F4914F6CDD1DULL);
 }
 
 uint64_t bpftime_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
@@ -393,6 +442,7 @@ static thread_local uint64_t bpftime_cached_tid = UINT64_MAX;
 static void bpftime_refresh_cached_identity_in_child()
 {
 	bpftime_cached_tgid = getpid();
+	bpftime_prng_state = 0;
 	// tid is meaningless in the child; the next helper call refills it.
 #if __linux__
 	bpftime_cached_tid = -1;
@@ -413,7 +463,8 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 	// also recomputes procfs translation on each call.
 	if (bpftime_identity_atfork_status != 0) {
 #if __linux__
-		const char *procfs = getenv("BPFTIME_HOST_PROCFS");
+		const char *procfs =
+			bpftime::get_agent_bootstrap_config().host_procfs;
 		return (uint64_t(get_host_nspid(procfs, "self", getpid())) << 32) |
 		       uint32_t(get_host_nspid(procfs, "thread-self",
 					      syscall(SYS_gettid)));
@@ -426,7 +477,8 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 #if __linux__
 	if (bpftime_cached_tid == -1) {
 		bpftime_cached_tid = static_cast<int>(syscall(SYS_gettid));
-		const char *procfs = getenv("BPFTIME_HOST_PROCFS");
+		const char *procfs =
+			bpftime::get_agent_bootstrap_config().host_procfs;
 		bpftime_cached_host_identity =
 			(uint64_t(get_host_nspid(procfs, "self", bpftime_cached_tgid)) << 32) |
 			uint32_t(get_host_nspid(procfs, "thread-self", bpftime_cached_tid));
@@ -586,16 +638,11 @@ uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t, uint64_t,
 		}
 	}
 	static const size_t tpbase_offset = [] {
-		const char *text =
-			getenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET");
-		if (text != nullptr) {
-			char *end = nullptr;
-			errno = 0;
-			unsigned long value = strtoul(text, &end, 0);
-			if (errno == 0 && end != text && *end == '\0' &&
-			    value <= task_storage_size - sizeof(void *))
-				return (size_t)value;
-		}
+		const auto &config = bpftime::get_agent_bootstrap_config();
+		if (config.has_system_analysis_tpbase_offset &&
+		    config.system_analysis_tpbase_offset <=
+			    task_storage_size - sizeof(void *))
+			return (size_t)config.system_analysis_tpbase_offset;
 		long resolved = bpftime_get_current_task_tpbase_offset();
 		return (size_t)resolved <=
 				       task_storage_size - sizeof(void *) ?
@@ -917,7 +964,7 @@ uint64_t bpf_ringbuf_output(uint64_t rb, uint64_t data, uint64_t size,
 		return (uint64_t)-1;
 	}
 	memcpy(buf, (const void *)(uintptr_t)data, size);
-	bpftime_ringbuf_submit_with_flags(fd, buf, false, flags);
+	bpftime_ringbuf_submit(fd, buf, false);
 	return 0;
 }
 
@@ -937,10 +984,12 @@ uint64_t bpf_ringbuf_submit(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 {
 	int32_t *ptr = (int32_t *)(uintptr_t)data;
 	int fd = ptr[-1];
-	if (flags & ~(BPF_RB_NO_WAKEUP | BPF_RB_FORCE_WAKEUP))
-		return (uint64_t)-EINVAL;
-	bpftime_ringbuf_submit_with_flags(fd, (void *)(uintptr_t)data, false,
-					  flags);
+	// As in the kernel, the record is committed whatever the flags say.
+	// BPF_RB_NO_WAKEUP and BPF_RB_FORCE_WAKEUP only steer the consumer
+	// wakeup, which the polling consumer does without. A log line here
+	// would write on every submit of programs that pass them.
+	(void)flags;
+	bpftime_ringbuf_submit(fd, (void *)(uintptr_t)data, false);
 	return 0;
 }
 
@@ -949,10 +998,11 @@ uint64_t bpf_ringbuf_discard(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 {
 	int32_t *ptr = (int32_t *)(uintptr_t)data;
 	int fd = ptr[-1];
-	if (flags != 0) {
-		SPDLOG_WARN(
-			"Currently only supports ringbuf_submit with flags=0");
-	}
+	// As in the kernel, the record is committed whatever the flags say.
+	// BPF_RB_NO_WAKEUP and BPF_RB_FORCE_WAKEUP only steer the consumer
+	// wakeup, which the polling consumer does without. A log line here
+	// would write on every submit of programs that pass them.
+	(void)flags;
 	bpftime_ringbuf_submit(fd, (void *)(uintptr_t)data, true);
 	return 0;
 }
@@ -994,7 +1044,8 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 			errno = EINVAL;
 			return (uint64_t)-1;
 		}
-		int32_t perf_handler_fd = *val_ptr;
+		int32_t perf_handler_fd =
+			__atomic_load_n(val_ptr, __ATOMIC_ACQUIRE);
 		return (uint64_t)bpftime_perf_event_output(
 			perf_handler_fd, (const void *)(uintptr_t)data,
 			(size_t)size);
@@ -1331,7 +1382,9 @@ int64_t bpftime_get_stackid(uint64_t ctx_raw, uint64_t map_raw, uint64_t flags,
 	auto &map_handler = std::get<bpf_map_handler>(
 		shm_holder.global_shared_memory.get_handler(real_map_fd));
 
-	bpftime_lock_guard guard(map_handler.get_raw_spin_lock());
+	robust_shm_trylock_guard guard(map_handler.get_map_lock());
+	if (!guard.owns_lock())
+		return -EBUSY;
 	auto impl = *shm_holder.global_shared_memory.try_get_stack_trace_impl(
 		real_map_fd);
 	int ret = impl->fill_stack_trace(*result, flags & BPF_F_REUSE_STACKID,
