@@ -82,6 +82,16 @@ namespace bpftime
 namespace
 {
 
+template <typename T> T load_acq(const T &x) noexcept
+{
+	return __atomic_load_n(&x, __ATOMIC_ACQUIRE);
+}
+template <typename T, typename V> void store_rel(T &x, V v) noexcept
+{
+	__atomic_store_n(&x, static_cast<T>(v), __ATOMIC_RELEASE);
+}
+[[maybe_unused]] void clear_software_perf_event_shard_cache() noexcept;
+
 #if __linux__
 // gettid() has not been cached by glibc since 2.25, so every software perf
 // output paid a real gettid syscall before the shard cache was even looked
@@ -116,22 +126,26 @@ void bpftime_refresh_cached_tid_in_child()
 	// Only the forking thread survives in the child, but its TLS copy still
 	// carries the parent's tid; force the next call to resolve the child's.
 	bpftime_cached_tid = -1;
+	clear_software_perf_event_shard_cache();
 }
 
 const int bpftime_tid_atfork_status =
 	pthread_atfork(nullptr, nullptr, bpftime_refresh_cached_tid_in_child);
 #endif
 
-int64_t current_thread_id()
+int64_t current_thread_id() noexcept
 {
 #if __linux__
 	// If the fork handler could not be registered, a forked child would keep
 	// the parent's tid, so resolve every call directly.
-	if (bpftime_tid_atfork_status != 0)
-		return (int64_t)syscall(SYS_gettid);
+	const int saved_errno = errno;
+	if (bpftime_tid_atfork_status != 0) {
+		const int64_t tid = (int64_t)syscall(SYS_gettid);
+		return errno = saved_errno, tid;
+	}
 	if (bpftime_cached_tid == -1)
 		bpftime_cached_tid = (int64_t)syscall(SYS_gettid);
-	return bpftime_cached_tid;
+	return errno = saved_errno, bpftime_cached_tid;
 #elif __APPLE__
 	uint64_t tid = 0;
 	pthread_threadid_np(nullptr, &tid);
@@ -149,13 +163,13 @@ uint64_t next_software_perf_event_generation()
 	return ((uint64_t)(uint32_t)getpid() << 32) ^ generation;
 }
 
-bool is_thread_alive(int pid, int64_t tid)
+bool is_thread_alive(int pid, int64_t tid) noexcept
 {
 #if __linux__
-	if (syscall(SYS_tgkill, pid, (pid_t)tid, 0) == 0) {
-		return true;
-	}
-	return errno == EPERM;
+	const int saved_errno = errno;
+	const bool alive = (syscall(SYS_tgkill, pid, (pid_t)tid, 0) == 0) ||
+			   (errno == EPERM);
+	return errno = saved_errno, alive;
 #else
 	(void)pid;
 	(void)tid;
@@ -202,6 +216,13 @@ thread_local size_t next_victim_slot
 	__attribute__((tls_model("initial-exec")))
 #endif
 	= 0;
+
+void clear_software_perf_event_shard_cache() noexcept
+{
+	for (auto &entry : software_perf_event_shard_cache)
+		entry.owner = nullptr;
+	next_victim_slot = 0;
+}
 
 void cache_software_perf_event_shard(
 	software_perf_event_shard_cache_entry value)
@@ -578,17 +599,18 @@ software_perf_event_shard *software_perf_event_data::get_current_thread_shard()
 {
 	const int pid = getpid();
 	const int64_t tid = current_thread_id();
-	uint64_t current_buffer_generation =
-		READ_ONCE_U64(producer_buffer_generation);
+	uint64_t current_buffer_generation = load_acq(producer_buffer_generation);
 	for (auto &entry : software_perf_event_shard_cache) {
 		if (entry.owner != this)
 			continue;
 		if (entry.event_generation != event_generation ||
 		    entry.buffer_generation != current_buffer_generation) {
 			entry.owner = nullptr;
-		} else if (entry.shard->pid == pid && entry.shard->tid == tid &&
-			   entry.shard->generation == entry.shard_generation &&
-			   entry.shard->buffer_generation ==
+		} else if (load_acq(entry.shard->pid) == pid &&
+			   load_acq(entry.shard->tid) == tid &&
+			   load_acq(entry.shard->generation) ==
+				   entry.shard_generation &&
+			   load_acq(entry.shard->buffer_generation) ==
 				   current_buffer_generation) {
 			return entry.shard;
 		} else {
@@ -597,40 +619,58 @@ software_perf_event_shard *software_perf_event_data::get_current_thread_shard()
 		break;
 	}
 
-	// Taint, never recover: emplace_back may reallocate the SHM vector and
-	// reclaim erases shift elements, so a dead holder can leave producer_shards
-	// half-mutated. A failed lock fails open: this thread simply drops the
-	// sample (output_data returns -EBUSY) instead of touching corrupt state.
-	robust_shm_lock_guard guard(
-		shard_lock, "perf-event producer shards");
+	// Non-blocking trylock on the producer hot path; SYS_tgkill stays consumer-only.
+	robust_shm_trylock_guard guard(shard_lock);
 	if (!guard.owns_lock())
-		return nullptr;
-	current_buffer_generation = READ_ONCE_U64(producer_buffer_generation);
-	if (producer_shards.size() >=
-	    software_perf_event_reclaim_shard_threshold) {
-		reclaim_inactive_producer_shards_locked();
-	}
+		return errno = EBUSY, nullptr;
+	current_buffer_generation = load_acq(producer_buffer_generation);
+	software_perf_event_shard *reusable = nullptr;
 	for (auto &shard : producer_shards) {
-		if (shard.pid == pid && shard.tid == tid &&
-		    shard.buffer_generation == current_buffer_generation) {
-			cache_software_perf_event_shard({
-				event_generation, current_buffer_generation,
-				shard.generation, &shard, this
-			});
-			return &shard;
+		const int shard_pid = load_acq(shard.pid);
+		if (shard_pid == 0) {
+			if (!reusable)
+				reusable = &shard;
+		} else if (shard_pid == pid && load_acq(shard.tid) == tid) {
+			if (load_acq(shard.buffer_generation) ==
+			    current_buffer_generation) {
+				cache_software_perf_event_shard({
+					event_generation, current_buffer_generation,
+					load_acq(shard.generation), &shard, this
+				});
+				return &shard;
+			}
+			if (!shard.buffer.has_data())
+				reusable = &shard;
 		}
 	}
 
-	auto *manager = producer_shards.get_allocator().get_segment_manager();
-	producer_shards.emplace_back(pid, tid, next_shard_generation++,
-				     current_buffer_generation, pagesize,
-				     manager,
-				     consumer_buffer.mmap_buffer.size());
-	auto &new_shard = producer_shards.back();
+	const size_t target_size = consumer_buffer.mmap_buffer.size();
+	if (!reusable) {
+		try {
+			producer_shards.emplace_back(
+				0, 0, 0, 0, pagesize,
+				producer_shards.get_allocator()
+					.get_segment_manager(),
+				0);
+		} catch (...) {
+			return errno = ENOMEM, nullptr;
+		}
+		reusable = &producer_shards.back();
+	}
+	if (target_size > 0 && !reusable->buffer.ensure_mmap_buffer(target_size))
+		return nullptr;
+	auto &hdr = reusable->buffer.get_header_ref();
+	smp_store_release_u64(&hdr.data_tail, 0);
+	smp_store_release_u64(&hdr.data_head, 0);
+	const uint64_t gen = next_shard_generation++;
+	store_rel(reusable->buffer_generation, current_buffer_generation);
+	store_rel(reusable->tid, tid);
+	store_rel(reusable->generation, gen);
+	store_rel(reusable->pid, pid);
 	cache_software_perf_event_shard({ event_generation,
-						  current_buffer_generation,
-						  new_shard.generation, &new_shard, this });
-	return &new_shard;
+					  current_buffer_generation, gen,
+					  reusable, this });
+	return reusable;
 }
 
 bool software_perf_event_data::drain_producer_shards()
@@ -644,6 +684,8 @@ bool software_perf_event_data::drain_producer_shards()
 	if (!guard.owns_lock())
 		return false;
 	for (auto &shard : producer_shards) {
+		if (load_acq(shard.pid) == 0)
+			continue;
 		while (shard.buffer.copy_next_record_to(consumer_buffer)) {
 		}
 	}
@@ -653,14 +695,16 @@ bool software_perf_event_data::drain_producer_shards()
 
 void software_perf_event_data::maybe_reclaim_inactive_producer_shards_locked()
 {
-	if (producer_shards.empty()) {
+	size_t active = 0;
+	for (const auto &shard : producer_shards)
+		active += (load_acq(shard.pid) != 0);
+	if (active == 0) {
 		drains_since_reclaim = 0;
 		return;
 	}
 	if (++drains_since_reclaim >=
 		    software_perf_event_reclaim_drain_interval ||
-	    producer_shards.size() >=
-		    software_perf_event_reclaim_shard_threshold) {
+	    active >= software_perf_event_reclaim_shard_threshold) {
 		drains_since_reclaim = 0;
 		reclaim_inactive_producer_shards_locked();
 	}
@@ -668,14 +712,14 @@ void software_perf_event_data::maybe_reclaim_inactive_producer_shards_locked()
 
 void software_perf_event_data::reclaim_inactive_producer_shards_locked()
 {
-	for (auto itr = producer_shards.begin();
-	     itr != producer_shards.end();) {
-		auto &shard = *itr;
-		if (!shard.buffer.has_data() &&
-		    !is_thread_alive(shard.pid, shard.tid)) {
-			itr = producer_shards.erase(itr);
-		} else {
-			++itr;
+	for (auto &shard : producer_shards) {
+		const int shard_pid = load_acq(shard.pid);
+		if (shard_pid != 0 && !shard.buffer.has_data() &&
+		    !is_thread_alive(shard_pid, load_acq(shard.tid)) &&
+		    !shard.buffer.has_data()) {
+			store_rel(shard.generation, next_shard_generation++);
+			store_rel(shard.tid, 0);
+			store_rel(shard.pid, 0);
 		}
 	}
 }
@@ -700,10 +744,8 @@ software_perf_event_data::get_header_ref_const() const
 int software_perf_event_data::output_data(const void *buf, size_t size)
 {
 	software_perf_event_shard *shard = get_current_thread_shard();
-	if (shard == nullptr) {
-		errno = EBUSY;
+	if (shard == nullptr)
 		return -1;
-	}
 	return shard->buffer.output_data(buf, size);
 }
 
@@ -728,8 +770,7 @@ void *software_perf_event_data::ensure_mmap_buffer(size_t buffer_size)
 		return nullptr;
 	}
 	if (consumer_buffer.mmap_buffer.size() != old_buffer_size) {
-		WRITE_ONCE_U64(producer_buffer_generation,
-			       producer_buffer_generation + 1);
+		store_rel(producer_buffer_generation, producer_buffer_generation + 1);
 	}
 	return result;
 }
