@@ -289,10 +289,15 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 				[&]() -> long {
 					// LRU enforces BPF_F_RDONLY only on
 					// syscall access; helpers pass false.
+					// HASH and LPM_TRIE lock internally:
+					// try_lock on helper paths.
 					if constexpr (is_lru_hash_v<impl_t> ||
 						      std::is_same_v<
 							      impl_t,
-							      hash_map_impl>)
+							      hash_map_impl> ||
+						      std::is_same_v<
+							      impl_t,
+							      lpm_trie_map_impl>)
 						return impl->elem_update(
 							key, value, flags,
 							from_syscall);
@@ -398,7 +403,10 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 					if constexpr (is_lru_hash_v<impl_t> ||
 						      std::is_same_v<
 							      impl_t,
-							      hash_map_impl>) {
+							      hash_map_impl> ||
+						      std::is_same_v<
+							      impl_t,
+							      lpm_trie_map_impl>) {
 						return impl->elem_delete(
 							key, from_syscall);
 					} else if constexpr (

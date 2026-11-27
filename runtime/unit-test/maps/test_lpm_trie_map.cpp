@@ -960,7 +960,8 @@ static void setup_lpm_mt_test_info(struct lpm_mt_test_info *info,
 	inet_pton(AF_INET, "192.168.1.0", &info->key[3].data);
 }
 
-// Multi-threaded test exercising bpf_map_handler::map_lock (should_lock = true)
+// Multi-threaded test: concurrent update, delete and lock-free lookup through
+// bpf_map_handler
 TEST_CASE("LPM Trie Multi-thread", "[lpm_trie][kernel_style][multithread]")
 {
 	const char *SHARED_MEMORY_NAME = "LPMTrieMultiThreadTestShm";

@@ -4,25 +4,37 @@
  * All rights reserved.
  */
 #include <bpf_map/userspace/lpm_trie_map.hpp>
-#include <boost/interprocess/detail/utilities.hpp>
 #include <spdlog/spdlog.h>
+#include <algorithm>
 #include <cerrno>
-#include <cstddef>
 #include <cstring>
 #include <stdexcept>
-#include <algorithm>
-// #include <vector>
 
 namespace bpftime
 {
 
-// Constants
-static constexpr uint32_t LPM_DATA_SIZE_MAX = 256;
-static constexpr uint32_t LPM_DATA_SIZE_MIN = 1;
-static constexpr uint32_t LPM_KEY_SIZE_MIN =
-	sizeof(uint32_t) + LPM_DATA_SIZE_MIN;
-static constexpr uint32_t LPM_KEY_SIZE_MAX =
-	sizeof(uint32_t) + LPM_DATA_SIZE_MAX;
+namespace
+{
+constexpr uint32_t LPM_DATA_SIZE_MAX = 256;
+constexpr uint32_t LPM_DATA_SIZE_MIN = 1;
+constexpr uint32_t LPM_KEY_SIZE_MIN = sizeof(uint32_t) + LPM_DATA_SIZE_MIN;
+constexpr uint32_t LPM_KEY_SIZE_MAX = sizeof(uint32_t) + LPM_DATA_SIZE_MAX;
+constexpr uint64_t BPF_ANY_FLAG = 0, BPF_NOEXIST_FLAG = 1, BPF_EXIST_FLAG = 2;
+constexpr int LOOKUP_ATTEMPTS = 8;
+
+constexpr size_t align8(size_t n) noexcept
+{
+	return (n + 7U) & ~size_t(7U);
+}
+uint32_t load(const uint32_t *p) noexcept
+{
+	return __atomic_load_n(p, __ATOMIC_ACQUIRE);
+}
+void store(uint32_t *p, uint32_t v) noexcept
+{
+	__atomic_store_n(p, v, __ATOMIC_RELEASE);
+}
+} // namespace
 
 lpm_trie_map_impl::lpm_trie_map_impl(const shm_init_ctx &ctx,
 				     unsigned int key_size,
@@ -30,31 +42,35 @@ lpm_trie_map_impl::lpm_trie_map_impl(const shm_init_ctx &ctx,
 				     unsigned int max_entries)
 	: _key_size(key_size), _value_size(value_size),
 	  _max_entries(max_entries),
-	  root(nullptr, node_deleter_type(ctx.segment_manager())),
-	  n_entries(0), segment_manager_(ctx.segment_manager())
+	  _pool(bytes_vec_allocator(ctx.segment_manager()))
 {
-	// Validate parameters
 	if (key_size < LPM_KEY_SIZE_MIN || key_size > LPM_KEY_SIZE_MAX) {
 		SPDLOG_ERROR("LPM Trie key_size ({}) must be between {} and {}",
 			     key_size, LPM_KEY_SIZE_MIN, LPM_KEY_SIZE_MAX);
 		throw std::invalid_argument("Invalid key_size for LPM Trie");
 	}
-
-	if (value_size == 0 || max_entries == 0) {
+	if (value_size == 0 || max_entries == 0 ||
+	    max_entries > (NIL - 1) / 2) {
 		SPDLOG_ERROR(
-			"LPM Trie value_size ({}) and max_entries ({}) must be > 0",
-			value_size, max_entries);
+			"LPM Trie value_size ({}) must be > 0 and max_entries ({}) in [1, {}]",
+			value_size, max_entries, (NIL - 1) / 2);
 		throw std::invalid_argument(
 			"Invalid value_size or max_entries for LPM Trie");
 	}
 
 	_data_size = key_size - sizeof(uint32_t); // Subtract prefixlen field
 	_max_prefixlen = _data_size * 8; // Maximum prefix length in bits
+	// At most max_entries leaves and max_entries - 1 intermediate nodes.
+	_pool_size = 2 * max_entries;
+	_val_off = align8(sizeof(node_hdr) + _data_size);
+	_stride = align8(_val_off + _value_size);
+	_ring_off = size_t(_pool_size) * _stride;
+	_pool.resize(_ring_off + size_t(_pool_size) * sizeof(uint32_t));
 
 	SPDLOG_DEBUG(
-		"LPM Trie constructed: key_size={}, value_size={}, max_entries={}, data_size={}, max_prefixlen={}",
+		"LPM Trie constructed: key_size={}, value_size={}, max_entries={}, data_size={}, max_prefixlen={}, pool_bytes={}",
 		_key_size, _value_size, _max_entries, _data_size,
-		_max_prefixlen);
+		_max_prefixlen, _pool.size());
 }
 
 lpm_trie_map_impl::~lpm_trie_map_impl()
@@ -63,184 +79,213 @@ lpm_trie_map_impl::~lpm_trie_map_impl()
 
 int lpm_trie_map_impl::extract_bit(const uint8_t *data, size_t index) const
 {
-	if (!data)
+	if (index >= static_cast<size_t>(_data_size) * 8)
 		return 0;
-	const size_t max_bits = static_cast<size_t>(_data_size) * 8;
-	if (index >= max_bits)
-		return 0;
-	const uint8_t byte = data[index / 8];
-	const uint8_t bit_pos = static_cast<uint8_t>(7 - (index % 8));
-	return (byte >> bit_pos) & 0x01;
+	const uint8_t byte = __atomic_load_n(&data[index / 8], __ATOMIC_RELAXED);
+	return (byte >> (7 - (index % 8))) & 0x01;
 }
 
-size_t
-lpm_trie_map_impl::longest_prefix_match(const lpm_trie_node *node,
-					const bpf_lpm_trie_key *key) const
+size_t lpm_trie_map_impl::longest_prefix_match(uint32_t idx, uint32_t prefixlen,
+					       const bpf_lpm_trie_key *key) const
 {
-	const uint32_t limit = std::min(node->prefixlen, key->prefixlen);
-	const uint8_t *node_data = get_node_prefix_data(node);
+	const uint32_t limit = std::min(prefixlen, key->prefixlen);
+	const uint8_t *node_bits = node_data(idx);
 	size_t matched = 0;
 	for (; matched < limit; ++matched) {
-		if (extract_bit(node_data, matched) !=
+		if (extract_bit(node_bits, matched) !=
 		    extract_bit(key->data, matched))
 			break;
 	}
 	return matched;
 }
 
-node_unique_ptr lpm_trie_map_impl::create_node(const void *value,
-					       bool is_intermediate)
+const bpf_lpm_trie_key *lpm_trie_map_impl::checked_key(const void *key,
+						       const char *op) const
 {
-	segment_manager_type *sm = segment_manager_.get();
-	// Create node in shared memory via position-independent segment_manager
-	lpm_trie_node *raw_node = sm->construct<lpm_trie_node>(
-		boost::interprocess::anonymous_instance)(sm);
-	if (!raw_node) {
-		return node_unique_ptr(nullptr, node_deleter_type(sm));
-	}
-
-	// Create unique_ptr with proper deleter
-	node_unique_ptr node(raw_node, node_deleter_type(sm));
-
-	node->is_intermediate = is_intermediate;
-
-	// Allocate space for prefix data and optionally value data
-	size_t total_size = _data_size;
-	if (!is_intermediate && value) {
-		total_size += _value_size;
-	}
-
-	node->data.resize(total_size);
-
-	if (!is_intermediate && value) {
-		copy_value_data(boost::interprocess::ipcdetail::to_raw_pointer(
-					node.get()),
-				value);
-	}
-
-	return node;
-}
-
-void lpm_trie_map_impl::copy_key_data(lpm_trie_node *node,
-				      const bpf_lpm_trie_key *key)
-{
-	uint8_t *node_data = get_node_prefix_data(node);
-	std::memcpy(node_data, key->data, _data_size);
-}
-
-void lpm_trie_map_impl::copy_value_data(lpm_trie_node *node, const void *value)
-{
-	if (node->is_intermediate)
-		return;
-
-	uint8_t *value_data = get_node_value_data(node);
-	std::memcpy(value_data, value, _value_size);
-}
-
-uint8_t *lpm_trie_map_impl::get_node_prefix_data(lpm_trie_node *node)
-{
-	return node->data.data();
-}
-
-uint8_t *lpm_trie_map_impl::get_node_value_data(lpm_trie_node *node)
-{
-	if (node->is_intermediate)
+	if (!key) {
+		SPDLOG_ERROR("LPM Trie {} failed: key pointer is nullptr", op);
+		errno = EINVAL;
 		return nullptr;
-	return node->data.data() + _data_size;
-}
-
-const uint8_t *
-lpm_trie_map_impl::get_node_prefix_data(const lpm_trie_node *node) const
-{
-	return node->data.data();
-}
-
-const uint8_t *
-lpm_trie_map_impl::get_node_value_data(const lpm_trie_node *node) const
-{
-	if (node->is_intermediate)
+	}
+	const auto *lpm_key = static_cast<const bpf_lpm_trie_key *>(key);
+	if (lpm_key->prefixlen > _max_prefixlen) {
+		SPDLOG_ERROR(
+			"LPM Trie {} failed: prefixlen ({}) exceeds maximum ({})",
+			op, lpm_key->prefixlen, _max_prefixlen);
+		errno = EINVAL;
 		return nullptr;
-	return node->data.data() + _data_size;
+	}
+	return lpm_key;
+}
+
+// Allocation and free run under _write_lock. Each moves one counter with one
+// store, so a dead writer at most leaks the node it was handling.
+uint32_t lpm_trie_map_impl::alloc_node()
+{
+	if (_fresh < _pool_size)
+		return _fresh++;
+	const uint64_t head = _ring_head.load(std::memory_order_relaxed);
+	if (head == _ring_tail.load(std::memory_order_relaxed))
+		return NIL;
+	const uint32_t idx = ring()[head % _pool_size];
+	_ring_head.store(head + 1, std::memory_order_relaxed);
+	// A lookup may still stand on this node: order the head move before
+	// the rewrite, so a lookup that reads new contents also sees the move
+	// (see elem_lookup).
+	std::atomic_thread_fence(std::memory_order_release);
+	return idx;
+}
+
+void lpm_trie_map_impl::free_node(uint32_t idx)
+{
+	// The caller has already unlinked idx: a lookup that sees the new tail
+	// also sees the unlink and cannot reach the node.
+	const uint64_t tail = _ring_tail.load(std::memory_order_relaxed);
+	ring()[tail % _pool_size] = idx;
+	_ring_tail.store(tail + 1, std::memory_order_release);
+}
+
+uint32_t lpm_trie_map_impl::new_node(const bpf_lpm_trie_key *key,
+				     uint32_t prefixlen, const void *value)
+{
+	const uint32_t idx = alloc_node();
+	if (idx == NIL)
+		return NIL;
+	node_hdr *n = node(idx);
+	__atomic_store_n(&n->child[0], NIL, __ATOMIC_RELAXED);
+	__atomic_store_n(&n->child[1], NIL, __ATOMIC_RELAXED);
+	__atomic_store_n(&n->prefixlen, prefixlen, __ATOMIC_RELAXED);
+	__atomic_store_n(&n->flags, value ? 0 : FLAG_IM, __ATOMIC_RELAXED);
+	std::memcpy(node_data(idx), key->data, _data_size);
+	if (value)
+		std::memcpy(node_value(idx), value, _value_size);
+	return idx;
 }
 
 void *lpm_trie_map_impl::elem_lookup(const void *key)
 {
-	if (!key) {
-		SPDLOG_ERROR(
-			"LPM Trie elem_lookup failed: key pointer is nullptr");
-		errno = EINVAL;
+	const bpf_lpm_trie_key *lpm_key = checked_key(key, "elem_lookup");
+	if (!lpm_key)
 		return nullptr;
+
+	for (int attempt = 0; attempt < LOOKUP_ATTEMPTS; ++attempt) {
+		const uint64_t tail = _ring_tail.load(std::memory_order_acquire);
+		uint32_t found = NIL;
+		uint32_t idx = load(&_root);
+		// Bounds and depth checks keep a walk through a recycled node
+		// finite; the ring check below then discards its result.
+		for (uint32_t depth = 0; idx < _pool_size && depth <= _max_prefixlen;
+		     ++depth) {
+			node_hdr *n = node(idx);
+			const uint32_t plen = load(&n->prefixlen);
+			const size_t matchlen =
+				longest_prefix_match(idx, plen, lpm_key);
+			if (matchlen < plen)
+				break;
+			if (!(load(&n->flags) & FLAG_IM))
+				found = idx;
+			if (matchlen == _max_prefixlen ||
+			    matchlen >= lpm_key->prefixlen)
+				break;
+			idx = load(&n->child[extract_bit(lpm_key->data, plen)]);
+		}
+		// Only nodes freed during the walk sit at ring positions >= tail;
+		// none of them was rewritten unless allocation passed tail.
+		std::atomic_thread_fence(std::memory_order_acquire);
+		if (_ring_head.load(std::memory_order_relaxed) > tail)
+			continue;
+		if (found == NIL) {
+			errno = ENOENT;
+			return nullptr;
+		}
+		// The value lives in the node, so distinct keys never alias and
+		// the lookup allocates nothing. The FIFO free ring keeps it
+		// readable after the key is deleted until the ring cycles.
+		return node_value(found);
+	}
+	// Freed nodes kept being recycled under the walk: skip like a
+	// contended trylock.
+	shm_trylock_skips.fetch_add(1, std::memory_order_relaxed);
+	return nullptr;
+}
+
+long lpm_trie_map_impl::update_locked(const bpf_lpm_trie_key *key,
+				      const void *value, uint64_t flags)
+{
+	uint32_t *slot = &_root;
+	uint32_t idx;
+	size_t matchlen = 0;
+	while ((idx = *slot) != NIL) {
+		node_hdr *n = node(idx);
+		matchlen = longest_prefix_match(idx, n->prefixlen, key);
+		if (n->prefixlen != matchlen || n->prefixlen == key->prefixlen ||
+		    n->prefixlen == _max_prefixlen)
+			break;
+		slot = &n->child[extract_bit(key->data, n->prefixlen)];
 	}
 
-	const bpf_lpm_trie_key *lpm_key =
-		static_cast<const bpf_lpm_trie_key *>(key);
-
-	if (lpm_key->prefixlen > _max_prefixlen) {
-		SPDLOG_ERROR(
-			"LPM Trie elem_lookup failed: prefixlen ({}) exceeds maximum ({})",
-			lpm_key->prefixlen, _max_prefixlen);
-		errno = EINVAL;
-		return nullptr;
+	// Same prefix: update the value in place; an intermediate node turns
+	// into a real one once its value is written.
+	if (idx != NIL && node(idx)->prefixlen == matchlen) {
+		node_hdr *n = node(idx);
+		const bool im = n->flags & FLAG_IM;
+		if (flags == BPF_NOEXIST_FLAG && !im) {
+			errno = EEXIST;
+			return -1;
+		}
+		if (flags == BPF_EXIST_FLAG && im) {
+			errno = ENOENT;
+			return -1;
+		}
+		if (im && n_entries.load(std::memory_order_relaxed) >=
+				  _max_entries) {
+			errno = ENOSPC;
+			return -1;
+		}
+		std::memcpy(node_value(idx), value, _value_size);
+		if (im) {
+			n_entries.fetch_add(1, std::memory_order_relaxed);
+			store(&n->flags, 0);
+		}
+		return 0;
 	}
 
-	lpm_trie_node *node =
-		boost::interprocess::ipcdetail::to_raw_pointer(root.get());
-	lpm_trie_node *found = nullptr;
-
-	// Walk the trie from root
-	while (node) {
-		size_t matchlen = longest_prefix_match(node, lpm_key);
-
-		// If we have an exact match for the maximum possible prefix
-		if (matchlen == _max_prefixlen) {
-			found = node;
-			break;
-		}
-
-		// If the match is shorter than the node's prefix, we can't go
-		// further
-		if (matchlen < node->prefixlen) {
-			break;
-		}
-
-		// Consider this node as a candidate if it's not intermediate
-		if (!node->is_intermediate) {
-			found = node;
-		}
-
-		// Continue traversal
-		if (matchlen < lpm_key->prefixlen) {
-			int next_bit =
-				extract_bit(lpm_key->data, node->prefixlen);
-			node = boost::interprocess::ipcdetail::to_raw_pointer(
-				node->child[next_bit].get());
-		} else {
-			break;
-		}
-	}
-
-	if (!found) {
+	if (flags == BPF_EXIST_FLAG) {
 		errno = ENOENT;
-		return nullptr;
+		return -1;
 	}
-
-	// Return the value where it lives in the node. A copy-out buffer aliases
-	// across lookups: one buffer per thread means a second lookup by the
-	// same program overwrites the first result, which the kernel never
-	// does. A per-thread buffer also had to stay clear of the allocator,
-	// because this lookup is reachable from a malloc callback while libc
-	// holds an arena lock. Pointing into the node satisfies both: distinct
-	// storage per key, and no allocation on this path.
-	uint8_t *value_data = get_node_value_data(found);
-	if (!value_data) {
-		errno = ENOENT;
-		return nullptr;
+	if (n_entries.load(std::memory_order_relaxed) >= _max_entries) {
+		errno = ENOSPC;
+		return -1;
 	}
-	return value_data;
+	const uint32_t leaf = new_node(key, key->prefixlen, value);
+	if (leaf == NIL) {
+		errno = ENOMEM;
+		return -1;
+	}
+	uint32_t top = leaf;
+	if (idx != NIL && matchlen == key->prefixlen) {
+		// The new prefix covers idx: insert it as idx's parent.
+		node(leaf)->child[extract_bit(node_data(idx), matchlen)] = idx;
+	} else if (idx != NIL) {
+		// Split at matchlen with an intermediate node over both.
+		top = new_node(key, matchlen, nullptr);
+		if (top == NIL) {
+			free_node(leaf);
+			errno = ENOMEM;
+			return -1;
+		}
+		const int bit = extract_bit(key->data, matchlen);
+		node(top)->child[bit] = leaf;
+		node(top)->child[!bit] = idx;
+	}
+	n_entries.fetch_add(1, std::memory_order_relaxed);
+	store(slot, top);
+	return 0;
 }
 
 long lpm_trie_map_impl::elem_update(const void *key, const void *value,
-				    uint64_t flags)
+				    uint64_t flags, bool from_syscall)
 {
 	if (!key || !value) {
 		SPDLOG_ERROR(
@@ -249,290 +294,73 @@ long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 		errno = EINVAL;
 		return -1;
 	}
-
-	// Validate flags
-	if (flags != 0 /*BPF_ANY*/ && flags != 1 /*BPF_NOEXIST*/ &&
-	    flags != 2 /*BPF_EXIST*/) {
+	if (flags != BPF_ANY_FLAG && flags != BPF_NOEXIST_FLAG &&
+	    flags != BPF_EXIST_FLAG) {
 		SPDLOG_ERROR("LPM Trie elem_update failed: invalid flags ({})",
 			     flags);
 		errno = EINVAL;
 		return -1;
 	}
-
-	const bpf_lpm_trie_key *lpm_key =
-		static_cast<const bpf_lpm_trie_key *>(key);
-
-	if (lpm_key->prefixlen > _max_prefixlen) {
-		SPDLOG_ERROR(
-			"LPM Trie elem_update failed: prefixlen ({}) exceeds maximum ({})",
-			lpm_key->prefixlen, _max_prefixlen);
-		errno = EINVAL;
+	const bpf_lpm_trie_key *lpm_key = checked_key(key, "elem_update");
+	if (!lpm_key)
 		return -1;
-	}
+	return with_robust_shm_lock(
+		true, from_syscall, _write_lock,
+		[&]() -> long { return update_locked(lpm_key, value, flags); },
+		"lpm_trie");
+}
 
-	// Helper lambdas
-	auto is_exact_match = [&](const lpm_trie_node *n) -> bool {
-		return n && n->prefixlen == lpm_key->prefixlen &&
-		       longest_prefix_match(n, lpm_key) == lpm_key->prefixlen;
-	};
-
-	// If tree is empty
-	if (!root) {
-		if (flags == 2 /*BPF_EXIST*/) {
-			errno = ENOENT;
-			return -1;
-		}
-		if (n_entries >= _max_entries) {
-			errno = ENOSPC;
-			return -1;
-		}
-		auto new_node = create_node(value, false);
-		if (!new_node) {
-			errno = ENOMEM;
-			return -1;
-		}
-		new_node->prefixlen = lpm_key->prefixlen;
-		copy_key_data(boost::interprocess::ipcdetail::to_raw_pointer(
-				      new_node.get()),
-			      lpm_key);
-		root = std::move(new_node);
-		n_entries++;
-		SPDLOG_TRACE("LPM Trie: Added root node with prefix length {}",
-			     lpm_key->prefixlen);
-		return 0;
-	}
-
-	// Walk to find position
-	node_unique_ptr *slot = &root;
-	lpm_trie_node *node = nullptr;
+long lpm_trie_map_impl::delete_locked(const bpf_lpm_trie_key *key)
+{
+	uint32_t *trim = &_root, *trim2 = trim;
+	uint32_t parent = NIL, idx;
 	size_t matchlen = 0;
-	while (slot->get()) {
-		node = boost::interprocess::ipcdetail::to_raw_pointer(
-			slot->get());
-		matchlen = longest_prefix_match(node, lpm_key);
-		if (node->prefixlen != matchlen ||
-		    node->prefixlen == lpm_key->prefixlen ||
-		    node->prefixlen == _max_prefixlen) {
+	while ((idx = *trim) != NIL) {
+		node_hdr *n = node(idx);
+		matchlen = longest_prefix_match(idx, n->prefixlen, key);
+		if (n->prefixlen != matchlen || n->prefixlen == key->prefixlen)
 			break;
-		}
-		int next_bit = extract_bit(lpm_key->data, node->prefixlen);
-		slot = &node->child[next_bit];
+		parent = idx;
+		trim2 = trim;
+		trim = &n->child[extract_bit(key->data, n->prefixlen)];
 	}
-
-	// Case 1: same prefix length slot
-	if (slot->get() && node->prefixlen == lpm_key->prefixlen) {
-		bool exact = is_exact_match(node);
-		if (exact) {
-			bool exists_real = !node->is_intermediate;
-			if (flags == 1 /*NOEXIST*/) {
-				errno = EEXIST;
-				return -1;
-			}
-			if (flags == 2 /*EXIST*/ && !exists_real) {
-				errno = ENOENT;
-				return -1;
-			}
-			if (!exists_real) {
-				if (n_entries >= _max_entries) {
-					errno = ENOSPC;
-					return -1;
-				}
-				node->is_intermediate = false;
-				node->data.resize(_data_size + _value_size);
-				n_entries++;
-			}
-			copy_value_data(node, value);
-			return 0;
-		}
-		// Not exact: split at current matchlen into intermediate
-		if (flags == 2 /*EXIST*/) {
-			errno = ENOENT;
-			return -1;
-		}
-		if (n_entries >= _max_entries) {
-			errno = ENOSPC;
-			return -1;
-		}
-		auto new_node = create_node(value, false);
-		if (!new_node) {
-			errno = ENOMEM;
-			return -1;
-		}
-		new_node->prefixlen = lpm_key->prefixlen;
-		copy_key_data(boost::interprocess::ipcdetail::to_raw_pointer(
-				      new_node.get()),
-			      lpm_key);
-		auto im_node = create_node(nullptr, true);
-		if (!im_node) {
-			errno = ENOMEM;
-			return -1;
-		}
-		im_node->prefixlen = matchlen;
-		copy_key_data(boost::interprocess::ipcdetail::to_raw_pointer(
-				      im_node.get()),
-			      lpm_key);
-		if (extract_bit(lpm_key->data, matchlen)) {
-			im_node->child[0] = std::move(*slot);
-			im_node->child[1] = std::move(new_node);
-		} else {
-			im_node->child[0] = std::move(new_node);
-			im_node->child[1] = std::move(*slot);
-		}
-		*slot = std::move(im_node);
-		n_entries++;
-		return 0;
-	}
-
-	// Case 2: slot is empty -> pure insert
-	if (!slot->get()) {
-		if (flags == 2 /*EXIST*/) {
-			errno = ENOENT;
-			return -1;
-		}
-		if (n_entries >= _max_entries) {
-			errno = ENOSPC;
-			return -1;
-		}
-		auto new_node = create_node(value, false);
-		if (!new_node) {
-			errno = ENOMEM;
-			return -1;
-		}
-		new_node->prefixlen = lpm_key->prefixlen;
-		copy_key_data(boost::interprocess::ipcdetail::to_raw_pointer(
-				      new_node.get()),
-			      lpm_key);
-		*slot = std::move(new_node);
-		n_entries++;
-		SPDLOG_TRACE("LPM Trie: Added new node with prefix length {}",
-			     lpm_key->prefixlen);
-		return 0;
-	}
-
-	// Case 3: need to insert as ancestor of current node
-	if (matchlen == lpm_key->prefixlen) {
-		if (flags == 2 /*EXIST*/) {
-			errno = ENOENT;
-			return -1;
-		}
-		if (n_entries >= _max_entries) {
-			errno = ENOSPC;
-			return -1;
-		}
-		auto new_node = create_node(value, false);
-		if (!new_node) {
-			errno = ENOMEM;
-			return -1;
-		}
-		new_node->prefixlen = lpm_key->prefixlen;
-		copy_key_data(boost::interprocess::ipcdetail::to_raw_pointer(
-				      new_node.get()),
-			      lpm_key);
-		int next_bit =
-			extract_bit(get_node_prefix_data(node), matchlen);
-		new_node->child[next_bit] = std::move(*slot);
-		*slot = std::move(new_node);
-		n_entries++;
-		SPDLOG_TRACE(
-			"LPM Trie: Added ancestor node with prefix length {}",
-			lpm_key->prefixlen);
-		return 0;
-	}
-
-	// Case 4: split by creating intermediate node between
-	if (flags == 2 /*EXIST*/) {
+	if (idx == NIL || node(idx)->prefixlen != key->prefixlen ||
+	    matchlen != key->prefixlen || (node(idx)->flags & FLAG_IM)) {
 		errno = ENOENT;
 		return -1;
 	}
-	if (n_entries >= _max_entries) {
-		errno = ENOSPC;
-		return -1;
-	}
-	auto new_node = create_node(value, false);
-	if (!new_node) {
-		errno = ENOMEM;
-		return -1;
-	}
-	new_node->prefixlen = lpm_key->prefixlen;
-	copy_key_data(
-		boost::interprocess::ipcdetail::to_raw_pointer(new_node.get()),
-		lpm_key);
 
-	auto im_node = create_node(nullptr, true);
-	if (!im_node) {
-		errno = ENOMEM;
-		return -1;
+	node_hdr *n = node(idx);
+	if (n->child[0] != NIL && n->child[1] != NIL) {
+		// Two children: keep the node as an intermediate one.
+		store(&n->flags, FLAG_IM);
+		n_entries.fetch_sub(1, std::memory_order_relaxed);
+		return 0;
 	}
-	im_node->prefixlen = matchlen;
-	copy_key_data(
-		boost::interprocess::ipcdetail::to_raw_pointer(im_node.get()),
-		lpm_key);
-	if (extract_bit(lpm_key->data, matchlen)) {
-		im_node->child[0] = std::move(*slot);
-		im_node->child[1] = std::move(new_node);
-	} else {
-		im_node->child[0] = std::move(new_node);
-		im_node->child[1] = std::move(*slot);
+	if (parent != NIL && (node(parent)->flags & FLAG_IM) &&
+	    n->child[0] == NIL && n->child[1] == NIL) {
+		// A leaf under an intermediate node: promote its sibling.
+		node_hdr *p = node(parent);
+		store(trim2, p->child[p->child[0] == idx ? 1 : 0]);
+		n_entries.fetch_sub(1, std::memory_order_relaxed);
+		free_node(parent);
+		free_node(idx);
+		return 0;
 	}
-	*slot = std::move(im_node);
-	n_entries++;
-	SPDLOG_TRACE(
-		"LPM Trie: Added intermediate node and new node with prefix length {}",
-		lpm_key->prefixlen);
+	store(trim, n->child[0] != NIL ? n->child[0] : n->child[1]);
+	n_entries.fetch_sub(1, std::memory_order_relaxed);
+	free_node(idx);
 	return 0;
 }
 
-long lpm_trie_map_impl::elem_delete(const void *key)
+long lpm_trie_map_impl::elem_delete(const void *key, bool from_syscall)
 {
-	if (!key) {
-		SPDLOG_ERROR(
-			"LPM Trie elem_delete failed: key pointer is nullptr");
-		errno = EINVAL;
+	const bpf_lpm_trie_key *lpm_key = checked_key(key, "elem_delete");
+	if (!lpm_key)
 		return -1;
-	}
-
-	const bpf_lpm_trie_key *lpm_key =
-		static_cast<const bpf_lpm_trie_key *>(key);
-
-	if (lpm_key->prefixlen > _max_prefixlen) {
-		SPDLOG_ERROR(
-			"LPM Trie elem_delete failed: prefixlen ({}) exceeds maximum ({})",
-			lpm_key->prefixlen, _max_prefixlen);
-		errno = EINVAL;
-		return -1;
-	}
-
-	// Traverse to find the slot pointing to the node to delete
-	node_unique_ptr *slot = &root;
-	lpm_trie_node *node = nullptr;
-	while (slot->get()) {
-		node = boost::interprocess::ipcdetail::to_raw_pointer(
-			slot->get());
-		size_t matchlen = longest_prefix_match(node, lpm_key);
-		if (node->prefixlen != matchlen ||
-		    node->prefixlen == lpm_key->prefixlen) {
-			break;
-		}
-		int next_bit = extract_bit(lpm_key->data, node->prefixlen);
-		slot = &node->child[next_bit];
-	}
-
-	if (!slot->get() || node->prefixlen != lpm_key->prefixlen ||
-	    longest_prefix_match(node, lpm_key) != node->prefixlen ||
-	    node->is_intermediate) {
-		errno = ENOENT;
-		return -1;
-	}
-
-	// Mark node as intermediate (logical deletion), avoid structural
-	// changes
-	node->is_intermediate = true;
-	node->data.resize(_data_size);
-	if (n_entries > 0) {
-		n_entries--;
-	}
-	SPDLOG_TRACE("LPM Trie: Marked node as intermediate (logical delete)");
-	return 0;
+	return with_robust_shm_lock(
+		true, from_syscall, _write_lock,
+		[&]() -> long { return delete_locked(lpm_key); }, "lpm_trie");
 }
 
 int lpm_trie_map_impl::map_get_next_key(const void *key, void *next_key)
@@ -543,45 +371,41 @@ int lpm_trie_map_impl::map_get_next_key(const void *key, void *next_key)
 		errno = EINVAL;
 		return -1;
 	}
-
-	// Empty trie
-	if (!root) {
+	// Only the first key is supported: the leftmost real node.
+	if (key || load(&_root) == NIL) {
 		errno = ENOENT;
 		return -1;
 	}
-
-	bpf_lpm_trie_key *next_lpm_key =
-		static_cast<bpf_lpm_trie_key *>(next_key);
-
-	// If key is null or invalid, return leftmost node
-	if (!key) {
-		// Find leftmost non-intermediate node
-		lpm_trie_node *node =
-			boost::interprocess::ipcdetail::to_raw_pointer(
-				root.get());
-		while (node) {
-			if (!node->is_intermediate) {
-				next_lpm_key->prefixlen = node->prefixlen;
-				std::memcpy(next_lpm_key->data,
-					    get_node_prefix_data(node),
-					    _data_size);
-				return 0;
+	auto *next_lpm_key = static_cast<bpf_lpm_trie_key *>(next_key);
+	for (int attempt = 0; attempt < LOOKUP_ATTEMPTS; ++attempt) {
+		const uint64_t tail = _ring_tail.load(std::memory_order_acquire);
+		uint32_t found = NIL, idx = load(&_root);
+		for (uint32_t depth = 0; idx < _pool_size && depth <= _max_prefixlen;
+		     ++depth) {
+			node_hdr *n = node(idx);
+			if (!(load(&n->flags) & FLAG_IM)) {
+				found = idx;
+				break;
 			}
-			node = node->child[0] ?
-				       boost::interprocess::ipcdetail::
-					       to_raw_pointer(
-						       node->child[0].get()) :
-				       boost::interprocess::ipcdetail::
-					       to_raw_pointer(
-						       node->child[1].get());
+			const uint32_t left = load(&n->child[0]);
+			idx = left != NIL ? left : load(&n->child[1]);
 		}
-		errno = ENOENT;
-		return -1;
+		if (found != NIL) {
+			next_lpm_key->prefixlen = load(&node(found)->prefixlen);
+			for (uint32_t i = 0; i < _data_size; ++i)
+				next_lpm_key->data[i] = __atomic_load_n(
+					&node_data(found)[i], __ATOMIC_RELAXED);
+		}
+		std::atomic_thread_fence(std::memory_order_acquire);
+		if (_ring_head.load(std::memory_order_relaxed) > tail)
+			continue;
+		if (found == NIL) {
+			errno = ENOENT;
+			return -1;
+		}
+		return 0;
 	}
-
-	// For simplicity, this is a basic implementation
-	// A full implementation would do postorder traversal
-	errno = ENOENT;
+	errno = EBUSY;
 	return -1;
 }
 
