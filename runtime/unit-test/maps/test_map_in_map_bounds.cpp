@@ -2,8 +2,11 @@
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/shared_memory_object.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <atomic>
 #include <cerrno>
 #include <cstdint>
+#include <thread>
+#include <vector>
 
 using namespace boost::interprocess;
 using namespace bpftime;
@@ -108,4 +111,55 @@ TEST_CASE("Hash-of-maps syscall lookup rejects zero inner fd",
 		static_cast<int *>(map.elem_lookup_userspace(&key));
 	REQUIRE(stored != nullptr);
 	REQUIRE(*stored == 17);
+}
+
+TEST_CASE("Hash-of-maps supports lock-free concurrent helper lookups",
+	  "[maps][map_in_map][concurrent]")
+{
+	REQUIRE_FALSE(hash_map_of_maps_impl::should_lock);
+
+	static const char *shm_name = "bpftime_hash_of_maps_concurrent_test";
+	shm_cleanup cleanup(shm_name);
+	managed_shared_memory segment(create_only, shm_name, 1024 * 1024);
+	hash_map_of_maps_impl map(segment, sizeof(uint32_t), 128, 0);
+
+	constexpr uint32_t steady_keys = 16;
+	for (uint32_t k = 0; k < steady_keys; ++k) {
+		int fd = static_cast<int>(100 + k);
+		REQUIRE(map.elem_update(&k, &fd, 0) == 0);
+	}
+
+	std::atomic<bool> stop{ false };
+	std::atomic<uint64_t> failures{ 0 };
+	std::thread writer([&]() {
+		uint32_t churn_base = 64;
+		for (int iter = 0; iter < 500; ++iter) {
+			uint32_t k = churn_base + static_cast<uint32_t>(iter % 32);
+			int fd = 1000 + (iter % 100);
+			if (map.elem_update(&k, &fd, 0) != 0)
+				failures.fetch_add(1);
+			if (iter % 2 == 1 && map.elem_delete(&k) != 0)
+				failures.fetch_add(1);
+		}
+		stop.store(true, std::memory_order_release);
+	});
+
+	std::vector<std::thread> readers;
+	for (int t = 0; t < 8; ++t) {
+		readers.emplace_back([&]() {
+			while (!stop.load(std::memory_order_acquire)) {
+				for (uint32_t k = 0; k < steady_keys; ++k) {
+					auto val = reinterpret_cast<uintptr_t>(
+						map.elem_lookup(&k));
+					if (val != 100 + k)
+						failures.fetch_add(1);
+				}
+			}
+		});
+	}
+
+	writer.join();
+	for (auto &r : readers)
+		r.join();
+	REQUIRE(failures.load() == 0);
 }

@@ -118,6 +118,13 @@ class bpftime_hash_map {
 			__atomic_store_n(reinterpret_cast<uint64_t *>(d + i), v,
 					 __ATOMIC_RELAXED);
 		}
+		for (; ((uintptr_t)d & 3U) == 0 && i + 4 <= len; i += 4) {
+			uint32_t v = 0;
+			if (s != nullptr)
+				std::memcpy(&v, s + i, 4);
+			__atomic_store_n(reinterpret_cast<uint32_t *>(d + i), v,
+					 __ATOMIC_RELAXED);
+		}
 		for (; i < len; ++i)
 			__atomic_store_n(&d[i], s ? s[i] : uint8_t(0),
 					 __ATOMIC_RELAXED);

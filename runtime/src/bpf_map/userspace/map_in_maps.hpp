@@ -7,8 +7,10 @@
 #define _MAP_IN_MAP_HPP
 
 #include <bpf_map/map_common_def.hpp>
+#include <cerrno>
+#include <cstdint>
 #include "array_map.hpp"
-#include "var_hash_map.hpp"
+#include "fix_hash_map.hpp"
 
 namespace bpftime
 {
@@ -48,23 +50,32 @@ class array_map_of_maps_impl : public array_map_impl {
 	}
 };
 
-class hash_map_of_maps_impl : public var_size_hash_map_impl {
+class hash_map_of_maps_impl : public fix_size_hash_map_impl {
+	static int load_inner_id(const void *p) noexcept
+	{
+		if (((uintptr_t)p & 3U) == 0)
+			return __atomic_load_n(static_cast<const int *>(p),
+					       __ATOMIC_ACQUIRE);
+		return *static_cast<const int *>(p);
+	}
+
     public:
 	hash_map_of_maps_impl(
 		boost::interprocess::managed_shared_memory &memory,
-		uint32_t key_size, uint32_t max_entries, uint32_t flags)
-		: var_size_hash_map_impl(memory, key_size, sizeof(int),
-				 max_entries, flags)
+		uint32_t key_size, uint32_t max_entries, uint32_t /*flags*/)
+		: fix_size_hash_map_impl(memory, max_entries, key_size,
+					 sizeof(int))
 	{
 	}
 
 	void *elem_lookup(const void *key)
 	{
-		auto value = var_size_hash_map_impl::elem_lookup(key);
-		if (value == nullptr)
+		auto value = fix_size_hash_map_impl::elem_lookup(key);
+		if (value == nullptr) {
+			errno = ENOENT;
 			return nullptr;
-		int map_id = *(int *)value;
-		return (void *)((u_int64_t)map_id);
+		}
+		return (void *)((u_int64_t)load_inner_id(value));
 	}
 	// See array_map_of_maps_impl::elem_lookup_userspace: return the stored
 	// 4-byte inner fd address for the syscall memcpy path instead of the
@@ -72,9 +83,11 @@ class hash_map_of_maps_impl : public var_size_hash_map_impl {
 	void *elem_lookup_userspace(const void *key)
 	{
 		auto *stored = static_cast<int *>(
-			var_size_hash_map_impl::elem_lookup(key));
-		if (stored == nullptr || *stored == 0)
+			fix_size_hash_map_impl::elem_lookup(key));
+		if (stored == nullptr || load_inner_id(stored) == 0) {
+			errno = ENOENT;
 			return nullptr;
+		}
 		return stored;
 	}
 };
