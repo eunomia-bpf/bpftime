@@ -13,7 +13,8 @@
 #include "cuda.h"
 
 extern "C" {
-extern uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...);
+extern uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size,
+				     uint64_t p1, uint64_t p2, uint64_t p3);
 }
 
 #define CUDART_SAFE_CALL(x, error)                                             \
