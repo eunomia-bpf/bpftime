@@ -2,6 +2,20 @@
 
 Newest first. Read before starting a change. A pull request that reverses an entry is a design problem until a maintainer decides again. Every entry quotes the maintainer verbatim; changing a decision means adding a new entry.
 
+- **2026-11-26: single-file SHM lock gateway (`runtime/include/robust_shm_mutex.hpp`), explicit L0–L3 lock inventory, and mandatory approval for any lock change** (#958, #988, #990).
+  1. **Single lock file (`runtime/include/robust_shm_mutex.hpp`):** all cross-process shared-memory lock primitives, RAII guards, blocking-vs-`trylock` dispatch (`with_robust_shm_lock`), skip counters, and TLS trylock-miss state live exclusively in `runtime/include/robust_shm_mutex.hpp`. Defining or calling raw cross-process locks (`pthread_mutex_*`, `pthread_spin_*`, `boost::interprocess::interprocess_*mutex`, custom spinlocks) or bespoke lock-policy wrappers outside `runtime/include/robust_shm_mutex.hpp` is forbidden.
+  2. **Approved L0–L3 lock layering inventory:**
+     - **L0 (lock-free atomics / fixed arrays):** `epoch_state` seqlock, `atomic_pid_set`, `ARRAY` / `PERCPU_ARRAY` / `RINGBUF` consumer & submit paths, and `software_perf_event_data` steady-state TLS shard cache;
+     - **L1 (short pointer-free SHM mutual exclusion via `robust_shm_mutex::lock_and_recover`):** `bpftime_shm::cpu_exec_locks` and `ringbuf::reserve_lock`;
+     - **L2 (container SHM structures via `robust_shm_mutex` poison-on-death — `try_lock` on `LD_PRELOAD` helper hot paths, blocking `lock` on control-plane/consumer paths):** `bpf_map_handler::map_lock` (`should_lock == true` maps) and `software_perf_event_data::shard_lock`;
+     - **L3 (control-plane / process-local):** `shm_lifecycle_lock` (`flock` around `/dev/shm` create/destroy) and process-local `std::mutex` (`ctx_mutex`, `g_cuda_watcher_mutex`, GDRCopy mapping state).
+  3. **Explicit reason & approval gate:** adding any new lock, adding a new lock callsite outside the inventory above, or changing an existing lock's layer, granularity, or recovery policy requires an explicit reason recorded in `DECISIONS.md` and prior maintainer approval before merge.
+  > 我们要确保仓库里面加任何锁都需要有明确的原因记录和批准流程, 不然一直出错?
+  >
+  > 我们是不是锁需要有明确的分层, 半年前的基础上增量改进?
+  >
+  > 整体代码需要增加多少? 100 行以内, 包含测试搞定? 都放在一个文件里面, 禁止在这个文件之外加锁?
+
 - **2026-11-26: forbid speculative lifecycle/GC state machines, test-only control-plane/IPC backdoors, and parallel rewrites of idempotent paths; close `#971` into minimal `#970`** (#970, #971). Three forms of speculative bloat are banned across the codebase and treated as `over-engineering` in review:
   1. **No unrequested symmetric teardown/GC or hypothetical edge-case state machines** without a real production caller or reproduced failure (e.g. `#971`'s runtime SHM link-deletion teardown pass on host `dlopen()` and its heap-allocating `live_uprobe_targets` `std::set` for duplicate same-offset links);
   2. **No control-plane/IPC commands, flags, or hooks added solely to drive tests** when unused in default production modes (e.g. `#971`'s UNIX socket `"reconcile"` command while `BPFTIME_ENABLE_AGENT_IPC` defaults to off under bare `LD_PRELOAD`);

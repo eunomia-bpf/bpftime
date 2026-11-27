@@ -13,12 +13,19 @@ Safety Redlines and Host-process safety invariants are binding here.
   unapproved active syscalls** (`write`, `read`, `socket`, `connect`,
   `sendmsg`, `recvmsg`, `open`, `mmap`, `eventfd`, etc.; preserve host `errno`
   — only explicit exemptions in `DECISIONS.md` apply).
-- Prefer preallocated fixed-size lock-free atomics. Where cross-process mutual
-  exclusion is required, use `bpftime::robust_shm_mutex` (`pthread_mutex_t`
-  with `PTHREAD_PROCESS_SHARED | PTHREAD_MUTEX_ROBUST`); never bare
-  `pthread_spinlock_t` or non-robust `boost::interprocess::interprocess_mutex`,
-  and never nest private inner locks inside container maps (`should_lock = true`
-  delegates locking solely to `bpf_map_handler::map_lock`).
+- Prefer preallocated fixed-size lock-free atomics (L0). All cross-process
+  shared-memory lock primitives, RAII guards, and blocking-vs-`trylock`
+  dispatch live **exclusively** in `runtime/include/robust_shm_mutex.hpp`
+  (`bpftime::robust_shm_mutex`, `PTHREAD_PROCESS_SHARED | PTHREAD_MUTEX_ROBUST`):
+  forbid defining or calling raw `pthread_mutex_*`, `pthread_spinlock_t`,
+  `boost::interprocess::interprocess_*mutex`, custom spinlocks, or bespoke lock
+  wrappers outside `runtime/include/robust_shm_mutex.hpp`, and never nest
+  private inner locks inside container maps (`should_lock = true` delegates
+  locking solely to `bpf_map_handler::map_lock` via `with_robust_shm_lock`,
+  which uses non-blocking `try_lock` on helper hot paths and blocking `lock` on
+  control-plane syscalls). Adding any new lock, new lock callsite, or lock
+  policy change outside the approved L0–L3 inventory in `DECISIONS.md` requires
+  an explicit recorded reason and prior maintainer approval.
 - Every internal fd (shared memory, eventfd, sockets) is `O_CLOEXEC`/
   `SOCK_CLOEXEC`, and process-local locks stay safe after a multi-threaded
   `fork()`.

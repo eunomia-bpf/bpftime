@@ -252,11 +252,17 @@ same pull request.
    an event; `process_vm_writev` once per `bpf_probe_write_user`
    (`ENABLE_PROBE_WRITE_CHECK`); one-time
    cold TLS/`.bss` identity initialization, and userspace vDSO
-   `clock_gettime`). Prefer preallocated fixed-size lock-free atomics (e.g.
-   fixed atomic PID arrays); where mutual exclusion is unavoidable on Linux,
-   use `pthread_mutex_t` with `PTHREAD_PROCESS_SHARED | PTHREAD_MUTEX_ROBUST`,
-   and forbid bare `pthread_spinlock_t` or non-robust
-   `boost::interprocess::interprocess_mutex`.
+   `clock_gettime`). Prefer preallocated fixed-size lock-free atomics (L0, e.g.
+   fixed atomic PID arrays, `epoch_state` seqlock). All cross-process
+   shared-memory lock primitives, guards, and blocking-vs-`trylock` dispatch
+   live exclusively in `runtime/include/robust_shm_mutex.hpp`
+   (`PTHREAD_PROCESS_SHARED | PTHREAD_MUTEX_ROBUST`); defining or calling raw
+   `pthread_mutex_*`, `pthread_spinlock_t`,
+   `boost::interprocess::interprocess_*mutex`, custom spinlocks, or bespoke lock
+   wrappers outside `runtime/include/robust_shm_mutex.hpp` is forbidden. Adding
+   any new lock, new lock callsite, or changing any existing lock in the L0–L3
+   inventory requires recording the explicit reason in `DECISIONS.md` and
+   obtaining prior maintainer approval.
 3. **No hijacking host global resources in constructors.** Never clobber
    host signal handlers (e.g. `SIGUSR1`); do not spawn unsolicited background
    threads under `LD_PRELOAD`; preserve `errno`; avoid reentrant `malloc`.
