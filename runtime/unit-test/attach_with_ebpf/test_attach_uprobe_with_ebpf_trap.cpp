@@ -139,7 +139,8 @@ TEST_CASE("Test probing internal functions with the trap backend")
 // A native callback's implementation is a caller contract. Runtime-managed
 // BPF programs are checked before attach, including helper implementations
 // registered under an otherwise safe helper ID.
-static uint64_t unaudited_helper(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+static uint64_t unaudited_helper(uint64_t, uint64_t, uint64_t, uint64_t,
+				 uint64_t) noexcept
 {
 	return 123;
 }
@@ -156,7 +157,7 @@ TEST_CASE("Trap BPF admission rejects unaudited helper implementations")
 		};
 		bpftime_prog prog(code, 2, "unaudited", config);
 		REQUIRE(prog.bpftime_prog_register_raw_helper({
-			(unsigned)helper, "unaudited", (void *)unaudited_helper }) == 0);
+			(unsigned)helper, "unaudited", unaudited_helper }) == 0);
 		REQUIRE(prog.bpftime_prog_load(false) == 0);
 		REQUIRE(prog.prepare_for_signal_execution() == -ENOTSUP);
 		// Ordinary execution retains its previous helper support.

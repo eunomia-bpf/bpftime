@@ -36,7 +36,7 @@
 #include <cuda.h>
 #include "nv_attach_private_data.hpp"
 #endif
-extern "C" uint64_t bpftime_set_retval(uint64_t value);
+extern "C" uint64_t bpftime_set_retval(uint64_t value) noexcept;
 namespace bpftime
 {
 
@@ -382,7 +382,7 @@ void bpf_attach_ctx::register_attach_impl(
 		private_data_creator)
 {
 	impl->register_custom_helpers([&](unsigned int idx, const char *name,
-					  void *func) -> int {
+					  bpftime_helper_fn func) -> int {
 		SPDLOG_INFO("Register attach-impl defined helper {}, index {}",
 			    name, idx);
 		this->helpers[idx] = bpftime_helper_info{ .index = idx,

@@ -119,11 +119,12 @@ class trap_attach_impl final : public base_attach_impl {
 // Helper implementations registered through register_custom_helpers
 extern "C" uint64_t bpftime_trap_get_func_arg(uint64_t ctx, uint32_t n,
 					      uint64_t *value, uint64_t,
-					      uint64_t);
+					      uint64_t) noexcept;
 extern "C" uint64_t bpftime_trap_get_func_ret(uint64_t ctx, uint64_t *value,
-					      uint64_t, uint64_t, uint64_t);
+					      uint64_t, uint64_t,
+					      uint64_t) noexcept;
 extern "C" uint64_t bpftime_trap_get_retval(uint64_t, uint64_t, uint64_t,
-					    uint64_t, uint64_t);
+					    uint64_t, uint64_t) noexcept;
 } // namespace trap
 } // namespace attach
 } // namespace bpftime

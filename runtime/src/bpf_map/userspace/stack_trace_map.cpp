@@ -123,8 +123,8 @@ int stack_trace_map_impl::map_get_next_key(const void *key, void *next_key)
 
 int stack_trace_map_impl::fill_stack_trace(const uint64_t *frames, size_t count,
 					   bool discard_old_one,
-					   bool compare_only_by_hash)
-{
+					   bool compare_only_by_hash) noexcept
+try {
 	auto to_put_hash = stack_trace_map::hash_stack_frames(frames, count) %
 			   this->max_entries;
 	auto itr = this->data.find(to_put_hash);
@@ -173,4 +173,6 @@ int stack_trace_map_impl::fill_stack_trace(const uint64_t *frames, size_t count,
 		SPDLOG_DEBUG("Got hash {}", to_put_hash);
 		return to_put_hash;
 	}
+} catch (...) {
+	return -ENOMEM;
 }

@@ -171,7 +171,7 @@ int frida_attach_impl::detach_by_func_addr(const void *func)
 	}
 }
 
-extern "C" uint64_t bpftime_set_retval(uint64_t value);
+extern "C" uint64_t bpftime_set_retval(uint64_t value) noexcept;
 int frida_attach_impl::create_attach_with_ebpf_callback(
 	ebpf_run_callback &&cb, const attach_private_data &private_data,
 	int attach_type)
@@ -304,11 +304,11 @@ void frida_attach_impl::register_custom_helpers(
 	ebpf_helper_register_callback register_callback)
 {
 	register_callback(BPF_FUNC_get_func_arg, "bpf_get_func_arg",
-			  (void *)bpftime_get_func_arg);
+			  bpftime_get_func_arg);
 	register_callback(BPF_FUNC_get_func_ret, "bpf_get_func_ret_id",
-			  (void *)bpftime_get_func_ret);
+			  bpftime_get_func_ret);
 	register_callback(BPF_FUNC_get_retval, "bpf_get_retval",
-			  (void *)bpftime_get_retval);
+			  bpftime_get_retval);
 }
 
 void *frida_attach_impl::call_attach_specific_function(const std::string& name,

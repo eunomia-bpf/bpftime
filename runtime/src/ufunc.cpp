@@ -27,7 +27,7 @@ ebpf_resovle_ufunc_func(struct bpftime_ufunc_ctx *ufunc_ctx, uint64_t func_id)
 }
 
 // find the ufunc id from the function name
-extern "C" int64_t __ebpf_call_find_ufunc_id(const char *func_name)
+extern "C" int64_t __ebpf_call_find_ufunc_id(const char *func_name) noexcept
 {
 	struct bpftime_ufunc_ctx *ufunc_ctx = &global_ufunc_ctx;
 	if (!func_name || !ufunc_ctx) {
@@ -71,7 +71,8 @@ int bpftime_ufunc_resolve_from_info(ebpf_ufunc_func_info func_info,
 	return 0;
 }
 
-extern "C" uint64_t __ebpf_call_ufunc_dispatcher(uint64_t id, uint64_t arg_list)
+extern "C" uint64_t __ebpf_call_ufunc_dispatcher(uint64_t id,
+						 uint64_t arg_list) noexcept
 {
 	if (id >= MAX_UFUNC_FUNCS) {
 		SPDLOG_ERROR("ufunc id {} is too large, max {}", id,
@@ -105,8 +106,12 @@ extern "C" uint64_t __ebpf_call_ufunc_dispatcher(uint64_t id, uint64_t arg_list)
 	SPDLOG_DEBUG("Call ufunc {}, args: {:x}, {:x}, {:x}, {:x}, {:x}", id,
 		     args[0].uint64, args[1].uint64, args[2].uint64,
 		     args[3].uint64, args[4].uint64);
-	ret.ptr = func_info->func(args[0].ptr, args[1].ptr, args[2].ptr,
-				  args[3].ptr, args[4].ptr);
+	try {
+		ret.ptr = func_info->func(args[0].ptr, args[1].ptr, args[2].ptr,
+					  args[3].ptr, args[4].ptr);
+	} catch (...) {
+		return (uint64_t)-1;
+	}
 
 	// Convert the return value to the correct type
 	return from_arg_val(func_info->ret_type, ret);

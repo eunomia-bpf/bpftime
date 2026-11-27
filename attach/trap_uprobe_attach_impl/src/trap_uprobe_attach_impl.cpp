@@ -200,7 +200,7 @@ void release_idle_slot()
 	}
 }
 
-void set_override(uint64_t ctx, uint64_t value)
+void set_override(uint64_t ctx, uint64_t value) noexcept
 {
 	if (tl_slot) {
 		tl_slot->override.is_overrided = true;
@@ -1243,7 +1243,7 @@ int trap_attach_impl::detach_by_id(int id)
 	return res;
 }
 
-extern "C" uint64_t bpftime_set_retval(uint64_t value);
+extern "C" uint64_t bpftime_set_retval(uint64_t value) noexcept;
 
 int trap_attach_impl::create_attach_with_ebpf_callback(
 	ebpf_run_callback &&cb, const attach_private_data &private_data,
@@ -1309,11 +1309,11 @@ void trap_attach_impl::register_custom_helpers(
 	ebpf_helper_register_callback register_callback)
 {
 	register_callback(BPF_FUNC_get_func_arg, "bpf_get_func_arg",
-			  (void *)bpftime_trap_get_func_arg);
+			  bpftime_trap_get_func_arg);
 	register_callback(BPF_FUNC_get_func_ret, "bpf_get_func_ret_id",
-			  (void *)bpftime_trap_get_func_ret);
+			  bpftime_trap_get_func_ret);
 	register_callback(BPF_FUNC_get_retval, "bpf_get_retval",
-			  (void *)bpftime_trap_get_retval);
+			  bpftime_trap_get_retval);
 }
 
 void *trap_attach_impl::call_attach_specific_function(const std::string &, void *)
@@ -1325,7 +1325,7 @@ void *trap_attach_impl::call_attach_specific_function(const std::string &, void 
 extern "C" uint64_t
 bpftime::attach::trap::bpftime_trap_get_func_arg(uint64_t, uint32_t n,
 						 uint64_t *value, uint64_t,
-						 uint64_t)
+						 uint64_t) noexcept
 {
 	if (!tl_slot || tl_slot->current_regs == nullptr) {
 		return -EINVAL;
@@ -1338,7 +1338,8 @@ bpftime::attach::trap::bpftime_trap_get_func_arg(uint64_t, uint32_t n,
 
 extern "C" uint64_t
 bpftime::attach::trap::bpftime_trap_get_func_ret(uint64_t, uint64_t *value,
-						 uint64_t, uint64_t, uint64_t)
+						 uint64_t, uint64_t,
+						 uint64_t) noexcept
 {
 	if (!tl_slot || tl_slot->phase != 2) {
 		return -EOPNOTSUPP;
@@ -1347,11 +1348,8 @@ bpftime::attach::trap::bpftime_trap_get_func_ret(uint64_t, uint64_t *value,
 	return 0;
 }
 
-extern "C" uint64_t bpftime::attach::trap::bpftime_trap_get_retval(uint64_t,
-								    uint64_t,
-								    uint64_t,
-								    uint64_t,
-								    uint64_t)
+extern "C" uint64_t bpftime::attach::trap::bpftime_trap_get_retval(
+	uint64_t, uint64_t, uint64_t, uint64_t, uint64_t) noexcept
 {
 	if (!tl_slot || tl_slot->phase != 2) {
 		return -EOPNOTSUPP;

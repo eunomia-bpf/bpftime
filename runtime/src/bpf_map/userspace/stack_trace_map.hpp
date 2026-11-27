@@ -62,7 +62,8 @@ class stack_trace_map_impl {
 	int map_get_next_key(const void *key, void *next_key);
 
 	int fill_stack_trace(const uint64_t *frames, size_t count,
-			     bool discard_old_one, bool compare_only_by_hash);
+			     bool discard_old_one,
+			     bool compare_only_by_hash) noexcept;
 };
 
 } // namespace bpftime

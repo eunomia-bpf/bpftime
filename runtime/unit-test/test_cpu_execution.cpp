@@ -24,7 +24,8 @@ namespace
 std::atomic<int> active_helpers;
 std::atomic<int> maximum_active_helpers;
 
-uint64_t overlap_helper(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+uint64_t overlap_helper(uint64_t, uint64_t, uint64_t, uint64_t,
+			uint64_t) noexcept
 {
 	int active = active_helpers.fetch_add(1, std::memory_order_acq_rel) + 1;
 	int maximum = maximum_active_helpers.load(std::memory_order_relaxed);
@@ -62,8 +63,7 @@ TEST_CASE("BPF executions on one CPU do not block or serialize each other",
 		{ EBPF_OP_EXIT, 0, 0, 0, 0 },
 	};
 	bpftime_prog prog(insns, std::size(insns), "non_blocking_cpu_exec");
-	bpftime_helper_info helper{ 500, "overlap_helper",
-				    reinterpret_cast<void *>(overlap_helper) };
+	bpftime_helper_info helper{ 500, "overlap_helper", overlap_helper };
 	REQUIRE(prog.bpftime_prog_register_raw_helper(std::move(helper)) == 0);
 	REQUIRE(prog.bpftime_prog_load(true) == 0);
 
@@ -114,7 +114,8 @@ namespace
 {
 int migrate_target_cpu = -1;
 
-uint64_t cpu_pin_probe_helper(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+uint64_t cpu_pin_probe_helper(uint64_t, uint64_t, uint64_t, uint64_t,
+			      uint64_t) noexcept
 {
 	int first = my_sched_getcpu();
 	if (migrate_target_cpu >= 0) {
@@ -172,10 +173,8 @@ TEST_CASE("Lazy CPU ID stays pinned within one BPF call and refreshes on next",
 	config.set_vm_name(DEFAULT_VM_NAME);
 	bpftime_prog prog(insns, std::size(insns), "lazy_cpu_pin",
 			  std::move(config));
-	bpftime_helper_info helper{
-		501, "cpu_pin_probe_helper",
-		reinterpret_cast<void *>(cpu_pin_probe_helper)
-	};
+	bpftime_helper_info helper{ 501, "cpu_pin_probe_helper",
+				    cpu_pin_probe_helper };
 	REQUIRE(prog.bpftime_prog_register_raw_helper(std::move(helper)) == 0);
 	REQUIRE(prog.bpftime_prog_load(true) == 0);
 

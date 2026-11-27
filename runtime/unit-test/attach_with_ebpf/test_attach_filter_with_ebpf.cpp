@@ -19,16 +19,18 @@ __bpftime_attach_filter_with_ebpf__my_function(const char *str, char c,
 	return (int)parm1;
 }
 
+static bool g_filter_helper_param_ok = false;
+
 extern "C" uint64_t __bpftime_attach_filter_with_ebpf__test_pass_param(
-	uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t, uint64_t)
+	uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t,
+	uint64_t) noexcept
 {
-	char *str = (char *)arg1;
+	const char *str = (const char *)arg1;
 	char c = (char)arg2;
 	long long param1 = (long long)arg3;
-	// "hello aaa", 'c', 182
-	REQUIRE(strcmp(str, "hello aaa") == 0);
-	REQUIRE(c == 'c');
-	REQUIRE(param1 == 182);
+	g_filter_helper_param_ok = (str != nullptr &&
+				    strcmp(str, "hello aaa") == 0 && c == 'c' &&
+				    param1 == 182);
 	return 0;
 }
 
@@ -54,7 +56,7 @@ TEST_CASE("Test attaching filter program with ebpf, and reverting")
 	bpftime_helper_info info = {
 		.index = 40,
 		.name = "test_pass_param",
-		.fn = (void *)__bpftime_attach_filter_with_ebpf__test_pass_param,
+		.fn = __bpftime_attach_filter_with_ebpf__test_pass_param,
 	};
 	REQUIRE(prog->bpftime_prog_register_raw_helper(info) >= 0);
 	REQUIRE(prog->bpftime_prog_load(false) >= 0);
@@ -67,8 +69,10 @@ TEST_CASE("Test attaching filter program with ebpf, and reverting")
 							&ret) >= 0);
 		});
 	REQUIRE(id >= 0);
+	g_filter_helper_param_ok = false;
 	REQUIRE(__bpftime_attach_filter_with_ebpf__my_function("hello aaa", 'c',
 							       182) == 182);
+	REQUIRE(g_filter_helper_param_ok);
 	REQUIRE(__bpftime_attach_filter_with_ebpf__my_function(nullptr, 'c',
 							       1) == -22);
 	SECTION("Destroy with id")
@@ -81,6 +85,8 @@ TEST_CASE("Test attaching filter program with ebpf, and reverting")
 				void *)__bpftime_attach_filter_with_ebpf__my_function) >=
 			0);
 	}
+	g_filter_helper_param_ok = false;
 	REQUIRE(__bpftime_attach_filter_with_ebpf__my_function("hello aaa", 'c',
 							       182) == 182);
+	REQUIRE(!g_filter_helper_param_ok);
 }

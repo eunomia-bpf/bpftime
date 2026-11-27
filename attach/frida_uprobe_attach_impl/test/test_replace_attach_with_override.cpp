@@ -19,7 +19,7 @@ call_replace_func(uint64_t a, uint64_t b)
 {
 	return __bpftime_func_to_replace(a, b);
 }
-extern "C" uint64_t bpftime_set_retval(uint64_t value);
+extern "C" uint64_t bpftime_set_retval(uint64_t value) noexcept;
 TEST_CASE("Test attaching replace programs and revert")
 {
 	frida_attach_impl man;
