@@ -199,7 +199,7 @@ TEST_CASE("bpftime_hash_map basic operations", "[bpftime_hash_map]")
 		for (int i = 0; i < (int)num_buckets; ++i)
 			REQUIRE(map.elem_update(&i, &absent));
 	}
-	::shm_remove::remove("bpftime_hash_map_test");
+	shared_memory_object::remove("bpftime_hash_map_test");
 }
 
 #if defined(__linux__)
@@ -228,8 +228,9 @@ TEST_CASE("bpftime_hash_map recovers stripe after child dies mid-upsert or mid-e
 		return static_cast<uint8_t *>(p);
 	};
 
-	// 1. Child dies with SIGSEGV inside upsert() while holding the stripe lock
-	//    after claiming a slot, then non-blocking try_lock path recovers it.
+	// 1. Child dies with SIGSEGV inside upsert() while holding the stripe lock,
+	//    after counting and claiming a slot but before publishing it. The
+	//    non-blocking path recovers the stripe; the claimed slot stays leaked.
 	pid_t c1 = fork();
 	REQUIRE(c1 >= 0);
 	if (c1 == 0) {
@@ -246,10 +247,11 @@ TEST_CASE("bpftime_hash_map recovers stripe after child dies mid-upsert or mid-e
 	uint32_t k7 = 7;
 	REQUIRE(map->elem_lookup(&k7) == nullptr);
 	REQUIRE(map->upsert(&k7, good_val.data(), 0, false, 0, val_sz) == 0);
-	REQUIRE(map->get_elem_count() == 1);
+	REQUIRE(map->get_elem_count() == 2);
 
 	// 2. Child dies with SIGSEGV inside erase() while holding the stripe lock,
-	//    then blocking syscall erase path recovers and deletes the element.
+	//    while copying the value out, before unlinking. The element is intact;
+	//    the blocking syscall path recovers the stripe and deletes it.
 	pid_t c2 = fork();
 	REQUIRE(c2 >= 0);
 	if (c2 == 0) {
@@ -262,15 +264,19 @@ TEST_CASE("bpftime_hash_map recovers stripe after child dies mid-upsert or mid-e
 	REQUIRE(waitpid(c2, &st2, 0) == c2);
 	REQUIRE(WIFSIGNALED(st2));
 
-	REQUIRE(map->erase(&k7, nullptr, true) == -1);
-	REQUIRE(errno == ENOENT);
+	REQUIRE(map->elem_lookup(&k7) != nullptr);
+	REQUIRE(map->erase(&k7, nullptr, true) == 0);
 	REQUIRE(map->elem_lookup(&k7) == nullptr);
-	REQUIRE(map->get_elem_count() == 0);
+	REQUIRE(map->get_elem_count() == 1);
 
-	// Verify all 4 preallocated slots remain reusable (zero leaked slots).
-	for (uint32_t k = 0; k < 4; ++k)
+	// Both stripes keep working. The one slot leaked by the dead inserter
+	// leaves this 4-slot map room for 3 elements.
+	for (uint32_t k = 0; k < 3; ++k)
 		REQUIRE(map->upsert(&k, good_val.data(), 0, false, 0, val_sz) ==
 			0);
+	uint32_t k3 = 3;
+	REQUIRE(map->upsert(&k3, good_val.data(), 0, false, 0, val_sz) == -1);
+	REQUIRE(errno == E2BIG);
 	REQUIRE(map->get_elem_count() == 4);
 }
 #endif

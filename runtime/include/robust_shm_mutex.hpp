@@ -19,8 +19,9 @@ namespace bpftime
 {
 
 // Process-shared pthread mutex for cross-process SHM synchronization (ROBUST on
-// Linux): lock()/try_lock() latch ENOTRECOVERABLE on EOWNERDEAD; lock_and_recover()
-// marks pure mutual-exclusion slots consistent.
+// Linux): lock()/try_lock() latch ENOTRECOVERABLE on EOWNERDEAD;
+// lock_and_recover()/try_lock_and_recover() mark the mutex consistent and keep
+// going, for data that a dead owner cannot leave inconsistent.
 class robust_shm_mutex {
 	pthread_mutex_t mutex;
 	std::atomic<uint32_t> unrecoverable{ 0 };
@@ -87,10 +88,8 @@ class robust_shm_mutex {
 		return true;
 	}
 
-	bool lock_and_recover(bool *recovered = nullptr)
+	bool lock_and_recover()
 	{
-		if (recovered)
-			*recovered = false;
 		int rc = pthread_mutex_lock(&mutex);
 #ifdef __linux__
 		if (rc == EOWNERDEAD) {
@@ -100,8 +99,6 @@ class robust_shm_mutex {
 				errno = rc;
 				return false;
 			}
-			if (recovered)
-				*recovered = true;
 			return true;
 		}
 #endif
@@ -112,26 +109,19 @@ class robust_shm_mutex {
 		return true;
 	}
 
-	bool try_lock_and_recover(bool *recovered = nullptr) noexcept
+	bool try_lock_and_recover() noexcept
 	{
-		if (recovered)
-			*recovered = false;
 		const int saved = errno, rc = pthread_mutex_trylock(&mutex);
+		bool ok = (rc == 0);
 #ifdef __linux__
 		if (rc == EOWNERDEAD) {
-			if (pthread_mutex_consistent(&mutex) != 0) {
+			ok = pthread_mutex_consistent(&mutex) == 0;
+			if (!ok)
 				pthread_mutex_unlock(&mutex);
-				errno = saved;
-				return false;
-			}
-			if (recovered)
-				*recovered = true;
-			errno = saved;
-			return true;
 		}
 #endif
 		errno = saved;
-		return rc == 0;
+		return ok;
 	}
 
 	bool try_lock() noexcept
@@ -140,11 +130,8 @@ class robust_shm_mutex {
 			return false;
 		const int saved = errno, rc = pthread_mutex_trylock(&mutex);
 #ifdef __linux__
-		if (rc == EOWNERDEAD) {
+		if (rc == EOWNERDEAD)
 			latch_dead_owner();
-			errno = saved;
-			return false;
-		}
 #endif
 		bool ok = (rc == 0);
 		if (ok && unrecoverable.load(std::memory_order_acquire)) {
@@ -231,26 +218,25 @@ with_robust_shm_lock(bool should_lock, bool blocking, robust_shm_mutex &lock,
 	return fn();
 }
 
-template <typename RecoverFn, typename Fn>
-inline decltype(auto)
-with_robust_shm_recover_lock(bool blocking, robust_shm_mutex &lock,
-			     RecoverFn &&recover_fn, Fn &&fn)
+// Like with_robust_shm_lock(true, ...), but a dead owner does not poison the
+// lock: it is marked consistent and fn runs. Only for data that every holder
+// leaves consistent at each step (single-store publication), so a death costs
+// at most one leaked slot.
+template <typename Fn>
+inline decltype(auto) with_robust_shm_recover_lock(bool blocking,
+						   robust_shm_mutex &lock,
+						   Fn &&fn)
 {
 	using Ret = std::invoke_result_t<Fn>;
-	bool recovered = false;
-	if (blocking) {
-		if (!lock.lock_and_recover(&recovered))
-			return Ret(-1);
-	} else if (!lock.try_lock_and_recover(&recovered)) {
-		shm_trylock_skips.fetch_add(1, std::memory_order_relaxed);
-		return Ret(-EBUSY);
+	if (!(blocking ? lock.lock_and_recover() : lock.try_lock_and_recover())) {
+		if (!blocking)
+			shm_trylock_skips.fetch_add(1, std::memory_order_relaxed);
+		return Ret(blocking ? -1 : -EBUSY);
 	}
-	struct unlock_guard {
-		robust_shm_mutex *m;
-		~unlock_guard() { m->unlock(); }
-	} g{ &lock };
-	if (recovered)
-		recover_fn();
+	struct unlock_on_exit {
+		robust_shm_mutex &m;
+		~unlock_on_exit() { m.unlock(); }
+	} unlock{ lock };
 	return fn();
 }
 

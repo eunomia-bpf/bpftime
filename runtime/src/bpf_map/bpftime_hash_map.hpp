@@ -50,6 +50,10 @@ class bpftime_hasher {
 // Preallocated index-chained hash map shared by HASH and PERCPU_HASH (modeled
 // on kernel/bpf/hashtab.c): O(1) slot free-list reuse with zero tombstones,
 // lock-free lookup/iteration, and 64-way striped robust_shm_mutex writes.
+// A writer that dies inside a stripe never leaves a bucket chain broken: an
+// insert publishes with one store to head_idx, an erase unlinks with one store,
+// and the free list is lock-free. So a dead owner's stripe is recovered and
+// reused (with_robust_shm_recover_lock); the death leaks at most one slot.
 class bpftime_hash_map {
     public:
 	static constexpr size_t NUM_LOCK_STRIPES = 64;
@@ -57,31 +61,18 @@ class bpftime_hash_map {
     private:
 	static constexpr uint32_t SLOT_FREE = 0, SLOT_FILLED = 1,
 				  SLOT_WRITING = 2, END_IDX = UINT32_MAX;
-	static constexpr uint32_t STRIPE_OP_NONE = 0, STRIPE_OP_INSERT = 1,
-				  STRIPE_OP_ERASE = 2, POOL_OP_NONE = 0,
-				  POOL_OP_ALLOC = 1, POOL_OP_FREE = 2;
 	static constexpr uint64_t FLAG_ANY = 0, FLAG_NOEXIST = 1,
-				  FLAG_EXIST = 2;
+				  FLAG_EXIST = 2, TAG_INC = 1ULL << 32,
+				  TAG_MASK = ~0xFFFFFFFFULL;
 	struct bucket_hdr { uint32_t head_idx, del_gen; };
 	struct slot_hdr { uint32_t state, next_idx; };
-	struct stripe_state {
-		robust_shm_mutex lock;
-		uint32_t op = STRIPE_OP_NONE;
-		uint32_t bucket = END_IDX;
-		uint32_t slot_idx = END_IDX;
-		uint32_t orig_gen = 0;
-	};
 	static constexpr size_t align8(size_t n) noexcept { return (n + 7U) & ~size_t(7U); }
 
 	size_t _key_size, _value_size, _slots_offset, _val_offset, _elem_stride;
 	size_t _num_buckets, _max_element_count;
-	std::atomic<size_t> _alloc_cursor;
-	uint32_t _free_head = END_IDX;
-	mutable robust_shm_mutex _pool_lock;
-	uint32_t _pool_op = POOL_OP_NONE, _pool_slot = END_IDX,
-		 _pool_next = END_IDX, _pool_gen = 0;
-	uint8_t _pool_from_cursor = 0;
-	mutable stripe_state _stripes[NUM_LOCK_STRIPES];
+	std::atomic<size_t> _count, _alloc_cursor;
+	std::atomic<uint64_t> _free_head;
+	mutable robust_shm_mutex _stripes[NUM_LOCK_STRIPES];
 	bytes_vec data_buffer;
 
 	uint8_t *raw(size_t off) const noexcept
@@ -144,151 +135,49 @@ class bpftime_hash_map {
 			d[i] = __atomic_load_n(&s[i], __ATOMIC_RELAXED);
 	}
 
-	void recover_pool() noexcept
+	uint32_t alloc_slot(uint32_t &gen) noexcept
 	{
-		const uint32_t op = __atomic_load_n(&_pool_op, __ATOMIC_ACQUIRE);
-		if (op == POOL_OP_ALLOC && _pool_slot < _max_element_count) {
-			if (_pool_from_cursor) {
-				if (_alloc_cursor.load(std::memory_order_relaxed) <=
-				    _pool_slot)
-					_alloc_cursor.store(
-						size_t(_pool_slot) + 1U,
-						std::memory_order_release);
-			} else if (_free_head == _pool_slot) {
-				_free_head = _pool_next;
-			}
-			if ((load_state(_pool_slot) >> 2) < _pool_gen)
-				store_state(_pool_slot,
-					    (_pool_gen << 2) | SLOT_WRITING);
-		} else if (op == POOL_OP_FREE &&
-			   _pool_slot < _max_element_count) {
-			if (_free_head != _pool_slot) {
-				__atomic_store_n(&slot(_pool_slot)->next_idx,
-						 _pool_next, __ATOMIC_RELEASE);
-				_free_head = _pool_slot;
-			}
-			store_state(_pool_slot, (_pool_gen << 2) | SLOT_FREE);
-		}
-		__atomic_store_n(&_pool_op, POOL_OP_NONE, __ATOMIC_RELEASE);
-	}
-
-	long alloc_slot(stripe_state &st, size_t b, uint32_t &gen,
-			bool blocking) noexcept
-	{
-		return with_robust_shm_recover_lock(
-			blocking, _pool_lock, [&]() noexcept { recover_pool(); },
-			[&]() -> long {
-				uint32_t cand = END_IDX, nxt = END_IDX;
-				uint8_t from_cur = 0;
-				const size_t cur = _alloc_cursor.load(
-					std::memory_order_relaxed);
-				if (_free_head != END_IDX) {
-					cand = _free_head;
-					nxt = __atomic_load_n(
-						&slot(cand)->next_idx,
-						__ATOMIC_RELAXED);
-					gen = (load_state(cand) >> 2) + 1U;
-				} else if (cur < _max_element_count) {
-					cand = static_cast<uint32_t>(cur);
-					from_cur = 1;
-					gen = 1U;
-				} else {
-					errno = E2BIG;
-					return -1L;
-				}
-				st.bucket = static_cast<uint32_t>(b);
-				st.slot_idx = cand;
-				st.orig_gen = gen - 1U;
-				__atomic_store_n(&st.op, STRIPE_OP_INSERT,
-						 __ATOMIC_RELEASE);
-				_pool_slot = cand;
-				_pool_next = nxt;
-				_pool_gen = gen;
-				_pool_from_cursor = from_cur;
-				__atomic_store_n(&_pool_op, POOL_OP_ALLOC,
-						 __ATOMIC_RELEASE);
-				if (from_cur)
-					_alloc_cursor.store(
-						cur + 1U,
-						std::memory_order_release);
-				else
-					_free_head = nxt;
-				store_state(cand, (gen << 2) | SLOT_WRITING);
-				__atomic_store_n(&_pool_op, POOL_OP_NONE,
-						 __ATOMIC_RELEASE);
-				return static_cast<long>(cand);
-			});
-	}
-
-	void free_slot(uint32_t idx, uint32_t target_gen) noexcept
-	{
-		(void)with_robust_shm_recover_lock(
-			true, _pool_lock, [&]() noexcept { recover_pool(); },
-			[&]() -> long {
-				const uint32_t cur = load_state(idx);
-				if ((cur >> 2) > target_gen ||
-				    cur == ((target_gen << 2) | SLOT_FREE))
-					return 0L;
-				_pool_slot = idx;
-				_pool_gen = target_gen;
-				_pool_next = _free_head;
-				__atomic_store_n(&_pool_op, POOL_OP_FREE,
-						 __ATOMIC_RELEASE);
-				__atomic_store_n(&slot(idx)->next_idx,
-						 _free_head, __ATOMIC_RELEASE);
-				_free_head = idx;
-				store_state(idx,
-					    (target_gen << 2) | SLOT_FREE);
-				__atomic_store_n(&_pool_op, POOL_OP_NONE,
-						 __ATOMIC_RELEASE);
-				return 0L;
-			});
-	}
-
-	bool bucket_contains_slot(size_t b, uint32_t target) const noexcept
-	{
-		if (b >= _num_buckets || target >= _max_element_count)
-			return false;
-		size_t steps = 0;
-		for (uint32_t idx = __atomic_load_n(&bucket(b)->head_idx,
-						    __ATOMIC_ACQUIRE);
-		     idx != END_IDX && idx < _max_element_count &&
-		     steps++ < _max_element_count;
-		     idx = __atomic_load_n(&slot(idx)->next_idx,
-					   __ATOMIC_ACQUIRE)) {
-			if (idx == target)
-				return true;
-		}
-		return false;
-	}
-
-	void recover_stripe(stripe_state &st) noexcept
-	{
-		const uint32_t op = __atomic_load_n(&st.op, __ATOMIC_ACQUIRE);
-		const uint32_t b = st.bucket;
-		const uint32_t idx = st.slot_idx;
-		const uint32_t g = st.orig_gen;
-		if (op == STRIPE_OP_INSERT && idx < _max_element_count) {
-			if (!bucket_contains_slot(b, idx)) {
-				store_state(idx,
-					    ((g + 1U) << 2) | SLOT_WRITING);
-				free_slot(idx, g + 1U);
-			}
-		} else if (op == STRIPE_OP_ERASE && idx < _max_element_count &&
-			   b < _num_buckets) {
-			if (!bucket_contains_slot(b, idx)) {
-				auto *bh = bucket(b);
-				__atomic_store_n(&bh->del_gen,
-						 __atomic_load_n(&bh->del_gen,
-								 __ATOMIC_RELAXED) +
-							 1U,
-						 __ATOMIC_RELEASE);
-				store_state(idx,
-					    ((g + 1U) << 2) | SLOT_WRITING);
-				free_slot(idx, g + 1U);
+		size_t cur = _alloc_cursor.load(std::memory_order_acquire);
+		while (cur < _max_element_count) {
+			if (_alloc_cursor.compare_exchange_weak(
+				    cur, cur + 1, std::memory_order_acq_rel,
+				    std::memory_order_acquire)) {
+				gen = 1U;
+				store_state(cur, (gen << 2) | SLOT_WRITING);
+				return static_cast<uint32_t>(cur);
 			}
 		}
-		__atomic_store_n(&st.op, STRIPE_OP_NONE, __ATOMIC_RELEASE);
+		uint64_t head = _free_head.load(std::memory_order_acquire);
+		while (uint32_t(head) != END_IDX) {
+			const uint32_t idx = uint32_t(head);
+			const uint32_t nxt = __atomic_load_n(
+				&slot(idx)->next_idx, __ATOMIC_RELAXED);
+			const uint64_t next_head =
+				((head & TAG_MASK) + TAG_INC) | nxt;
+			if (_free_head.compare_exchange_weak(
+				    head, next_head, std::memory_order_acq_rel,
+				    std::memory_order_acquire)) {
+				gen = (load_state(idx) >> 2) + 1U;
+				store_state(idx, (gen << 2) | SLOT_WRITING);
+				return idx;
+			}
+		}
+		return END_IDX;
+	}
+
+	void free_slot(uint32_t idx) noexcept
+	{
+		uint64_t head = _free_head.load(std::memory_order_relaxed);
+		for (;;) {
+			__atomic_store_n(&slot(idx)->next_idx, uint32_t(head),
+					 __ATOMIC_RELEASE);
+			const uint64_t next_head =
+				((head & TAG_MASK) + TAG_INC) | idx;
+			if (_free_head.compare_exchange_weak(
+				    head, next_head, std::memory_order_release,
+				    std::memory_order_relaxed))
+				return;
+		}
 	}
 
 	size_t find_slot(const void *key) const noexcept
@@ -343,8 +232,8 @@ class bpftime_hash_map {
 		  _val_offset(sizeof(slot_hdr) + align8(key_size)),
 		  _elem_stride(_val_offset + align8(value_size)),
 		  _num_buckets(bpftime_hasher::next_prime(num_buckets)),
-		  _max_element_count(num_buckets), _alloc_cursor(0),
-		  data_buffer(memory.get_segment_manager())
+		  _max_element_count(num_buckets), _count(0), _alloc_cursor(0),
+		  _free_head(END_IDX), data_buffer(memory.get_segment_manager())
 	{
 		data_buffer.resize(
 			_slots_offset + _max_element_count * _elem_stride, 0);
@@ -374,10 +263,8 @@ class bpftime_hash_map {
 		}
 		const size_t b =
 			bpftime_hasher::hash_func(key, _key_size) % _num_buckets;
-		auto &st = _stripes[b % NUM_LOCK_STRIPES];
 		return with_robust_shm_recover_lock(
-			blocking, st.lock,
-			[&]() noexcept { recover_stripe(st); },
+			blocking, _stripes[b % NUM_LOCK_STRIPES],
 			[&]() -> long {
 				auto *bh = bucket(b);
 				const uint32_t head = __atomic_load_n(
@@ -386,15 +273,16 @@ class bpftime_hash_map {
 				     idx != END_IDX && idx < _max_element_count;
 				     idx = __atomic_load_n(&slot(idx)->next_idx,
 							   __ATOMIC_RELAXED)) {
-					if (!bytes_equal_atomic(get_key(idx), key,
-								_key_size))
+					if (!bytes_equal_atomic(get_key(idx),
+								key, _key_size))
 						continue;
 					if (flags == FLAG_NOEXIST) {
 						errno = EEXIST;
 						return -1L;
 					}
 					bytes_write_atomic(
-						static_cast<uint8_t *>(get_value(idx)) +
+						static_cast<uint8_t *>(
+							get_value(idx)) +
 							slice_offset,
 						value, slice_size);
 					return 0L;
@@ -403,25 +291,41 @@ class bpftime_hash_map {
 					errno = ENOENT;
 					return -1L;
 				}
+				size_t cur =
+					_count.load(std::memory_order_acquire);
+				for (;;) {
+					if (cur >= _max_element_count) {
+						errno = E2BIG;
+						return -1L;
+					}
+					if (_count.compare_exchange_weak(
+						    cur, cur + 1,
+						    std::memory_order_acq_rel,
+						    std::memory_order_acquire))
+						break;
+				}
 				uint32_t gen = 0;
-				const long claim_res =
-					alloc_slot(st, b, gen, blocking);
-				if (claim_res < 0)
+				const uint32_t claim = alloc_slot(gen);
+				if (claim == END_IDX) {
+					_count.fetch_sub(
+						1, std::memory_order_acq_rel);
+					errno = E2BIG;
 					return -1L;
-				const uint32_t claim =
-					static_cast<uint32_t>(claim_res);
-				auto *vp = static_cast<uint8_t *>(get_value(claim));
+				}
+				auto *vp =
+					static_cast<uint8_t *>(get_value(claim));
 				if (slice_size < _value_size)
-					bytes_write_atomic(vp, nullptr, _value_size);
-				bytes_write_atomic(get_key(claim), key, _key_size);
+					bytes_write_atomic(vp, nullptr,
+							   _value_size);
+				bytes_write_atomic(get_key(claim), key,
+						   _key_size);
 				bytes_write_atomic(vp + slice_offset, value,
 						   slice_size);
 				__atomic_store_n(&slot(claim)->next_idx, head,
 						 __ATOMIC_RELAXED);
-				store_state(claim, (gen << 2) | SLOT_FILLED);
+				store_state(claim,
+					    ((gen + 1U) << 2) | SLOT_FILLED);
 				__atomic_store_n(&bh->head_idx, claim,
-						 __ATOMIC_RELEASE);
-				__atomic_store_n(&st.op, STRIPE_OP_NONE,
 						 __ATOMIC_RELEASE);
 				return 0L;
 			});
@@ -435,49 +339,48 @@ class bpftime_hash_map {
 		}
 		const size_t b =
 			bpftime_hasher::hash_func(key, _key_size) % _num_buckets;
-		auto &st = _stripes[b % NUM_LOCK_STRIPES];
 		return with_robust_shm_recover_lock(
-			blocking, st.lock,
-			[&]() noexcept { recover_stripe(st); },
+			blocking, _stripes[b % NUM_LOCK_STRIPES],
 			[&]() -> long {
 				auto *bh = bucket(b);
 				uint32_t prev = END_IDX;
-				for (uint32_t idx = __atomic_load_n(&bh->head_idx,
-								    __ATOMIC_RELAXED);
+				for (uint32_t idx = __atomic_load_n(
+					     &bh->head_idx, __ATOMIC_RELAXED);
 				     idx != END_IDX && idx < _max_element_count;
 				     prev = idx,
-				    idx = __atomic_load_n(&slot(idx)->next_idx,
-							  __ATOMIC_RELAXED)) {
-					if (!bytes_equal_atomic(get_key(idx), key,
-								_key_size))
+					      idx = __atomic_load_n(
+						      &slot(idx)->next_idx,
+						      __ATOMIC_RELAXED)) {
+					if (!bytes_equal_atomic(get_key(idx),
+								key, _key_size))
 						continue;
 					const uint32_t nxt = __atomic_load_n(
-						&slot(idx)->next_idx, __ATOMIC_RELAXED);
-					const uint32_t g = load_state(idx) >> 2;
-					st.bucket = static_cast<uint32_t>(b);
-					st.slot_idx = idx;
-					st.orig_gen = g;
-					__atomic_store_n(&st.op, STRIPE_OP_ERASE,
-							 __ATOMIC_RELEASE);
-					__atomic_store_n(prev == END_IDX ?
-								 &bh->head_idx :
-								 &slot(prev)->next_idx,
-							 nxt, __ATOMIC_RELEASE);
+						&slot(idx)->next_idx,
+						__ATOMIC_RELAXED);
+					if (value_out != nullptr)
+						bytes_read_atomic(
+							value_out,
+							get_value(idx),
+							_value_size);
+					__atomic_store_n(
+						prev == END_IDX ?
+							&bh->head_idx :
+							&slot(prev)->next_idx,
+						nxt, __ATOMIC_RELEASE);
 					__atomic_store_n(
 						&bh->del_gen,
-						__atomic_load_n(&bh->del_gen,
-								__ATOMIC_RELAXED) +
+						__atomic_load_n(
+							&bh->del_gen,
+							__ATOMIC_RELAXED) +
 							1U,
 						__ATOMIC_RELEASE);
-					if (value_out != nullptr)
-						bytes_read_atomic(value_out,
-								  get_value(idx),
-								  _value_size);
-					store_state(idx,
-						    ((g + 1U) << 2) | SLOT_WRITING);
-					free_slot(idx, g + 1U);
-					__atomic_store_n(&st.op, STRIPE_OP_NONE,
-							 __ATOMIC_RELEASE);
+					store_state(
+						idx,
+						(((load_state(idx) >> 2) + 1U)
+						 << 2) | SLOT_FREE);
+					free_slot(idx);
+					_count.fetch_sub(
+						1, std::memory_order_acq_rel);
 					return 0L;
 				}
 				errno = ENOENT;
@@ -520,12 +423,7 @@ class bpftime_hash_map {
 	bool elem_delete(const void *k) { return erase(k, nullptr, true) == 0; }
 	size_t get_elem_count() const noexcept
 	{
-		size_t n = 0;
-		const size_t limit = _alloc_cursor.load(std::memory_order_acquire);
-		for (size_t i = 0; i < limit && i < _max_element_count; ++i)
-			if ((load_state(i) & 3U) == SLOT_FILLED)
-				++n;
-		return n;
+		return _count.load(std::memory_order_acquire);
 	}
 };
 
