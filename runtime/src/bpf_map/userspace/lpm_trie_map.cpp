@@ -30,8 +30,9 @@ lpm_trie_map_impl::lpm_trie_map_impl(const shm_init_ctx &ctx,
 				     unsigned int max_entries)
 	: _key_size(key_size), _value_size(value_size),
 	  _max_entries(max_entries),
-	  root(nullptr, node_deleter_type(ctx.segment_manager())),
-	  n_entries(0), segment_manager_(ctx.segment_manager())
+	  roots_(make_roots(ctx.segment_manager(),
+			    std::make_index_sequence<NUM_SHARDS + 1>{})),
+	  segment_manager_(ctx.segment_manager())
 {
 	// Validate parameters
 	if (key_size < LPM_KEY_SIZE_MIN || key_size > LPM_KEY_SIZE_MAX) {
@@ -59,6 +60,38 @@ lpm_trie_map_impl::lpm_trie_map_impl(const shm_init_ctx &ctx,
 
 lpm_trie_map_impl::~lpm_trie_map_impl()
 {
+}
+
+size_t lpm_trie_map_impl::shard_for(const bpf_lpm_trie_key *key) const noexcept
+{
+	if (_data_size < 4 || key->prefixlen < 32)
+		return NUM_SHARDS;
+	uint32_t h = 0;
+	std::memcpy(&h, key->data, sizeof(h));
+	h ^= h >> 16;
+	return ((h * 2654435761u) >> 26) & (NUM_SHARDS - 1);
+}
+
+bool lpm_trie_map_impl::reserve_slot(size_t shard) noexcept
+{
+	size_t cur = n_entries.load(std::memory_order_relaxed);
+	while (cur < _max_entries &&
+	       !n_entries.compare_exchange_weak(cur, cur + 1,
+						std::memory_order_acq_rel,
+						std::memory_order_relaxed)) {
+	}
+	if (cur >= _max_entries)
+		return false;
+	if (shard == NUM_SHARDS)
+		short_entries_.fetch_add(1, std::memory_order_release);
+	return true;
+}
+
+void lpm_trie_map_impl::release_slot(size_t shard) noexcept
+{
+	if (shard == NUM_SHARDS)
+		short_entries_.fetch_sub(1, std::memory_order_release);
+	n_entries.fetch_sub(1, std::memory_order_acq_rel);
 }
 
 int lpm_trie_map_impl::extract_bit(const uint8_t *data, size_t index) const
@@ -163,7 +196,44 @@ lpm_trie_map_impl::get_node_value_data(const lpm_trie_node *node) const
 	return node->data.data() + _data_size;
 }
 
-void *lpm_trie_map_impl::elem_lookup(const void *key)
+lpm_trie_node *lpm_trie_map_impl::lookup_shard(size_t shard,
+					       const bpf_lpm_trie_key *lpm_key,
+					       bool from_syscall,
+					       bool &locked) noexcept
+{
+	return with_robust_shm_lock(
+		true, from_syscall, stripes_[shard],
+		[&]() -> lpm_trie_node * {
+			locked = true;
+			lpm_trie_node *node = boost::interprocess::ipcdetail::
+				to_raw_pointer(roots_[shard].get());
+			lpm_trie_node *found = nullptr;
+			while (node) {
+				size_t matchlen =
+					longest_prefix_match(node, lpm_key);
+				if (matchlen == _max_prefixlen) {
+					found = node;
+					break;
+				}
+				if (matchlen < node->prefixlen)
+					break;
+				if (!node->is_intermediate)
+					found = node;
+				if (matchlen >= lpm_key->prefixlen)
+					break;
+				node = boost::interprocess::ipcdetail::
+					to_raw_pointer(
+						node->child[extract_bit(
+								    lpm_key->data,
+								    node->prefixlen)]
+							.get());
+			}
+			return found;
+		},
+		"lpm_trie_map");
+}
+
+void *lpm_trie_map_impl::elem_lookup(const void *key, bool from_syscall)
 {
 	if (!key) {
 		SPDLOG_ERROR(
@@ -183,44 +253,24 @@ void *lpm_trie_map_impl::elem_lookup(const void *key)
 		return nullptr;
 	}
 
-	lpm_trie_node *node =
-		boost::interprocess::ipcdetail::to_raw_pointer(root.get());
-	lpm_trie_node *found = nullptr;
-
-	// Walk the trie from root
-	while (node) {
-		size_t matchlen = longest_prefix_match(node, lpm_key);
-
-		// If we have an exact match for the maximum possible prefix
-		if (matchlen == _max_prefixlen) {
-			found = node;
-			break;
-		}
-
-		// If the match is shorter than the node's prefix, we can't go
-		// further
-		if (matchlen < node->prefixlen) {
-			break;
-		}
-
-		// Consider this node as a candidate if it's not intermediate
-		if (!node->is_intermediate) {
-			found = node;
-		}
-
-		// Continue traversal
-		if (matchlen < lpm_key->prefixlen) {
-			int next_bit =
-				extract_bit(lpm_key->data, node->prefixlen);
-			node = boost::interprocess::ipcdetail::to_raw_pointer(
-				node->child[next_bit].get());
-		} else {
-			break;
-		}
+	const size_t shard = shard_for(lpm_key);
+	bool locked = false;
+	lpm_trie_node *found =
+		lookup_shard(shard, lpm_key, from_syscall, locked);
+	if (!locked)
+		return nullptr;
+	if (!found && shard != NUM_SHARDS &&
+	    short_entries_.load(std::memory_order_acquire) > 0) {
+		bool short_locked = false;
+		found = lookup_shard(NUM_SHARDS, lpm_key, from_syscall,
+				     short_locked);
+		if (!short_locked)
+			return nullptr;
 	}
 
 	if (!found) {
-		errno = ENOENT;
+		if (from_syscall)
+			errno = ENOENT;
 		return nullptr;
 	}
 
@@ -240,7 +290,7 @@ void *lpm_trie_map_impl::elem_lookup(const void *key)
 }
 
 long lpm_trie_map_impl::elem_update(const void *key, const void *value,
-				    uint64_t flags)
+				    uint64_t flags, bool from_syscall)
 {
 	if (!key || !value) {
 		SPDLOG_ERROR(
@@ -270,10 +320,57 @@ long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 		return -1;
 	}
 
+	const size_t shard = shard_for(lpm_key);
+	return with_robust_shm_lock(
+		true, from_syscall, stripes_[shard],
+		[&]() -> long {
+			return update_shard(shard, lpm_key, value, flags);
+		},
+		"lpm_trie_map");
+}
+
+long lpm_trie_map_impl::update_shard(size_t shard,
+				     const bpf_lpm_trie_key *lpm_key,
+				     const void *value, uint64_t flags)
+{
+	node_unique_ptr &root = roots_[shard];
+
 	// Helper lambdas
 	auto is_exact_match = [&](const lpm_trie_node *n) -> bool {
 		return n && n->prefixlen == lpm_key->prefixlen &&
 		       longest_prefix_match(n, lpm_key) == lpm_key->prefixlen;
+	};
+
+	auto alloc_keyed = [&](uint32_t plen, const void *val,
+			       bool im) -> node_unique_ptr {
+		auto n = create_node(val, im);
+		if (!n)
+			return n;
+		n->prefixlen = plen;
+		copy_key_data(
+			boost::interprocess::ipcdetail::to_raw_pointer(n.get()),
+			lpm_key);
+		return n;
+	};
+	auto split_slot = [&](node_unique_ptr *slot,
+			      size_t matchlen) -> long {
+		if (flags == 2 /*EXIST*/)
+			return errno = ENOENT, -1;
+		if (!reserve_slot(shard))
+			return errno = ENOSPC, -1;
+		auto new_node = alloc_keyed(lpm_key->prefixlen, value, false);
+		auto im_node = alloc_keyed(matchlen, nullptr, true);
+		if (!new_node || !im_node)
+			return release_slot(shard), errno = ENOMEM, -1;
+		if (extract_bit(lpm_key->data, matchlen)) {
+			im_node->child[0] = std::move(*slot);
+			im_node->child[1] = std::move(new_node);
+		} else {
+			im_node->child[0] = std::move(new_node);
+			im_node->child[1] = std::move(*slot);
+		}
+		*slot = std::move(im_node);
+		return 0;
 	};
 
 	// If tree is empty
@@ -282,23 +379,17 @@ long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 			errno = ENOENT;
 			return -1;
 		}
-		if (n_entries >= _max_entries) {
+		if (!reserve_slot(shard)) {
 			errno = ENOSPC;
 			return -1;
 		}
-		auto new_node = create_node(value, false);
+		auto new_node = alloc_keyed(lpm_key->prefixlen, value, false);
 		if (!new_node) {
+			release_slot(shard);
 			errno = ENOMEM;
 			return -1;
 		}
-		new_node->prefixlen = lpm_key->prefixlen;
-		copy_key_data(boost::interprocess::ipcdetail::to_raw_pointer(
-				      new_node.get()),
-			      lpm_key);
 		root = std::move(new_node);
-		n_entries++;
-		SPDLOG_TRACE("LPM Trie: Added root node with prefix length {}",
-			     lpm_key->prefixlen);
 		return 0;
 	}
 
@@ -333,54 +424,17 @@ long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 				return -1;
 			}
 			if (!exists_real) {
-				if (n_entries >= _max_entries) {
+				if (!reserve_slot(shard)) {
 					errno = ENOSPC;
 					return -1;
 				}
 				node->is_intermediate = false;
 				node->data.resize(_data_size + _value_size);
-				n_entries++;
 			}
 			copy_value_data(node, value);
 			return 0;
 		}
-		// Not exact: split at current matchlen into intermediate
-		if (flags == 2 /*EXIST*/) {
-			errno = ENOENT;
-			return -1;
-		}
-		if (n_entries >= _max_entries) {
-			errno = ENOSPC;
-			return -1;
-		}
-		auto new_node = create_node(value, false);
-		if (!new_node) {
-			errno = ENOMEM;
-			return -1;
-		}
-		new_node->prefixlen = lpm_key->prefixlen;
-		copy_key_data(boost::interprocess::ipcdetail::to_raw_pointer(
-				      new_node.get()),
-			      lpm_key);
-		auto im_node = create_node(nullptr, true);
-		if (!im_node) {
-			errno = ENOMEM;
-			return -1;
-		}
-		im_node->prefixlen = matchlen;
-		copy_key_data(boost::interprocess::ipcdetail::to_raw_pointer(
-				      im_node.get()),
-			      lpm_key);
-		if (extract_bit(lpm_key->data, matchlen)) {
-			im_node->child[0] = std::move(*slot);
-			im_node->child[1] = std::move(new_node);
-		} else {
-			im_node->child[0] = std::move(new_node);
-			im_node->child[1] = std::move(*slot);
-		}
-		*slot = std::move(im_node);
-		n_entries++;
-		return 0;
+		return split_slot(slot, matchlen);
 	}
 
 	// Case 2: slot is empty -> pure insert
@@ -389,23 +443,17 @@ long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 			errno = ENOENT;
 			return -1;
 		}
-		if (n_entries >= _max_entries) {
+		if (!reserve_slot(shard)) {
 			errno = ENOSPC;
 			return -1;
 		}
-		auto new_node = create_node(value, false);
+		auto new_node = alloc_keyed(lpm_key->prefixlen, value, false);
 		if (!new_node) {
+			release_slot(shard);
 			errno = ENOMEM;
 			return -1;
 		}
-		new_node->prefixlen = lpm_key->prefixlen;
-		copy_key_data(boost::interprocess::ipcdetail::to_raw_pointer(
-				      new_node.get()),
-			      lpm_key);
 		*slot = std::move(new_node);
-		n_entries++;
-		SPDLOG_TRACE("LPM Trie: Added new node with prefix length {}",
-			     lpm_key->prefixlen);
 		return 0;
 	}
 
@@ -415,74 +463,28 @@ long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 			errno = ENOENT;
 			return -1;
 		}
-		if (n_entries >= _max_entries) {
+		if (!reserve_slot(shard)) {
 			errno = ENOSPC;
 			return -1;
 		}
-		auto new_node = create_node(value, false);
+		auto new_node = alloc_keyed(lpm_key->prefixlen, value, false);
 		if (!new_node) {
+			release_slot(shard);
 			errno = ENOMEM;
 			return -1;
 		}
-		new_node->prefixlen = lpm_key->prefixlen;
-		copy_key_data(boost::interprocess::ipcdetail::to_raw_pointer(
-				      new_node.get()),
-			      lpm_key);
 		int next_bit =
 			extract_bit(get_node_prefix_data(node), matchlen);
 		new_node->child[next_bit] = std::move(*slot);
 		*slot = std::move(new_node);
-		n_entries++;
-		SPDLOG_TRACE(
-			"LPM Trie: Added ancestor node with prefix length {}",
-			lpm_key->prefixlen);
 		return 0;
 	}
 
 	// Case 4: split by creating intermediate node between
-	if (flags == 2 /*EXIST*/) {
-		errno = ENOENT;
-		return -1;
-	}
-	if (n_entries >= _max_entries) {
-		errno = ENOSPC;
-		return -1;
-	}
-	auto new_node = create_node(value, false);
-	if (!new_node) {
-		errno = ENOMEM;
-		return -1;
-	}
-	new_node->prefixlen = lpm_key->prefixlen;
-	copy_key_data(
-		boost::interprocess::ipcdetail::to_raw_pointer(new_node.get()),
-		lpm_key);
-
-	auto im_node = create_node(nullptr, true);
-	if (!im_node) {
-		errno = ENOMEM;
-		return -1;
-	}
-	im_node->prefixlen = matchlen;
-	copy_key_data(
-		boost::interprocess::ipcdetail::to_raw_pointer(im_node.get()),
-		lpm_key);
-	if (extract_bit(lpm_key->data, matchlen)) {
-		im_node->child[0] = std::move(*slot);
-		im_node->child[1] = std::move(new_node);
-	} else {
-		im_node->child[0] = std::move(new_node);
-		im_node->child[1] = std::move(*slot);
-	}
-	*slot = std::move(im_node);
-	n_entries++;
-	SPDLOG_TRACE(
-		"LPM Trie: Added intermediate node and new node with prefix length {}",
-		lpm_key->prefixlen);
-	return 0;
+	return split_slot(slot, matchlen);
 }
 
-long lpm_trie_map_impl::elem_delete(const void *key)
+long lpm_trie_map_impl::elem_delete(const void *key, bool from_syscall)
 {
 	if (!key) {
 		SPDLOG_ERROR(
@@ -502,8 +504,18 @@ long lpm_trie_map_impl::elem_delete(const void *key)
 		return -1;
 	}
 
+	const size_t shard = shard_for(lpm_key);
+	return with_robust_shm_lock(
+		true, from_syscall, stripes_[shard],
+		[&]() -> long { return delete_shard(shard, lpm_key); },
+		"lpm_trie_map");
+}
+
+long lpm_trie_map_impl::delete_shard(size_t shard,
+				     const bpf_lpm_trie_key *lpm_key)
+{
 	// Traverse to find the slot pointing to the node to delete
-	node_unique_ptr *slot = &root;
+	node_unique_ptr *slot = &roots_[shard];
 	lpm_trie_node *node = nullptr;
 	while (slot->get()) {
 		node = boost::interprocess::ipcdetail::to_raw_pointer(
@@ -528,14 +540,12 @@ long lpm_trie_map_impl::elem_delete(const void *key)
 	// changes
 	node->is_intermediate = true;
 	node->data.resize(_data_size);
-	if (n_entries > 0) {
-		n_entries--;
-	}
-	SPDLOG_TRACE("LPM Trie: Marked node as intermediate (logical delete)");
+	release_slot(shard);
 	return 0;
 }
 
-int lpm_trie_map_impl::map_get_next_key(const void *key, void *next_key)
+int lpm_trie_map_impl::map_get_next_key(const void *key, void *next_key,
+					bool from_syscall)
 {
 	if (!next_key) {
 		SPDLOG_ERROR(
@@ -544,43 +554,44 @@ int lpm_trie_map_impl::map_get_next_key(const void *key, void *next_key)
 		return -1;
 	}
 
-	// Empty trie
-	if (!root) {
+	if (key || n_entries.load(std::memory_order_acquire) == 0) {
 		errno = ENOENT;
 		return -1;
 	}
 
 	bpf_lpm_trie_key *next_lpm_key =
 		static_cast<bpf_lpm_trie_key *>(next_key);
-
-	// If key is null or invalid, return leftmost node
-	if (!key) {
-		// Find leftmost non-intermediate node
-		lpm_trie_node *node =
-			boost::interprocess::ipcdetail::to_raw_pointer(
-				root.get());
-		while (node) {
-			if (!node->is_intermediate) {
-				next_lpm_key->prefixlen = node->prefixlen;
-				std::memcpy(next_lpm_key->data,
-					    get_node_prefix_data(node),
-					    _data_size);
-				return 0;
-			}
-			node = node->child[0] ?
-				       boost::interprocess::ipcdetail::
-					       to_raw_pointer(
-						       node->child[0].get()) :
-				       boost::interprocess::ipcdetail::
-					       to_raw_pointer(
-						       node->child[1].get());
-		}
-		errno = ENOENT;
-		return -1;
+	for (size_t s = 0; s <= NUM_SHARDS; ++s) {
+		bool locked = false;
+		int rc = with_robust_shm_lock(
+			true, from_syscall, stripes_[s],
+			[&]() -> int {
+				locked = true;
+				for (lpm_trie_node *node = boost::interprocess::
+					     ipcdetail::to_raw_pointer(
+						     roots_[s].get());
+				     node;
+				     node = boost::interprocess::ipcdetail::
+					     to_raw_pointer(
+						     (node->child[0] ?
+							      node->child[0] :
+							      node->child[1])
+							     .get())) {
+					if (node->is_intermediate)
+						continue;
+					next_lpm_key->prefixlen =
+						node->prefixlen;
+					std::memcpy(next_lpm_key->data,
+						    get_node_prefix_data(node),
+						    _data_size);
+					return 0;
+				}
+				return 1;
+			},
+			"lpm_trie_map");
+		if (!locked || rc == 0)
+			return locked ? 0 : rc;
 	}
-
-	// For simplicity, this is a basic implementation
-	// A full implementation would do postorder traversal
 	errno = ENOENT;
 	return -1;
 }

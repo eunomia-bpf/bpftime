@@ -7,6 +7,10 @@
 #define _LPM_TRIE_MAP_HPP
 
 #include "bpftime_shm_safe.hpp"
+#include "robust_shm_mutex.hpp"
+#include <array>
+#include <atomic>
+#include <utility>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <boost/interprocess/containers/vector.hpp>
@@ -59,6 +63,11 @@ struct lpm_trie_node {
 };
 
 class lpm_trie_map_impl {
+    public:
+	static constexpr size_t NUM_SHARDS = 64;
+	// Sharded by 32-bit prefix hash via stripes_[]; no global map_lock.
+	static constexpr bool should_lock = false;
+
     private:
 	unsigned int _key_size;
 	unsigned int _value_size;
@@ -66,10 +75,29 @@ class lpm_trie_map_impl {
 	unsigned int _data_size; // Key data size (key_size - sizeof(prefixlen))
 	unsigned int _max_prefixlen; // Maximum prefix length in bits
 
-	node_unique_ptr root;
-	size_t n_entries;
+	std::array<node_unique_ptr, NUM_SHARDS + 1> roots_;
+	mutable robust_shm_mutex stripes_[NUM_SHARDS + 1];
+	std::atomic<size_t> n_entries{ 0 };
+	std::atomic<size_t> short_entries_{ 0 };
 
 	boost::interprocess::offset_ptr<segment_manager_type> segment_manager_;
+
+	template <size_t... Is>
+	static std::array<node_unique_ptr, sizeof...(Is)>
+	make_roots(segment_manager_type *sm, std::index_sequence<Is...>)
+	{
+		return { ((void)Is,
+			  node_unique_ptr(nullptr, node_deleter_type(sm)))... };
+	}
+	size_t shard_for(const bpf_lpm_trie_key *key) const noexcept;
+	bool reserve_slot(size_t shard) noexcept;
+	void release_slot(size_t shard) noexcept;
+	lpm_trie_node *lookup_shard(size_t shard,
+				    const bpf_lpm_trie_key *lpm_key,
+				    bool from_syscall, bool &locked) noexcept;
+	long update_shard(size_t shard, const bpf_lpm_trie_key *lpm_key,
+			  const void *value, uint64_t flags);
+	long delete_shard(size_t shard, const bpf_lpm_trie_key *lpm_key);
 
 	// Helper functions
 	int extract_bit(const uint8_t *data, size_t index) const;
@@ -85,17 +113,16 @@ class lpm_trie_map_impl {
 	const uint8_t *get_node_value_data(const lpm_trie_node *node) const;
 
     public:
-	// Container maps delegate locking to bpf_map_handler::map_lock.
-	static constexpr bool should_lock = true;
-
 	lpm_trie_map_impl(const shm_init_ctx &ctx, unsigned int key_size,
 			  unsigned int value_size, unsigned int max_entries);
 	~lpm_trie_map_impl();
 
-	void *elem_lookup(const void *key);
-	long elem_update(const void *key, const void *value, uint64_t flags);
-	long elem_delete(const void *key);
-	int map_get_next_key(const void *key, void *next_key);
+	void *elem_lookup(const void *key, bool from_syscall = true);
+	long elem_update(const void *key, const void *value, uint64_t flags,
+			 bool from_syscall = true);
+	long elem_delete(const void *key, bool from_syscall = true);
+	int map_get_next_key(const void *key, void *next_key,
+			     bool from_syscall = true);
 
 	// LPM Trie specific operations (not used but required by interface)
 	long map_push_elem(const void *value, uint64_t flags);
@@ -116,7 +143,7 @@ class lpm_trie_map_impl {
 	}
 	size_t get_current_entries() const
 	{
-		return n_entries;
+		return n_entries.load(std::memory_order_acquire);
 	}
 };
 

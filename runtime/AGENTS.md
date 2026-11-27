@@ -18,14 +18,16 @@ Safety Redlines and Host-process safety invariants are binding here.
   `PROG_ARRAY`, `PERF_EVENT_ARRAY`, `BLOOM_FILTER`, `RINGBUF`), and `HASH`
   must never take a global `bpf_map_handler::map_lock` (`should_lock = false`;
   `HASH` and `PERCPU_HASH` share preallocated `bpftime_hash_map` with lock-free
-  `lookup` and sharded write stripes). All cross-process shared-memory lock
-  primitives, RAII guards, and blocking-vs-`trylock` dispatch live
-  **exclusively** in `runtime/include/robust_shm_mutex.hpp`
+  `lookup` and sharded write stripes, and `LPM_TRIE` shards `prefixlen >= 32`
+  sub-tries across 64 `robust_shm_mutex` stripes (`should_lock = false`)). All
+  cross-process shared-memory lock primitives, RAII guards, and
+  blocking-vs-`trylock` dispatch live **exclusively** in
+  `runtime/include/robust_shm_mutex.hpp`
   (`bpftime::robust_shm_mutex`, `PTHREAD_PROCESS_SHARED | PTHREAD_MUTEX_ROBUST`):
   forbid defining or calling raw `pthread_mutex_*`, `pthread_spinlock_t`,
   `boost::interprocess::interprocess_*mutex`, custom spinlocks, or bespoke lock
   wrappers outside `runtime/include/robust_shm_mutex.hpp`, and never nest
-  private inner locks inside L2 container maps (`LRU_HASH`, `LPM_TRIE`,
+  private inner locks inside unsharded L2 container maps (`LRU_HASH`,
   `QUEUE`, `STACK`, `STACK_TRACE`, `HASH_OF_MAPS`, where `should_lock = true`
   delegates locking solely to `bpf_map_handler::map_lock` via
   `with_robust_shm_lock`). Adding any new lock, new lock callsite, or lock

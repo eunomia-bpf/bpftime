@@ -101,37 +101,54 @@ TEST_CASE("Container map helper trylocks while HASH/PERCPU_HASH/PERF/BLOOM avoid
 	ba.max_ents = 32;
 	ba.map_extra = 3;
 	bpf_map_handler bloom(5, "bloom", fx.segment, ba);
-	for (auto *m : { &hmap, &pcpu, &perf, &bloom }) {
+	struct {
+		uint32_t prefixlen;
+		uint32_t pid;
+		uint64_t addr;
+	} lpm_key{ 96, 1, 0x400000 };
+	bpf_map_handler lpm(6, (int)bpf_map_type::BPF_MAP_TYPE_LPM_TRIE,
+			    sizeof(lpm_key), sizeof(uint64_t), 128, 0, "lpm",
+			    fx.segment);
+	for (auto *m : { &hmap, &pcpu, &perf, &bloom, &lpm }) {
 		REQUIRE(m->map_init(fx.segment) == 0);
 		REQUIRE(m->get_map_lock().lock("global-held"));
 	}
 	REQUIRE(hmap.map_update_elem(&sys_key, &sys_val, 0, false) == 0);
 	REQUIRE(pcpu.map_update_elem(&sys_key, &sys_val, 0, false) == 0);
+	for (uint32_t t = 0; t < 8; ++t) {
+		auto tk = lpm_key;
+		tk.pid = __builtin_bswap32(1000 + t);
+		uint64_t tv = 0x5000 + t;
+		REQUIRE(lpm.map_update_elem(&tk, &tv, 0, true) == 0);
+	}
 	int32_t slot0 = 0, pfd = 42;
 	REQUIRE(perf.map_update_elem(&slot0, &pfd, 0, true) == 0);
 	REQUIRE(*(const int32_t *)perf.map_lookup_elem(&slot0, false) == 42);
 	REQUIRE(bloom.map_push_elem(&sys_val, 0, false) == 0);
 	REQUIRE(bloom.map_peek_elem(&sys_val, false) == 0);
-	for (auto *m : { &hmap, &pcpu, &perf, &bloom })
+	for (auto *m : { &hmap, &pcpu, &perf, &bloom, &lpm })
 		m->get_map_lock().unlock();
 
 	std::atomic<int> false_nulls{ 0 };
 	std::vector<std::thread> readers;
 	for (int t = 0; t < 8; ++t)
 		readers.emplace_back([&, t] {
+			auto tk = lpm_key;
+			tk.pid = __builtin_bswap32(1000 + (uint32_t)t);
 			for (int i = 0; i < 2000; ++i) {
 				uint32_t k = (uint32_t)(100 + t);
 				uint64_t v = (uint64_t)i;
 				(void)hmap.map_update_elem(&k, &v, 0, false);
 				if (!hmap.map_lookup_elem(&sys_key, false) ||
-				    !pcpu.map_lookup_elem(&sys_key, false))
+				    !pcpu.map_lookup_elem(&sys_key, false) ||
+				    !lpm.map_lookup_elem(&tk, false))
 					false_nulls.fetch_add(1);
 			}
 		});
 	for (auto &th : readers)
 		th.join();
 	REQUIRE(false_nulls.load() == 0);
-	for (auto *m : { &hmap, &pcpu, &perf, &bloom })
+	for (auto *m : { &hmap, &pcpu, &perf, &bloom, &lpm })
 		m->map_free(fx.segment);
 
 #if defined(__linux__)
