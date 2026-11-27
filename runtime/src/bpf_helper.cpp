@@ -49,6 +49,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <ctime>
+#include <sys/stat.h>
 #include <filesystem>
 #include "bpftime.hpp"
 #include "bpftime_shm.hpp"
@@ -439,9 +440,22 @@ static thread_local int bpftime_cached_tid = -1;
 static thread_local uint64_t bpftime_cached_tid = UINT64_MAX;
 #endif
 
+#if __linux__
+constexpr uint64_t BPFTIME_PIDNS_INO_UNAVAILABLE = UINT64_MAX;
+// This process's PID namespace as stat(2) reports /proc/self/ns/pid, filled by
+// the first bpf_get_ns_current_pid_tgid call (or BPFTIME_PIDNS_INO_UNAVAILABLE
+// if /proc/self/ns/pid is unavailable, so failed lookups are not retried).
+static std::atomic<uint64_t> bpftime_cached_pidns_dev{ 0 };
+static std::atomic<uint64_t> bpftime_cached_pidns_ino{ 0 };
+#endif
+
 static void bpftime_refresh_cached_identity_in_child()
 {
 	bpftime_cached_tgid = getpid();
+#if __linux__
+	// A child forked after unshare(CLONE_NEWPID) lives in the new namespace.
+	bpftime_cached_pidns_ino.store(0, std::memory_order_relaxed);
+#endif
 	bpftime_prng_state = 0;
 	// tid is meaningless in the child; the next helper call refills it.
 #if __linux__
@@ -492,6 +506,67 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 	return bpftime_cached_host_identity;
 #else
 	return ((uint64_t)bpftime_cached_tgid << 32) | bpftime_cached_tid;
+#endif
+}
+
+// bpf_get_ns_current_pid_tgid(dev, ino, nsdata, size) reports the calling pid
+// and tgid as seen in the PID namespace identified by (dev, ino). bpftime runs
+// inside the traced process, so it answers for that process's own namespace;
+// any other (dev, ino) fails with -EINVAL and zeroes nsdata, as the kernel does
+// on a namespace mismatch. The namespace is read once per process.
+uint64_t bpftime_get_ns_current_pid_tgid(uint64_t dev, uint64_t ino,
+					 uint64_t nsdata, uint64_t size,
+					 uint64_t)
+{
+	struct pidns_info {
+		uint32_t pid;
+		uint32_t tgid;
+	};
+	auto *info = reinterpret_cast<pidns_info *>((uintptr_t)nsdata);
+	if (info == nullptr)
+		return (uint64_t)(int64_t)-EINVAL;
+	if (size != sizeof(pidns_info)) {
+		memset(info, 0, size);
+		return (uint64_t)(int64_t)-EINVAL;
+	}
+#if __linux__
+	uint64_t ns_ino =
+		bpftime_cached_pidns_ino.load(std::memory_order_acquire);
+	if (ns_ino == 0) {
+		int saved_errno = errno;
+		struct stat st {};
+		if (stat("/proc/self/ns/pid", &st) == 0 && st.st_ino != 0 &&
+		    (uint64_t)st.st_ino != BPFTIME_PIDNS_INO_UNAVAILABLE) {
+			bpftime_cached_pidns_dev.store(
+				st.st_dev, std::memory_order_relaxed);
+			ns_ino = st.st_ino;
+		} else {
+			ns_ino = BPFTIME_PIDNS_INO_UNAVAILABLE;
+		}
+		bpftime_cached_pidns_ino.store(ns_ino,
+					       std::memory_order_release);
+		errno = saved_errno;
+	}
+	if (ns_ino == BPFTIME_PIDNS_INO_UNAVAILABLE || ino != ns_ino ||
+	    dev != bpftime_cached_pidns_dev.load(std::memory_order_relaxed)) {
+		memset(info, 0, sizeof(*info));
+		return (uint64_t)(int64_t)-EINVAL;
+	}
+	// The namespace-local ids are the cached getpid()/gettid() values (the
+	// BPFTIME_HOST_PROCFS translation belongs to bpf_get_current_pid_tgid);
+	// this call fills the thread's cache.
+	(void)bpftime_get_current_pid_tgid(0, 0, 0, 0, 0);
+	if (bpftime_identity_atfork_status != 0) {
+		info->tgid = (uint32_t)getpid();
+		info->pid = (uint32_t)syscall(SYS_gettid);
+		return 0;
+	}
+	info->tgid = (uint32_t)bpftime_cached_tgid;
+	info->pid = (uint32_t)bpftime_cached_tid;
+	return 0;
+#else
+	memset(info, 0, sizeof(*info));
+	return (uint64_t)(int64_t)-EOPNOTSUPP;
 #endif
 }
 
@@ -1833,6 +1908,12 @@ bpftime_helper_group::get_kernel_utils_helper_group()
 			    .index = BPF_FUNC_get_current_pid_tgid,
 			    .name = "bpf_get_current_pid_tgid",
 			    .fn = (void *)bpftime_get_current_pid_tgid,
+		    } },
+		  { BPF_FUNC_get_ns_current_pid_tgid,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_get_ns_current_pid_tgid,
+			    .name = "bpf_get_ns_current_pid_tgid",
+			    .fn = (void *)bpftime_get_ns_current_pid_tgid,
 		    } },
 		  { BPF_FUNC_get_current_uid_gid,
 		    bpftime_helper_info{

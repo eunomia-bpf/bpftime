@@ -192,6 +192,13 @@ thread caches the translation on its first call; later calls do no procfs I/O
 or identity syscalls. A forked child refills the cache. If registering the
 fork handler fails, each call resolves the identity directly instead.
 
+`bpf_get_ns_current_pid_tgid` answers for the traced process's own PID
+namespace: it compares `dev` and `ino` with `stat("/proc/self/ns/pid")`, read
+once per process, and reports the namespace-local IDs, `getpid()` and
+`gettid()`; the `BPFTIME_HOST_PROCFS` translation applies to
+`bpf_get_current_pid_tgid` only. Any other namespace fails with `-EINVAL`
+and zeroes the output, as in the kernel.
+
 ### Performance Optimization
 
 1. **Map Selection**

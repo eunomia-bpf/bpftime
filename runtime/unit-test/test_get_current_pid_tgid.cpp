@@ -190,4 +190,113 @@ TEST_CASE("PID namespace identity hot path makes no system calls")
 	REQUIRE(WIFEXITED(status));
 	REQUIRE(WEXITSTATUS(status) == 0);
 }
+
+#include <cerrno>
+#include <sys/stat.h>
+
+extern "C" uint64_t bpftime_get_ns_current_pid_tgid(uint64_t, uint64_t,
+						    uint64_t, uint64_t,
+						    uint64_t);
+
+TEST_CASE("bpf_get_ns_current_pid_tgid answers for the own PID namespace")
+{
+	struct stat st {};
+	REQUIRE(stat("/proc/self/ns/pid", &st) == 0);
+	struct {
+		uint32_t pid;
+		uint32_t tgid;
+	} info{ 1, 1 };
+	const auto call = [&](uint64_t dev, uint64_t ino, uint64_t size) {
+		return (int64_t)bpftime_get_ns_current_pid_tgid(
+			dev, ino, (uint64_t)(uintptr_t)&info, size, 0);
+	};
+	REQUIRE(call(st.st_dev, st.st_ino, sizeof(info)) == 0);
+	REQUIRE(info.tgid == (uint32_t)getpid());
+	REQUIRE(info.pid == (uint32_t)syscall(SYS_gettid));
+	// Another namespace: -EINVAL and zeroed output, as in the kernel.
+	REQUIRE(call(st.st_dev, st.st_ino + 1, sizeof(info)) == -EINVAL);
+	REQUIRE(info.pid == 0);
+	REQUIRE(info.tgid == 0);
+	REQUIRE(call(st.st_dev, st.st_ino, sizeof(info) - 1) == -EINVAL);
+}
+
+TEST_CASE("bpf_get_ns_current_pid_tgid caches a failed /proc/self/ns/pid stat")
+{
+	pid_t child = fork();
+	REQUIRE(child >= 0);
+	if (child == 0) {
+		struct instruction { uint16_t code; uint8_t jt, jf; uint32_t k; };
+		instruction fail_stat[16];
+		unsigned short n = 0;
+		fail_stat[n++] = { BPF_LD | BPF_W | BPF_ABS, 0, 0,
+				   offsetof(struct seccomp_data, nr) };
+		auto deny = [&](uint32_t nr) {
+			fail_stat[n++] = { BPF_JMP | BPF_JEQ | BPF_K, 0, 1, nr };
+			fail_stat[n++] = { BPF_RET | BPF_K, 0, 0,
+					   SECCOMP_RET_ERRNO | ENOENT };
+		};
+#ifdef SYS_stat
+		deny(SYS_stat);
+#endif
+#ifdef SYS_newfstatat
+		deny(SYS_newfstatat);
+#endif
+#ifdef SYS_fstatat64
+		deny(SYS_fstatat64);
+#endif
+#ifdef SYS_statx
+		deny(SYS_statx);
+#endif
+		fail_stat[n++] = { BPF_RET | BPF_K, 0, 0, SECCOMP_RET_ALLOW };
+		struct {
+			unsigned short len;
+			instruction *filter;
+		} prog1 = { n, fail_stat };
+		if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 ||
+		    prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog1) != 0)
+			_exit(2);
+
+		struct {
+			uint32_t pid;
+			uint32_t tgid;
+		} info{ 7, 9 };
+		errno = EAGAIN;
+		int64_t rc = (int64_t)bpftime_get_ns_current_pid_tgid(
+			0, UINT64_MAX, (uint64_t)(uintptr_t)&info, sizeof(info),
+			0);
+		if (rc != -EINVAL || errno != EAGAIN || info.pid != 0 ||
+		    info.tgid != 0)
+			_exit(3);
+
+		// Stack a second filter killing on any syscall other than exit:
+		// proves the failed stat sentinel prevents all further syscalls.
+		instruction kill_all[] = {
+			{ BPF_LD | BPF_W | BPF_ABS, 0, 0,
+			  offsetof(struct seccomp_data, nr) },
+			{ BPF_JMP | BPF_JEQ | BPF_K, 2, 0, SYS_exit_group },
+			{ BPF_JMP | BPF_JEQ | BPF_K, 1, 0, SYS_exit },
+			{ BPF_RET | BPF_K, 0, 0, SECCOMP_RET_KILL_PROCESS },
+			{ BPF_RET | BPF_K, 0, 0, SECCOMP_RET_ALLOW },
+		};
+		struct {
+			unsigned short len;
+			instruction *filter;
+		} prog2 = { 5, kill_all };
+		if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog2) != 0)
+			_exit(4);
+		for (int i = 0; i < 1000; ++i) {
+			info = { 5, 6 };
+			rc = (int64_t)bpftime_get_ns_current_pid_tgid(
+				0, (i & 1) ? UINT64_MAX : 1,
+				(uint64_t)(uintptr_t)&info, sizeof(info), 0);
+			if (rc != -EINVAL || info.pid != 0 || info.tgid != 0)
+				_exit(5);
+		}
+		_exit(0);
+	}
+	int status = 0;
+	REQUIRE(waitpid(child, &status, 0) == child);
+	REQUIRE(WIFEXITED(status));
+	REQUIRE(WEXITSTATUS(status) == 0);
+}
 #endif
