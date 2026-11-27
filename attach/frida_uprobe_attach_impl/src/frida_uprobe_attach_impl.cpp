@@ -353,3 +353,13 @@ void *frida_attach_impl::call_attach_specific_function(const std::string& name,
 		return nullptr;
 	}
 }
+
+bool frida_attach_impl::is_module_mapped(const char *module_name) const
+{
+#if __APPLE__
+	(void)module_name;
+	return true;
+#else
+	return get_module_base_addr(module_name) != nullptr;
+#endif
+}

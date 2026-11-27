@@ -223,8 +223,10 @@ void *get_module_base_addr(const char *module_name)
 		exec_storage = get_executable_path();
 		module_name = exec_storage.c_str();
 	}
-#endif
 	gum_module_load(module_name, nullptr);
+#else
+	// On Linux gum_module_load() calls dlopen(); only inspect mapped DSOs.
+#endif
 	return (void *)gum_module_find_base_address(module_name);
 }
 

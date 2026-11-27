@@ -213,6 +213,66 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 	return -EAGAIN;
 }
 
+int bpf_attach_ctx::attach_uninstantiated_handlers(const runtime_config &config)
+{
+	const handler_manager *manager =
+		shm_holder.global_shared_memory.get_manager();
+	if (!manager)
+		return -EINVAL;
+	std::unique_lock<std::mutex> lock(ctx_mutex, std::try_to_lock);
+	if (!lock.owns_lock())
+		return 0;
+	const std::uint64_t seq =
+		shm_holder.global_shared_memory.read_stable_epoch_seq(1);
+	if (seq == BPFTIME_EPOCH_SEQ_UNSTABLE ||
+	    (seq != BPFTIME_EPOCH_SEQ_MISSING && seq != last_epoch_seq_seen))
+		return 0;
+	bool any_pending = false;
+	for (int i = 0; i < (int)manager->size(); i++) {
+		if (!manager->is_allocated(i) ||
+		    instantiated_handlers.contains(i) ||
+		    !std::holds_alternative<bpf_link_handler>(
+			    manager->get_handler(i)))
+			continue;
+		const auto &link_handler =
+			std::get<bpf_link_handler>(manager->get_handler(i));
+		if (link_handler.attach_target_id < 0 ||
+		    (std::size_t)link_handler.attach_target_id >=
+			    manager->size() ||
+		    !manager->is_allocated(link_handler.attach_target_id) ||
+		    !std::holds_alternative<bpf_perf_event_handler>(
+			    manager->get_handler(
+				    link_handler.attach_target_id)))
+			continue;
+		const auto &perf_handler = std::get<bpf_perf_event_handler>(
+			manager->get_handler(link_handler.attach_target_id));
+		if (!std::holds_alternative<uprobe_perf_event_data>(
+			    perf_handler.data))
+			continue;
+		if (!instantiated_handlers.contains(
+			    link_handler.attach_target_id)) {
+			auto impl_it = attach_impls.find(
+				(int)perf_handler.type);
+			const auto &uprobe_data =
+				std::get<uprobe_perf_event_data>(
+					perf_handler.data);
+			if (impl_it != attach_impls.end() &&
+			    impl_it->second.first != nullptr &&
+			    !impl_it->second.first->is_module_mapped(
+				    uprobe_data._module_name.c_str())) {
+				any_pending = true;
+				continue;
+			}
+		}
+		std::set<int> stk;
+		if (instantiate_handler_at(manager, i, stk, config, false) ==
+		    -ENOENT)
+			any_pending = true;
+	}
+	has_pending_uprobe.store(any_pending, std::memory_order_release);
+	return 0;
+}
+
 bpf_attach_ctx::~bpf_attach_ctx()
 {
 	SPDLOG_INFO("Destructor: bpf_attach_ctx");
@@ -275,9 +335,10 @@ int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
 		if (int err = instantiate_perf_event_handler_at(
 			    id, std::get<bpf_perf_event_handler>(handler));
 		    err < 0) {
-			SPDLOG_ERROR(
-				"Unable to instantiate bpf perf event handler {}: {}",
-				id, err);
+			if (err != -ENOENT)
+				SPDLOG_ERROR(
+					"Unable to instantiate bpf perf event handler {}: {}",
+					id, err);
 			return err;
 		}
 	} else if (std::holds_alternative<bpf_link_handler>(handler)) {
@@ -295,9 +356,10 @@ int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
 			    manager, link_handler.attach_target_id, stk, config,
 			    handle_nv_attach_impl);
 		    err < 0) {
-			SPDLOG_ERROR(
-				"Unable to instantiate perf event handler {} when instantiating link handler {}: {}",
-				link_handler.attach_target_id, id, err);
+			if (err != -ENOENT)
+				SPDLOG_ERROR(
+					"Unable to instantiate perf event handler {} when instantiating link handler {}: {}",
+					link_handler.attach_target_id, id, err);
 			return err;
 		}
 		if (int err = instantiate_bpf_link_handler_at(
@@ -574,9 +636,13 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 		int err = 0;
 		priv_data = private_data_gen(arg_str, err);
 		if (err < 0) {
-			SPDLOG_ERROR(
-				"Unable to parse private data of uprobe perf handler {}, arg_str `{}`: {}",
-				id, arg_str, err);
+			if (err == -ENOENT)
+				has_pending_uprobe.store(
+					true, std::memory_order_release);
+			else
+				SPDLOG_ERROR(
+					"Unable to parse private data of uprobe perf handler {}, arg_str `{}`: {}",
+					id, arg_str, err);
 			return err;
 		}
 	} else if (perf_handler.type ==
@@ -697,6 +763,7 @@ void bpf_attach_ctx::reset_instantiated_state_unlocked()
 	instantiated_attach_links.clear();
 	instantiated_perf_events.clear();
 	instantiated_handlers.clear();
+	has_pending_uprobe.store(false, std::memory_order_relaxed);
 }
 
 } // namespace bpftime

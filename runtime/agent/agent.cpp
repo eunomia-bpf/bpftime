@@ -78,6 +78,14 @@ enum agent_init_state {
 	AGENT_EXITING = 3,
 };
 static int initialized = AGENT_UNINITIALIZED;
+static std::atomic<pid_t> agent_init_pid{ 0 };
+static bool agent_session_attached = false;
+__attribute__((tls_model("initial-exec"))) static thread_local int
+	agent_loader_reentry_depth = 0;
+struct agent_loader_scope {
+	agent_loader_scope() noexcept { ++agent_loader_reentry_depth; }
+	~agent_loader_scope() noexcept { --agent_loader_reentry_depth; }
+};
 
 using agent_control_fn_t = void (*)(const gchar *);
 
@@ -398,6 +406,8 @@ static void start_agent_ipc_server_once()
 static int perform_detach()
 {
 	std::lock_guard<std::mutex> detach_guard(detach_mutex);
+	agent_session_attached = false;
+	agent_init_pid.store(0, std::memory_order_release);
 	attach_callback_suppression_scope suppress_callbacks;
 	if (!global_ctx_constructed.load(std::memory_order_acquire)) {
 		__atomic_store_n(&initialized, AGENT_UNINITIALIZED,
@@ -563,6 +573,9 @@ static int refresh_attach_session(const gchar *data)
 	}
 
 	std::lock_guard<std::mutex> guard(detach_mutex);
+	agent_loader_scope loader_scope;
+	agent_session_attached = false;
+	agent_init_pid.store(0, std::memory_order_release);
 	attach_callback_suppression_scope suppress_callbacks;
 	apply_injected_kv_overrides(data);
 	(void)ctx_holder.ctx.destroy_all_attach_links();
@@ -584,6 +597,9 @@ static int refresh_attach_session(const gchar *data)
 		ctx_holder.ctx.reset_instantiated_state();
 		return -EAGAIN;
 	}
+
+	agent_session_attached = true;
+	agent_init_pid.store(getpid(), std::memory_order_release);
 
 	if (failed_handlers > 0) {
 		SPDLOG_WARN(
@@ -647,10 +663,18 @@ extern "C" void **__cudaRegisterFatBinary(void *fatbin)
 static void bpftime_agent_main_impl(const gchar *data,
 				    gboolean *stay_resident)
 {
+	const pid_t current_init_pid =
+		agent_init_pid.load(std::memory_order_acquire);
+	if (current_init_pid != 0 && getpid() != current_init_pid) {
+		*stay_resident = FALSE;
+		return;
+	}
 	if (agent::should_skip_agent_process()) {
 		*stay_resident = FALSE;
 		return;
 	}
+	agent_init_pid.store(getpid(), std::memory_order_release);
+	agent_loader_scope loader_scope;
 	install_agent_bootstrap_logger();
 	bool force_reinit = false;
 	bool recorded_alive_pid = false;
@@ -671,6 +695,7 @@ static void bpftime_agent_main_impl(const gchar *data,
 			ctx_constructed = false;
 		}
 		global_ctx_constructed.store(false, std::memory_order_release);
+		agent_init_pid.store(0, std::memory_order_release);
 		if (recorded_alive_pid) {
 			try {
 				shm_holder.global_shared_memory
@@ -916,6 +941,12 @@ static void bpftime_agent_main_impl(const gchar *data,
 			/* We don't want our library to be unloaded after we return. */
 			*stay_resident = TRUE;
 			setenv("BPFTIME_USED", "1", 0);
+			{
+				std::lock_guard<std::mutex> guard(detach_mutex);
+				agent_session_attached = true;
+				agent_init_pid.store(getpid(),
+						     std::memory_order_release);
+			}
 			__atomic_store_n(&initialized, AGENT_READY,
 					 __ATOMIC_SEQ_CST);
 			try {
@@ -953,7 +984,7 @@ static bool initialize_rocm_agent() noexcept
 	// HIP/HSA or replace host signal handlers during SDK registration.
 	if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) == AGENT_UNINITIALIZED) {
 		gboolean resident = FALSE;
-		bpftime_agent_main("", &resident);
+		bpftime_agent_main_impl("", &resident);
 	}
 	return __atomic_load_n(&initialized, __ATOMIC_SEQ_CST) == AGENT_READY;
 }
@@ -979,6 +1010,54 @@ rocprofiler_configure(uint32_t version, const char *, uint32_t,
 	install_agent_bootstrap_logger();
 	return configure_rocm_profiler(version, client, initialize_rocm_agent,
 				       finalize_rocm_agent);
+}
+#endif
+
+#ifdef __linux__
+extern "C" __attribute__((visibility("default"))) void *
+dlopen(const char *filename, int flags)
+{
+	using dlopen_fn_t = void *(*)(const char *, int);
+	static std::atomic<dlopen_fn_t> real_dlopen_cache{ nullptr };
+	dlopen_fn_t real_dlopen =
+		real_dlopen_cache.load(std::memory_order_acquire);
+	if (!real_dlopen) {
+		real_dlopen = reinterpret_cast<dlopen_fn_t>(
+			dlsym(RTLD_NEXT, "dlopen"));
+		if (!real_dlopen)
+			return nullptr;
+		real_dlopen_cache.store(real_dlopen, std::memory_order_release);
+	}
+	const pid_t init_pid = agent_init_pid.load(std::memory_order_acquire);
+	if (init_pid == 0 || getpid() != init_pid)
+		return real_dlopen(filename, flags);
+	const int depth_before = agent_loader_reentry_depth;
+	agent_loader_scope loader_scope;
+	void *handle = real_dlopen(filename, flags);
+	const int saved_errno = errno;
+	if (handle && filename && !(flags & RTLD_NOLOAD) && depth_before == 0 &&
+	    getpid() == init_pid &&
+	    __atomic_load_n(&initialized, __ATOMIC_ACQUIRE) == AGENT_READY &&
+	    global_ctx_constructed.load(std::memory_order_acquire) &&
+	    ctx_holder.ctx.has_pending_uprobes()) {
+		try {
+			std::unique_lock<std::mutex> lock(detach_mutex,
+							  std::try_to_lock);
+			if (lock.owns_lock() && agent_session_attached) {
+				attach_callback_suppression_scope suppress;
+				shm_lifecycle_lock shm_lock(
+					get_global_shm_name(), true);
+				if (shm_lock.owns_lock()) {
+					(void)ctx_holder.ctx
+						.attach_uninstantiated_handlers(
+							bpftime_get_runtime_config());
+				}
+			}
+		} catch (...) {
+		}
+	}
+	errno = saved_errno;
+	return handle;
 }
 #endif
 

@@ -34,6 +34,11 @@ int frida_attach_private_data::initialize_from_string(const std::string_view &sv
 		}
 		addr = (uintptr_t)resolve_function_addr_by_module_offset(
 			*resolved_module, std::stoul(offset_part));
+		if (addr == 0) {
+			// Leave unmapped modules retryable instead of binding address 0.
+			SPDLOG_DEBUG("Module `{}` is not mapped", module_part);
+			return -ENOENT;
+		}
 		SPDLOG_DEBUG("Resolved address: {:x} from string {}", addr, sv);
 		this->module_name = std::move(*resolved_module);
 	}

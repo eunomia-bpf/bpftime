@@ -46,6 +46,7 @@ set(TEST_SOURCES
     test_bpftime_shm_json.cpp
     test_probe.cpp
     test_process_filter.cpp
+    test_agent_dlopen_uprobe.cpp
     test_cpu_execution.cpp
     test_get_current_pid_tgid.cpp
     test_prandom_u32.cpp
@@ -153,6 +154,12 @@ if(UNIX AND NOT APPLE)
         assets/runtime_options_test_helper.c)
     add_executable(bpftime-map-syscall-test-helper
         assets/map_syscall_test_helper.c)
+    add_executable(bpftime-agent-dlopen-helper
+        assets/agent_dlopen_helper.c)
+    target_link_libraries(bpftime-agent-dlopen-helper PRIVATE ${CMAKE_DL_LIBS})
+    add_library(bpftime-agent-dlopen-target SHARED
+        assets/agent_dlopen_target.c)
+    set_property(TARGET bpftime-agent-dlopen-target PROPERTY POSITION_INDEPENDENT_CODE ON)
     set_property(TARGET bpftime-shm-allocation-test-helper PROPERTY C_STANDARD 99)
     target_link_libraries(bpftime-shm-allocation-test-helper PRIVATE ${CMAKE_DL_LIBS})
     set_property(TARGET bpftime-runtime-options-test-helper PROPERTY C_STANDARD 99)
@@ -197,10 +204,12 @@ if(UNIX AND NOT APPLE)
         bpftime-syscall-server
         bpftime-runtime-options-test-helper
         bpftime-map-syscall-test-helper
-        bpftime-shm-allocation-test-helper)
+        bpftime-shm-allocation-test-helper
+        bpftime-agent-dlopen-helper
+        bpftime-agent-dlopen-target)
     file(GENERATE
         OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/shm_allocation_test_paths.hpp"
-        CONTENT "#define BPFTIME_SHM_ALLOCATION_TEST_HELPER \"$<TARGET_FILE:bpftime-shm-allocation-test-helper>\"\n#define BPFTIME_MAP_SYSCALL_TEST_HELPER \"$<TARGET_FILE:bpftime-map-syscall-test-helper>\"\n#define BPFTIME_SYSCALL_SERVER_LIBRARY \"$<TARGET_FILE:bpftime-syscall-server>\"\n#define BPFTIME_AGENT_LIBRARY \"$<TARGET_FILE:bpftime-agent>\"\n#define BPFTIME_ROOTLESS_CUSTOM_START_HELPER \"${_rootless_custom_helper_expr}\"\n#define BPFTIME_ROOTLESS_NORMAL_START_HELPER \"${_rootless_normal_helper_expr}\"\n#define BPFTIME_SECCOMP_FASTPATH_TEST_HELPER \"${_seccomp_fastpath_helper_expr}\"\n")
+        CONTENT "#define BPFTIME_SHM_ALLOCATION_TEST_HELPER \"$<TARGET_FILE:bpftime-shm-allocation-test-helper>\"\n#define BPFTIME_MAP_SYSCALL_TEST_HELPER \"$<TARGET_FILE:bpftime-map-syscall-test-helper>\"\n#define BPFTIME_SYSCALL_SERVER_LIBRARY \"$<TARGET_FILE:bpftime-syscall-server>\"\n#define BPFTIME_AGENT_LIBRARY \"$<TARGET_FILE:bpftime-agent>\"\n#define BPFTIME_ROOTLESS_CUSTOM_START_HELPER \"${_rootless_custom_helper_expr}\"\n#define BPFTIME_ROOTLESS_NORMAL_START_HELPER \"${_rootless_normal_helper_expr}\"\n#define BPFTIME_SECCOMP_FASTPATH_TEST_HELPER \"${_seccomp_fastpath_helper_expr}\"\n#define BPFTIME_AGENT_DLOPEN_HELPER \"$<TARGET_FILE:bpftime-agent-dlopen-helper>\"\n#define BPFTIME_AGENT_DLOPEN_TARGET_LIB \"$<TARGET_FILE:bpftime-agent-dlopen-target>\"\n")
     target_include_directories(bpftime_runtime_tests PRIVATE
         "${CMAKE_CURRENT_BINARY_DIR}")
 endif()
@@ -222,6 +231,7 @@ if(UNIX AND NOT APPLE AND BPFTIME_LLVM_JIT)
 endif()
 add_dependencies(bpftime_runtime_tests runtime bpftime-object)
 if(TARGET bpftime_frida_uprobe_attach_impl)
+    target_compile_definitions(bpftime_runtime_tests PRIVATE BPFTIME_HAVE_FRIDA_ATTACH=1)
     add_dependencies(bpftime_runtime_tests bpftime_frida_uprobe_attach_impl)
     target_link_libraries(bpftime_runtime_tests PRIVATE bpftime_frida_uprobe_attach_impl)
     target_include_directories(bpftime_runtime_tests PRIVATE ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE})

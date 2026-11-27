@@ -140,7 +140,13 @@ class base_attach_impl {
 		return nullptr;
 	}
 
-	virtual ~base_attach_impl() {};
+	virtual bool is_module_mapped(const char *module_name) const
+	{
+		(void)module_name;
+		return true;
+	}
+
+	virtual ~base_attach_impl(){};
 
     private:
 	int next_id = 1;
