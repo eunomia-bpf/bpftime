@@ -22,7 +22,7 @@ profiler's map types (including `PROG_ARRAY` tail calls and `LPM_TRIE`), and
 `perf_event_open` uprobe/uretprobe links with `bpf_cookie`. The collector and
 the victim open the same named shared-memory segment
 (`BPFTIME_GLOBAL_SHM_NAME`); the victim's `libbpftime-agent.so` constructor
-enumerates the published handlers and instantiates the `malloc`/`free` uprobes
+enumerates the published handlers and attaches the `malloc`/`free` uprobes
 in-process with Frida. The profiler then receives real samples with the
 victim's call stacks and exports them via its debug exporter.
 
@@ -59,11 +59,7 @@ cd cmd/otelcol-ebpf-profiler
 CGO_ENABLED=1 go build -tags "osusergo,netgo" \
   -ldflags "-linkmode=external" -o ../../otelcol-ebpf-profiler-dyn
 ```
-
-Verify it is dynamic with `readelf -l otelcol-ebpf-profiler-dyn | grep INTERP`
-and point `OTEL_COLLECTOR_BIN` at this `*-dyn` binary. The legacy
-`MODE=daemon` path accepts either binary because it does not preload the
-collector.
+Verify with `readelf -l otelcol-ebpf-profiler-dyn | grep INTERP` and point `OTEL_COLLECTOR_BIN` at this `*-dyn` binary. The legacy `MODE=daemon` path accepts either binary because it does not preload the collector.
 
 ## Run (rootless userspace, no sudo)
 
@@ -97,10 +93,15 @@ exported profiles), `bpftime-collector.log` and `bpftime-victim.log`
 ## Run (legacy daemon kernel-mirror)
 
 The legacy path keeps the profiler in the kernel and only mirrors its links
-through `bpftime_daemon`, so it needs root and a daemon build:
+through `bpftime_daemon`, so it needs root and a daemon build. The
+prerequisites above configure with `-DBUILD_BPFTIME_DAEMON=OFF`; reconfigure
+from the repository root, then run the example from this directory:
 
 ```sh
+# repository root
+cmake -S . -B build -DBUILD_BPFTIME_DAEMON=ON
 cmake --build build --target bpftime_daemon -j"$(nproc)"
+# this example directory
 sudo env \
   OTEL_COLLECTOR_BIN=/path/to/opentelemetry-ebpf-profiler/otelcol-ebpf-profiler \
   MODE=daemon ./scripts/run.sh

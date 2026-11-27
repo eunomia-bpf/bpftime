@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
-#
 # Runs the unmodified upstream OpenTelemetry eBPF profiler against the malloc/free
-# uprobes of a looping victim.
-# MODE=userspace (default): rootless pure userspace via LD_PRELOAD of the
-#   syscall-server (collector) and agent (victim); no root, no kernel eBPF.
-# MODE=daemon: legacy kernel-mirror path requiring root and bpftime_daemon.
+# uprobes of a looping victim. MODE=userspace (default) is rootless pure userspace
+# via LD_PRELOAD of the syscall-server (collector) and agent (victim).
+# MODE=daemon is the legacy kernel-mirror path requiring root and bpftime_daemon.
 
 set -euo pipefail
 
@@ -30,8 +28,7 @@ SHM_NAME="bpftime_otel_profiler_$$"
 # Locate the victim glibc: LIBC_PATH override, then ldd, then per-arch paths.
 detect_libc() {
 	[[ -n "${LIBC_PATH:-}" && -e "${LIBC_PATH}" ]] && { echo "${LIBC_PATH}"; return; }
-	local p
-	p="$(ldd "${VICTIM}" 2>/dev/null | awk '/libc\.so\.6 =>/{print $3; exit}')"
+	local p; p="$(ldd "${VICTIM}" 2>/dev/null | awk '/libc\.so\.6 =>/{print $3; exit}')"
 	[[ -n "${p}" && -e "${p}" ]] && { echo "${p}"; return; }
 	case "$(uname -m)" in
 		x86_64 | amd64) set -- /lib/x86_64-linux-gnu/libc.so.6 /usr/lib64/libc.so.6 ;;
@@ -48,10 +45,10 @@ cleanup() {
 	local status=$?
 	trap - EXIT INT TERM
 	# shellcheck disable=SC2086
-	kill ${VICTIM_PID} ${COLLECTOR_PID} ${DAEMON_PID} 2>/dev/null || true
-	# shellcheck disable=SC2086
-	wait ${VICTIM_PID} ${COLLECTOR_PID} ${DAEMON_PID} 2>/dev/null || true
-	rm -f "/dev/shm/${SHM_NAME}" "/dev/shm/sem.${SHM_NAME}"
+	kill ${VICTIM_PID} ${COLLECTOR_PID} ${DAEMON_PID} 2>/dev/null || true; wait ${VICTIM_PID} ${COLLECTOR_PID} ${DAEMON_PID} 2>/dev/null || true
+	rm -f "/dev/shm/${SHM_NAME}" "/dev/shm/sem.${SHM_NAME}" "/tmp/bpftime-shm-${SHM_NAME}.lock"
+	# Synthetic /proc and tracefs dirs are removed only via libc atexit, which SIGTERM skips.
+	rm -rf "${TMPDIR:-/tmp}"/bpftime-synthetic-fs-"${COLLECTOR_PID:-}"-* "${TMPDIR:-/tmp}"/bpftime-synthetic-fs-"${VICTIM_PID:-}"-* 2>/dev/null || true
 	echo "logs: ${LOG_DIR}" >&2
 	exit "${status}"
 }
@@ -59,6 +56,9 @@ trap cleanup EXIT INT TERM
 
 # Both processes resolve the co-located bpftime libraries and share one SHM.
 LD_PATH="${BUILD_DIR}/runtime/syscall-server:${BUILD_DIR}/runtime/agent:${BUILD_DIR}/attach/text_segment_transformer${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+
+# Accept only a normal exit or timeout(1)'s 124; victim crashes must fail the example.
+check_victim_rc() { [[ "$1" -eq 0 || "$1" -eq 124 ]] || { echo "victim exited with unexpected status $1" >&2; exit 1; }; }
 
 run_userspace() {
 	for f in "${SERVER_SO}" "${AGENT_SO}" "${CONFIG}"; do [[ -e "${f}" ]] || { echo "required build artifact not found: ${f}" >&2; exit 1; }; done
@@ -74,13 +74,14 @@ run_userspace() {
 			--config "${CONFIG}" >"${LOG_DIR}/collector.log" 2>&1 &
 	COLLECTOR_PID=$!
 	# Wait until both uprobe handlers and both BPF links land in shared memory.
-	local i
+	local i ready=0
 	for ((i = 0; i < 20; i++)); do
 		kill -0 "${COLLECTOR_PID}" 2>/dev/null || { tail -n 80 "${LOG_DIR}/collector.log" >&2 || true; echo "OpenTelemetry collector exited during startup" >&2; exit 1; }
 		[[ "$(grep -Ec 'Created uprobe/uretprobe perf event handler, module name .*libc\.so\.6,' "${LOG_DIR}/bpftime-collector.log" 2>/dev/null || true)" -ge 2 ]] &&
-			grep -q "Attached probes" "${LOG_DIR}/collector.log" 2>/dev/null && break
+			grep -q "Attached probes" "${LOG_DIR}/collector.log" 2>/dev/null && { ready=1; break; }
 		sleep 1
 	done
+	[[ "${ready}" -eq 1 ]] || { echo "collector did not publish both probes before the timeout" >&2; exit 1; }
 	# Data plane: the agent enumerates published handlers and attaches via Frida.
 	timeout "${RUN_SECONDS}" env BPFTIME_GLOBAL_SHM_NAME="${SHM_NAME}" \
 		BPFTIME_SHM_MEMORY_MB="${BPFTIME_SHM_MEMORY_MB:-512}" \
@@ -88,8 +89,8 @@ run_userspace() {
 		LD_LIBRARY_PATH="${LD_PATH}" LD_PRELOAD="${AGENT_SO}" \
 		"${VICTIM}" >"${LOG_DIR}/victim.log" 2>&1 &
 	VICTIM_PID=$!
-	wait "${VICTIM_PID}" || true
-	VICTIM_PID=""
+	local victim_rc=0; wait "${VICTIM_PID}" || victim_rc=$?
+	check_victim_rc "${victim_rc}"
 	sleep 6
 	kill -0 "${COLLECTOR_PID}" 2>/dev/null || { echo "collector exited before exporting a profile" >&2; exit 1; }
 	[[ "$(grep -Eh 'Created uprobe/uretprobe perf event handler, module name .*libc\.so\.6,' "${LOG_DIR}"/bpftime-collector*log* 2>/dev/null | wc -l)" -ge 2 ]] ||
@@ -117,12 +118,12 @@ run_daemon() {
 	COLLECTOR_PID=$!
 	sleep 5
 	kill -0 "${COLLECTOR_PID}" 2>/dev/null || { tail -n 80 "${LOG_DIR}/collector.log" >&2; echo "OpenTelemetry collector exited during startup" >&2; exit 1; }
-	timeout "${RUN_SECONDS}" "${VICTIM}" >"${LOG_DIR}/victim.log" 2>&1 || true
+	local victim_rc=0; timeout "${RUN_SECONDS}" "${VICTIM}" >"${LOG_DIR}/victim.log" 2>&1 || victim_rc=$?
+	check_victim_rc "${victim_rc}"
 	sleep 5
 	kill -0 "${DAEMON_PID}" 2>/dev/null && kill -0 "${COLLECTOR_PID}" 2>/dev/null ||
 		{ echo "daemon or collector exited during the run" >&2; exit 1; }
-	local pat
-	for pat in 'cmd:BPF_LINK_CREATE' "Created uprobe/uretprobe perf event handler, module name ${LIBC}," 'attach perf [0-9].* to bpf [0-9].*, for pid'; do
+	local pat; for pat in 'cmd:BPF_LINK_CREATE' "Created uprobe/uretprobe perf event handler, module name ${LIBC}," 'attach perf [0-9].* to bpf [0-9].*, for pid'; do
 		[[ "$(grep -Ec "${pat}" "${LOG_DIR}/daemon.log")" -ge 2 ]] ||
 			{ echo "bpftime did not mirror both profiler links and uprobes: ${pat}" >&2; exit 1; }
 	done
