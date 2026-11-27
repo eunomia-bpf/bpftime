@@ -118,6 +118,16 @@ class bpftime_hash_map {
 			__atomic_store_n(reinterpret_cast<uint64_t *>(d + i), v,
 					 __ATOMIC_RELAXED);
 		}
+		// One store for an aligned 4-byte tail (HASH_OF_MAPS inner ids),
+		// so a lock-free reader never sees it half-written.
+		if (((uintptr_t)(d + i) & 3U) == 0 && i + 4 <= len) {
+			uint32_t v = 0;
+			if (s != nullptr)
+				std::memcpy(&v, s + i, 4);
+			__atomic_store_n(reinterpret_cast<uint32_t *>(d + i), v,
+					 __ATOMIC_RELAXED);
+			i += 4;
+		}
 		for (; i < len; ++i)
 			__atomic_store_n(&d[i], s ? s[i] : uint8_t(0),
 					 __ATOMIC_RELAXED);
