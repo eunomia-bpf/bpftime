@@ -223,6 +223,8 @@ class bpf_map_handler {
 	uint32_t get_userspace_value_size() const;
 	std::optional<ringbuf_map_impl *> try_get_ringbuf_map_impl() const;
 	std::optional<array_map_impl *> try_get_array_map_impl() const;
+	std::shared_ptr<array_map_impl> retain_array_map(
+		boost::interprocess::managed_shared_memory &memory) const;
 	std::optional<perf_event_array_kernel_user_impl *>
 	try_get_shared_perf_event_array_map_impl() const;
 

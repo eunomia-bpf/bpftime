@@ -81,7 +81,9 @@ int rocm_attach_impl::create_attach_with_ebpf_callback(
 		probe->kernel = data->func_name;
 		probe->at_return = data->is_ret_probe;
 		probe->entry = "bpftime_rocm_probe_" + std::to_string(id);
-		probe->ir = compile_rocm_ebpf(data->instructions, probe->entry);
+		probe->maps = data->maps;
+		probe->ir = compile_rocm_ebpf(data->instructions, probe->entry,
+					    probe->maps);
 		ids.insert(id);
 		try {
 			r.probes.emplace(id, std::move(probe));

@@ -205,6 +205,15 @@ class bpftime_shm {
 #endif
 
     public:
+	std::pair<void *, size_t> mapped_region() const
+	{
+		return { segment.get_address(), segment.get_size() };
+	}
+	std::shared_ptr<array_map_impl> retain_array_map(int fd)
+	{
+		auto *map = try_get_map_handler(fd);
+		return map ? map->retain_array_map(segment) : nullptr;
+	}
 	// True when the fully-contained [addr, addr+size) range lies inside the
 	// mapped SHM segment. Backends with runtime memory safety checks
 	// (uBPF) use this to admit BPF map/context accesses that the kernel

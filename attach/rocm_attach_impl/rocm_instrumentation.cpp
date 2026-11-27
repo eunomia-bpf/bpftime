@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "rocm_instrumentation.hpp"
 #include "rocm_ebpf_compiler.hpp"
+#include "rocm_helper_channel.hpp"
 #include <luthier/Common/Singleton.h>
 #include <luthier/HSA/AqlPacket.h>
 #include <luthier/Tooling/LoadedCodeObjectCache.h>
@@ -60,6 +61,9 @@ struct Tool
 	std::map<std::pair<uint64_t, uint64_t>, uint64_t> ready, failed;
 	uint64_t last_generation = 0;
 	std::atomic<unsigned> pending{ 0 };
+	std::map<uint64_t, std::unique_ptr<rocm_helper_channel>> channels;
+	uint64_t compiling_channel = 0;
+	std::map<int, uint64_t> compiling_maps;
 
 	std::unique_ptr<llvm::Module>
 	createInstrumentationModule(llvm::LLVMContext &ctx)
@@ -76,7 +80,8 @@ struct Tool
 				info->print(printer);
 			},
 			&error);
-		auto module = create_rocm_module(compiling, ctx);
+		auto module = create_rocm_module(
+			compiling, ctx, compiling_channel, compiling_maps);
 		if (!module) {
 			error = llvm::toString(module.takeError());
 			return std::make_unique<llvm::Module>("invalid.probe",
@@ -291,11 +296,16 @@ bool prepare(state &s, const hsa_queue_t &queue,
 		diagnose(tool.unloadAll());
 		tool.ready.clear();
 		tool.failed.clear();
+		tool.compiling = {};
+		tool.channels.clear();
 		tool.last_generation = snapshot.generation;
 	}
 	const auto key =
 		std::make_pair(packet.kernel_object, snapshot.generation);
 	if (tool.failed.contains(key))
+		return false;
+	if (auto it = tool.channels.find(info.agentOwner.handle);
+	    it != tool.channels.end() && !it->second->active())
 		return false;
 	if (!tool.ready.contains(key)) {
 		auto tm = tool.buildTargetMachineForKD(kd);
@@ -313,6 +323,33 @@ bool prepare(state &s, const hsa_queue_t &queue,
 			return false;
 		}
 		tool.compiling = snapshot;
+		tool.compiling_channel = 0;
+		tool.compiling_maps.clear();
+		for (const auto &probe : snapshot.probes)
+			for (const auto &map : probe->maps) {
+				if (!tool.channels.contains(
+					    info.agentOwner.handle)) {
+					// Do not create overlapping SHM
+					// registrations for different GPUs.
+					// Multi-device mappings need a shared
+					// registration with an explicit agent
+					// list.
+					if (!tool.channels.empty())
+						throw std::runtime_error(
+							"ROCm Array maps currently support one GPU per agent");
+					tool.channels.emplace(
+						info.agentOwner.handle,
+						std::make_unique<
+							rocm_helper_channel>(
+							core, amd,
+							info.agentOwner, map));
+				}
+				auto &channel = tool.channels.at(
+					info.agentOwner.handle);
+				tool.compiling_channel = channel->address();
+				tool.compiling_maps[map.fd] =
+					channel->bind(map);
+			}
 		tool.error.clear();
 		auto object = tool.runInstrumentationPipelineForDispatch(*kd);
 		if (!object || !tool.error.empty()) {

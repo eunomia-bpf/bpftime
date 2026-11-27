@@ -4,6 +4,8 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <chrono>
+#include <thread>
 
 static void check(hipError_t error)
 {
@@ -23,11 +25,12 @@ int main(int argc, char **argv)
 		unsigned blocks = argc > 1 ? std::stoul(argv[1]) : 1;
 		unsigned repeats = argc > 2 ? std::stoul(argv[2]) : 2;
 		unsigned streams = argc > 3 ? std::stoul(argv[3]) : 1;
-		if (argc > 4 || !blocks || blocks > 64 || !repeats ||
-		    repeats > 20 || !streams || streams > 4) {
+		unsigned interval_ms = argc > 4 ? std::stoul(argv[4]) : 0;
+		if (argc > 5 || !blocks || blocks > 64 || !repeats ||
+		    repeats > 20 || !streams || streams > 4 || interval_ms > 1000) {
 			std::fprintf(
 				stderr,
-				"Usage: %s [blocks:1-64 [repeats:1-20 [streams:1-4]]]\n",
+				"Usage: %s [blocks:1-64 [repeats:1-20 [streams:1-4 [interval_ms:0-1000]]]]\n",
 				argv[0]);
 			return 2;
 		}
@@ -42,13 +45,19 @@ int main(int argc, char **argv)
 			check(hipMalloc(&device[s],
 					(n + 1) * sizeof(unsigned)));
 		}
-		for (unsigned r = 0; r < repeats; ++r)
+		for (unsigned r = 0; r < repeats; ++r) {
 			for (unsigned s = 0; s < streams; ++s) {
 				hipLaunchKernelGGL(bpftime_example_kernel,
 						   dim3(blocks), dim3(threads),
 						   0, queues[s], device[s], n);
 				check(hipGetLastError());
 			}
+			if (interval_ms && r + 1 < repeats) {
+				for (auto queue : queues)
+					check(hipStreamSynchronize(queue));
+				std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
+			}
+		}
 		for (unsigned s = 0; s < streams; ++s) {
 			check(hipStreamSynchronize(queues[s]));
 			std::vector<unsigned> result(n);

@@ -38,6 +38,7 @@
 #endif
 #ifdef BPFTIME_ENABLE_ROCM_ATTACH
 #include "rocm_attach_private_data.hpp"
+#include <linux/bpf.h>
 #endif
 
 extern "C" uint64_t bpftime_set_retval(uint64_t value);
@@ -400,6 +401,61 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 		auto &data = dynamic_cast<attach::rocm_attach_private_data &>(
 			*priv_data);
 		data.instructions = prog->get_insns();
+		data.maps.clear();
+		for (size_t pc = 0; pc < data.instructions.size(); ++pc) {
+			const auto &insn = data.instructions[pc];
+			if (insn.code != EBPF_OP_LDDW)
+				continue;
+			++pc;
+			if (insn.src_reg != 1)
+				continue;
+			if (std::any_of(data.maps.begin(), data.maps.end(),
+					[&](const auto &m) {
+						return m.fd == insn.imm;
+					}))
+				continue;
+			auto &shm = shm_holder.global_shared_memory;
+			auto *map = shm.is_map_fd(insn.imm) ?
+					    &std::get<bpf_map_handler>(
+						    shm.get_handler(insn.imm)) :
+					    nullptr;
+			if (!map ||
+			    map->type != bpf_map_type::BPF_MAP_TYPE_ARRAY ||
+			    map->get_key_size() != sizeof(uint32_t) ||
+			    (map->attr.flags &
+			     (BPF_F_RDONLY_PROG | BPF_F_WRONLY_PROG)))
+				return -ENOTSUP;
+			auto array = shm.retain_array_map(insn.imm);
+			if (!array)
+				return -ENOENT;
+			attach::rocm_map_binding binding{};
+			binding.fd = insn.imm;
+			binding.info.enabled = true;
+			binding.info.key_size = map->get_key_size();
+			binding.info.value_size = map->get_value_size();
+			binding.info.max_entries = map->get_max_entries();
+			binding.info.map_type = (int)map->type;
+			binding.info.extra_buffer = array->get_raw_data();
+			std::tie(binding.segment_base, binding.segment_size) =
+				shm.mapped_region();
+			binding.invoke = [array](unsigned op, uint32_t key,
+						 const void *value,
+						 uint64_t flags) -> uint64_t {
+				if (op == 1)
+					return reinterpret_cast<uint64_t>(
+						array->elem_lookup(&key));
+				errno = 0;
+				long result =
+					op == 2 ?
+						array->elem_update(&key, value,
+								   flags) :
+						array->elem_delete(&key);
+				return result < 0 ?
+					       -int64_t(errno ? errno : EIO) :
+					       result;
+			};
+			data.maps.push_back(std::move(binding));
+		}
 		attach_id = attach_impl->create_attach_with_ebpf_callback(
 			[](void *, size_t, uint64_t *) -> int { return 0; },
 			*priv_data, attach_type);

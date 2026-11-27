@@ -38,6 +38,7 @@ add_library(
     rocm_profiler.cpp
     rocm_instrumentation.cpp
     rocm_ebpf_compiler.cpp
+    rocm_helper_channel.cpp
     "${CMAKE_CURRENT_BINARY_DIR}/rocm_device_helpers.inc"
 )
 
@@ -47,7 +48,7 @@ add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rocm_device_helpers.bc"
       "--rocm-path=${BPFTIME_ROCM_ROOT}" "--hip-path=${BPFTIME_ROCM_ROOT}"
       -O2 -emit-llvm -c "${CMAKE_CURRENT_SOURCE_DIR}/device_helpers.hip"
       -o "${CMAKE_CURRENT_BINARY_DIR}/rocm_device_helpers.bc"
-    DEPENDS device_helpers.hip VERBATIM)
+    DEPENDS device_helpers.hip rocm_channel_abi.hpp VERBATIM)
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rocm_device_helpers.inc"
     COMMAND "${CMAKE_COMMAND}"
       "-DINPUT=${CMAKE_CURRENT_BINARY_DIR}/rocm_device_helpers.bc"
@@ -82,7 +83,7 @@ set_property(TARGET bpftime_rocm_attach_impl PROPERTY CXX_STANDARD 23)
 # needs RTTI for bpftime's attach_private_data interface.
 if(NOT LLVM_ENABLE_RTTI)
     set_source_files_properties(rocm_profiler.cpp rocm_instrumentation.cpp
-        rocm_ebpf_compiler.cpp PROPERTIES COMPILE_OPTIONS -fno-rtti)
+        rocm_ebpf_compiler.cpp rocm_helper_channel.cpp PROPERTIES COMPILE_OPTIONS -fno-rtti)
 endif()
 
 target_link_options(bpftime_rocm_attach_impl PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_rocm_attach_impl>" "-Wl,--no-whole-archive")

@@ -9,6 +9,19 @@ if(NOT LLVM_ENABLE_RTTI)
 endif()
 add_test(NAME rocm_ebpf_compiler COMMAND bpftime_rocm_ebpf_tests)
 
+# Explicit/manual target: the normal CTest suite does not require a GPU.
+set(channel_test "${CMAKE_CURRENT_BINARY_DIR}/rocm_channel_tests")
+add_custom_command(OUTPUT "${channel_test}"
+    COMMAND "${BPFTIME_ROCM_ROOT}/lib/llvm/bin/clang++" -x hip -std=c++17 -O2
+      "--offload-arch=${BPFTIME_LUTHIER_ARCH}"
+      "--rocm-path=${BPFTIME_ROCM_ROOT}" "--hip-path=${BPFTIME_ROCM_ROOT}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/channel_test.hip"
+      "-L${BPFTIME_ROCM_ROOT}/lib" "-Wl,-rpath,${BPFTIME_ROCM_ROOT}/lib"
+      -lamdhip64 -o "${channel_test}"
+    DEPENDS channel_test.hip ../device_helpers.hip ../rocm_channel_abi.hpp
+    VERBATIM)
+add_custom_target(bpftime_rocm_channel_tests DEPENDS "${channel_test}")
+
 add_library(bpftime_rocm_test_sdk SHARED mock_sdk.cpp)
 set_target_properties(bpftime_rocm_test_sdk PROPERTIES OUTPUT_NAME rocprofiler-sdk
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/mock-sdk")

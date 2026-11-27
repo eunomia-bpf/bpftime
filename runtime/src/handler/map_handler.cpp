@@ -833,6 +833,27 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	return 0;
 }
 
+std::shared_ptr<array_map_impl>
+bpf_map_handler::retain_array_map(managed_shared_memory &memory) const
+{
+	auto array = try_get_array_map_impl();
+	if (!array || !map_refcnt_ptr)
+		return {};
+	auto *refs = map_refcnt_ptr.get();
+	refs->fetch_add(1, std::memory_order_relaxed);
+	return { *array, [refs, &memory](array_map_impl *ptr) {
+			// Teardown may already have unmapped the process's SHM
+			// view.
+			if (!bpftime_global_shm_is_initialized())
+				return;
+			if (refs->fetch_sub(1, std::memory_order_acq_rel) ==
+			    1) {
+				memory.destroy_ptr(ptr);
+				memory.destroy_ptr(refs);
+			}
+		} };
+}
+
 void bpf_map_handler::map_free(managed_shared_memory &memory) const
 {
 	if (map_impl_ptr.get() == nullptr) {
