@@ -156,7 +156,9 @@ uint32_t lpm_trie_map_impl::new_node(const bpf_lpm_trie_key *key,
 	__atomic_store_n(&n->child[1], NIL, __ATOMIC_RELAXED);
 	__atomic_store_n(&n->prefixlen, prefixlen, __ATOMIC_RELAXED);
 	__atomic_store_n(&n->flags, value ? 0 : FLAG_IM, __ATOMIC_RELAXED);
-	std::memcpy(node_data(idx), key->data, _data_size);
+	uint8_t *dst_data = node_data(idx);
+	for (uint32_t i = 0; i < _data_size; ++i)
+		__atomic_store_n(&dst_data[i], key->data[i], __ATOMIC_RELAXED);
 	if (value)
 		std::memcpy(node_value(idx), value, _value_size);
 	return idx;
@@ -266,7 +268,9 @@ long lpm_trie_map_impl::update_locked(const bpf_lpm_trie_key *key,
 	uint32_t top = leaf;
 	if (idx != NIL && matchlen == key->prefixlen) {
 		// The new prefix covers idx: insert it as idx's parent.
-		node(leaf)->child[extract_bit(node_data(idx), matchlen)] = idx;
+		__atomic_store_n(
+			&node(leaf)->child[extract_bit(node_data(idx), matchlen)],
+			idx, __ATOMIC_RELAXED);
 	} else if (idx != NIL) {
 		// Split at matchlen with an intermediate node over both.
 		top = new_node(key, matchlen, nullptr);
@@ -276,8 +280,10 @@ long lpm_trie_map_impl::update_locked(const bpf_lpm_trie_key *key,
 			return -1;
 		}
 		const int bit = extract_bit(key->data, matchlen);
-		node(top)->child[bit] = leaf;
-		node(top)->child[!bit] = idx;
+		__atomic_store_n(&node(top)->child[bit], leaf,
+				 __ATOMIC_RELAXED);
+		__atomic_store_n(&node(top)->child[!bit], idx,
+				 __ATOMIC_RELAXED);
 	}
 	n_entries.fetch_add(1, std::memory_order_relaxed);
 	store(slot, top);
