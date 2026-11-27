@@ -48,14 +48,19 @@ struct CLI {
         var cli = CLI()
         var positional = [String]()
         var i = 0
+        func nextValue(for flag: String) -> String {
+            guard i + 1 < args.count else { fail("missing value for \(flag)") }
+            i += 1
+            return args[i]
+        }
         while i < args.count {
             switch args[i] {
             case "--vm-dir":
-                i += 1; cli.vmDir = args[i]
+                cli.vmDir = nextValue(for: "--vm-dir")
             case "--memory-gb":
-                i += 1; cli.memoryGb = UInt64(args[i]) ?? cli.memoryGb
+                cli.memoryGb = UInt64(nextValue(for: "--memory-gb")) ?? cli.memoryGb
             case "--cpus":
-                i += 1; cli.cpus = Int(args[i]) ?? cli.cpus
+                cli.cpus = Int(nextValue(for: "--cpus")) ?? cli.cpus
             default:
                 positional.append(args[i])
             }
@@ -70,6 +75,7 @@ struct Paths {
     let dir: URL
     var qcowImage: URL { dir.appendingPathComponent("noble-server-cloudimg-arm64.img") }
     var rawDisk: URL { dir.appendingPathComponent("disk.raw") }
+    var rawDiskTmp: URL { dir.appendingPathComponent("disk.raw.tmp") }
     var partialImage: URL { dir.appendingPathComponent("noble-server-cloudimg-arm64.img.partial") }
     var checksums: URL { dir.appendingPathComponent("SHA256SUMS") }
     var seedSrc: URL { dir.appendingPathComponent("seed") }
@@ -177,10 +183,19 @@ func ensureImage(_ paths: Paths) {
     // 16 GiB raw disk is sparse; cloud-init grows the root partition on boot.
     if !fm.fileExists(atPath: paths.rawDisk.path) {
         log("converting QCOW2 -> raw (one time)")
+        try? fm.removeItem(at: paths.rawDiskTmp)
         runProcess("/usr/bin/python3", [
             converterPath().path, paths.qcowImage.path,
-            paths.rawDisk.path, String(DISK_SIZE_BYTES),
+            paths.rawDiskTmp.path, String(DISK_SIZE_BYTES),
         ])
+        // Publish only after a complete conversion; an interrupted run must
+        // not leave a truncated disk.raw that later boots silently.
+        try? fm.removeItem(at: paths.rawDisk)
+        do {
+            try fm.moveItem(at: paths.rawDiskTmp, to: paths.rawDisk)
+        } catch {
+            fail("failed to publish converted disk: \(error)")
+        }
     }
 }
 
@@ -494,7 +509,7 @@ func cmdRun(_ paths: Paths, cli: CLI) {
     let sigTerm = makeSignalSource(SIGTERM, "SIGTERM")
     let sigInt = makeSignalSource(SIGINT, "SIGINT")
     withExtendedLifetime((sigTerm, sigInt, stateObservation)) {
-        RunLoop.main.run()
+        CFRunLoopRun()
     }
 }
 

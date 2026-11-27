@@ -56,12 +56,20 @@ def convert(src_path, dst_path, target_size):
                         break
                     out_off = done * cluster_size
                     done += 1
-                    # Compressed takes precedence: its low bits pack the
-                    # compressed length, so the zero flag is meaningless there.
+                    # Compressed takes precedence: a v3 compressed descriptor
+                    # packs the compressed extent length (in 512-byte sectors)
+                    # into the low (cluster_bits-8) bits; the host byte offset
+                    # occupies the higher bits and so supports >4 GiB images.
                     if l2_entry & QCOW_OFLAG_COMPRESSED:
-                        src.seek(l2_entry & 0xFFFFFFFF)
-                        data = zlib.decompressobj(-15).decompress(
-                            src.read(cluster_size * 2))
+                        sector_bits = cluster_bits - 8
+                        sector_mask = (1 << sector_bits) - 1
+                        comp_off = l2_entry & (L2_OFFSET_MASK & ~sector_mask)
+                        comp_len = ((l2_entry & sector_mask) + 1) * 512
+                        src.seek(comp_off)
+                        blob = src.read(comp_len)
+                        if len(blob) != comp_len:
+                            die(f"truncated compressed cluster {done - 1}")
+                        data = zlib.decompressobj(-15).decompress(blob)
                         if len(data) != cluster_size:
                             die(f"cluster {done - 1}: inflated "
                                 f"{len(data)} bytes, expected {cluster_size}")
@@ -70,6 +78,8 @@ def convert(src_path, dst_path, target_size):
                     else:
                         src.seek(l2_entry & L2_OFFSET_MASK)
                         data = src.read(cluster_size)
+                        if len(data) != cluster_size:
+                            die(f"truncated image: short cluster {done - 1}")
                     dst.seek(out_off)
                     dst.write(data)
 

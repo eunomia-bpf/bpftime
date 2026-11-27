@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -28,11 +29,20 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/types.h>
+#include <signal.h>
+#include <time.h>
 #include <unistd.h>
 
+#ifndef PIDMAP_DIR
 #define PIDMAP_DIR "/dev/shm/bpftime-macos-pidmap"
+#endif
 #define DEFAULT_PORT 49512
+#ifndef JSON_CAP
+#define JSON_CAP (1u << 20) /* max spawn-request JSON: 1 MiB */
+#endif
+#define RECV_JSON_MAX (1u << 20)  /* max host JSON frame: 1 MiB */
+#define RECV_BLOB_MAX (16u << 20) /* max host stdout blob: 16 MiB */
+#define IO_TIMEOUT_SEC 30         /* bounded socket waits */
 
 static int write_all(int fd, const void *buf, size_t len)
 {
@@ -58,7 +68,7 @@ static int read_all(int fd, void *buf, size_t len)
 		if (n <= 0) {
 			if (n < 0 && errno == EINTR)
 				continue;
-			return -1;
+			return -1; /* EOF, error, or SO_RCVTIMEO timeout */
 		}
 		p += n;
 		len -= (size_t)n;
@@ -79,25 +89,36 @@ static int send_frame(int fd, const char *json, const void *blob,
 	return 0;
 }
 
+/* Validate advertised lengths before allocating or receiving, so a hostile
+ * 0xFFFFFFFF length cannot wrap the allocation or drive a huge read. */
 static int recv_frame(int fd, char **json_out, void **blob_out,
 		      size_t *blob_len)
 {
 	uint32_t hdr[2];
 	if (read_all(fd, hdr, sizeof(hdr)) < 0)
 		return -1;
-	char *j = malloc(hdr[0] + 1);
-	void *b = hdr[1] ? malloc(hdr[1]) : NULL;
-	if (!j || (hdr[1] && !b))
+	if (hdr[0] > RECV_JSON_MAX || hdr[1] > RECV_BLOB_MAX)
 		return -1;
+	char *j = malloc((size_t)hdr[0] + 1);
+	void *b = hdr[1] ? malloc((size_t)hdr[1]) : NULL;
+	if (!j || (hdr[1] && !b)) {
+		free(j);
+		free(b);
+		return -1;
+	}
 	if (hdr[0] && read_all(fd, j, hdr[0]) < 0)
-		return -1;
+		goto fail;
 	j[hdr[0]] = '\0';
 	if (hdr[1] && read_all(fd, b, hdr[1]) < 0)
-		return -1;
+		goto fail;
 	*json_out = j;
 	*blob_out = b;
 	*blob_len = hdr[1];
 	return 0;
+fail:
+	free(j);
+	free(b);
+	return -1;
 }
 
 /* Minimal JSON field extraction, sufficient for the host's replies. */
@@ -139,6 +160,122 @@ static bool json_bool(const char *json, const char *key, bool dflt)
 	return dflt;
 }
 
+/* Bounded JSON buffer: every append is capacity-checked and sets err instead
+ * of advancing an offset past the allocation (which would underflow the
+ * remaining-size arithmetic and overflow the heap). */
+struct jsonbuf {
+	char *p;
+	size_t cap;
+	size_t off;
+	int err;
+};
+
+static void jb_put(struct jsonbuf *j, const char *s)
+{
+	size_t n;
+	if (j->err)
+		return;
+	n = strlen(s);
+	if (n >= j->cap - j->off) {
+		j->err = 1;
+		return;
+	}
+	memcpy(j->p + j->off, s, n);
+	j->off += n;
+	j->p[j->off] = '\0';
+}
+
+static void jb_printf(struct jsonbuf *j, const char *fmt, ...)
+{
+	va_list ap;
+	int r;
+	if (j->err)
+		return;
+	va_start(ap, fmt);
+	r = vsnprintf(j->p + j->off, j->cap - j->off, fmt, ap);
+	va_end(ap);
+	if (r < 0 || (size_t)r >= j->cap - j->off) {
+		j->err = 1;
+		return;
+	}
+	j->off += (size_t)r;
+}
+
+/* Append one fully-escaped JSON string body (without enclosing quotes):
+ * quotes, backslashes and every control character are encoded, so multiline
+ * environment values or control bytes in argv/cwd cannot break the frame. */
+static void jb_escape(struct jsonbuf *j, const char *s)
+{
+	static const char hexd[] = "0123456789abcdef";
+	if (j->err)
+		return;
+	for (const uint8_t *q = (const uint8_t *)s; *q; ++q) {
+		char out[8];
+		const char *e;
+		size_t n;
+		switch (*q) {
+		case '"':
+			e = "\\\"";
+			break;
+		case '\\':
+			e = "\\\\";
+			break;
+		case '\b':
+			e = "\\b";
+			break;
+		case '\f':
+			e = "\\f";
+			break;
+		case '\n':
+			e = "\\n";
+			break;
+		case '\r':
+			e = "\\r";
+			break;
+		case '\t':
+			e = "\\t";
+			break;
+		default:
+			if (*q < 0x20) {
+				out[0] = '\\';
+				out[1] = 'u';
+				out[2] = '0';
+				out[3] = '0';
+				out[4] = hexd[(*q >> 4) & 0xf];
+				out[5] = hexd[*q & 0xf];
+				out[6] = '\0';
+				e = out;
+			} else {
+				out[0] = (char)*q;
+				out[1] = '\0';
+				e = out;
+			}
+			break;
+		}
+		n = strlen(e);
+		if (n >= j->cap - j->off) {
+			j->err = 1;
+			return;
+		}
+		memcpy(j->p + j->off, e, n);
+		j->off += n;
+	}
+	j->p[j->off] = '\0';
+}
+
+/* Escape a fixed-length key without mutating the environment entry. */
+static void jb_escape_n(struct jsonbuf *j, const char *s, size_t len)
+{
+	char key[256];
+	if (len >= sizeof(key)) {
+		j->err = 1;
+		return;
+	}
+	memcpy(key, s, len);
+	key[len] = '\0';
+	jb_escape(j, key);
+}
+
 static int connect_host(void)
 {
 	const char *spec = getenv("BPFTIME_DARWIN_HOST");
@@ -165,6 +302,11 @@ static int connect_host(void)
 	int fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (fd < 0)
 		return -1;
+	/* Bound every wait so a bridge that accepts then stalls cannot hang the
+	 * invoking tool indefinitely; a timeout surfaces as a transport error. */
+	struct timeval tv = { .tv_sec = IO_TIMEOUT_SEC, .tv_usec = 0 };
+	setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+	setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 	struct sockaddr_in addr = { 0 };
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons((uint16_t)port);
@@ -176,36 +318,23 @@ static int connect_host(void)
 	return fd;
 }
 
-static size_t json_append_env(char *buf, size_t cap)
+static volatile sig_atomic_t cancel_requested;
+
+static void on_cancel(int sig)
 {
-	size_t off = strlen(buf);
-	off += (size_t)snprintf(buf + off, cap - off, ",\"env\":{");
-	extern char **environ;
-	bool first = true;
-	for (char **e = environ; *e; ++e) {
-		const char *eq = strchr(*e, '=');
-		if (!eq)
-			continue;
-		off += (size_t)snprintf(buf + off, cap - off,
-					"%s\"", first ? "" : ",");
-		first = false;
-		for (const char *q = *e; q < eq; ++q)
-			off += (size_t)snprintf(buf + off, cap - off,
-						"%c", *q);
-		off += (size_t)snprintf(buf + off, cap - off, "\":\"");
-		for (const char *q = eq + 1; *q; ++q) {
-			if (*q == '"' || *q == '\\')
-				off += (size_t)snprintf(buf + off, cap - off,
-							"\\");
-			off += (size_t)snprintf(buf + off, cap - off,
-						"%c", *q);
-		}
-		off += (size_t)snprintf(buf + off, cap - off, "\"");
-		if (off >= cap - 64)
-			break;
-	}
-	off += (size_t)snprintf(buf + off, cap - off, "}");
-	return off;
+	(void)sig;
+	cancel_requested = 1;
+}
+
+static void install_cancel_handlers(void)
+{
+	struct sigaction sa = { 0 };
+	sa.sa_handler = on_cancel;
+	sigemptyset(&sa.sa_mask);
+	sigaction(SIGINT, &sa, NULL);
+	sigaction(SIGTERM, &sa, NULL);
+	sigaction(SIGHUP, &sa, NULL);
+	signal(SIGPIPE, SIG_IGN);
 }
 
 int main(int argc, char **argv)
@@ -222,45 +351,60 @@ int main(int argc, char **argv)
 		perror("bpftime-macos-exec: connect darwin host");
 		return 126;
 	}
-	char *json = malloc(1u << 20);
-	if (!json)
-		return 126;
-	size_t cap = 1u << 20;
-	size_t off = (size_t)snprintf(
-		json, cap,
-		"{\"op\":\"spawn_cmd\",\"hold_at_entry\":true,\"cwd\":\"");
-	char cwd[4096];
-	if (getcwd(cwd, sizeof(cwd))) {
-		for (const char *q = cwd; *q; ++q) {
-			if (*q == '"' || *q == '\\')
-				off += (size_t)snprintf(json + off, cap - off,
-							"\\");
-			off += (size_t)snprintf(json + off, cap - off,
-						"%c", *q);
-		}
-	}
-	off += (size_t)snprintf(json + off, cap - off, "\",\"argv\":[");
-	for (int i = 1; i < argc; ++i) {
-		off += (size_t)snprintf(json + off, cap - off,
-					"%s\"", i == 1 ? "" : ",");
-		for (const char *q = argv[i]; *q; ++q) {
-			if (*q == '"' || *q == '\\')
-				off += (size_t)snprintf(json + off, cap - off,
-							"\\");
-			off += (size_t)snprintf(json + off, cap - off,
-						"%c", *q);
-		}
-		off += (size_t)snprintf(json + off, cap - off, "\"");
-	}
-	off += (size_t)snprintf(json + off, cap - off, "]");
-	off = json_append_env(json, cap);
-	off += (size_t)snprintf(json + off, cap - off,
-				",\"vm_pid\":%d}", (int)getpid());
 
-	if (send_frame(fd, json, NULL, 0) < 0) {
-		perror("bpftime-macos-exec: send spawn_cmd");
+	char *raw = malloc(JSON_CAP);
+	if (!raw)
+		return 126;
+	struct jsonbuf jb = { .p = raw, .cap = JSON_CAP, .off = 0, .err = 0 };
+	jb_put(&jb, "{\"op\":\"spawn_cmd\",\"hold_at_entry\":true,\"cwd\":\"");
+	char cwd[4096];
+	if (getcwd(cwd, sizeof(cwd)))
+		jb_escape(&jb, cwd);
+	jb_put(&jb, "\",\"argv\":[");
+	for (int i = 1; i < argc; ++i) {
+		if (i > 1)
+			jb_put(&jb, ",");
+		jb_put(&jb, "\"");
+		jb_escape(&jb, argv[i]);
+		jb_put(&jb, "\"");
+	}
+	jb_put(&jb, "],\"env\":{");
+	bool first = true;
+	extern char **environ;
+	for (char **e = environ; *e; ++e) {
+		const char *eq = strchr(*e, '=');
+		if (!eq)
+			continue;
+		if (!first)
+			jb_put(&jb, ",");
+		first = false;
+		jb_put(&jb, "\"");
+		/* key spans [*e, eq) and is not NUL-terminated in place */
+		jb_escape_n(&jb, *e, (size_t)(eq - *e));
+		jb_put(&jb, "\":\"");
+		jb_escape(&jb, eq + 1);
+		jb_put(&jb, "\"");
+	}
+	jb_put(&jb, "},\"vm_pid\":");
+	jb_printf(&jb, "%d", (int)getpid());
+	jb_put(&jb, "}");
+	if (jb.err) {
+		fprintf(stderr,
+			"bpftime-macos-exec: spawn request exceeds %u bytes\n",
+			JSON_CAP);
+		free(raw);
+		close(fd);
 		return 126;
 	}
+
+	if (send_frame(fd, raw, NULL, 0) < 0) {
+		perror("bpftime-macos-exec: send spawn_cmd");
+		free(raw);
+		close(fd);
+		return 126;
+	}
+	free(raw);
+
 	char *resp_json = NULL;
 	void *blob = NULL;
 	size_t blob_len;
@@ -268,6 +412,9 @@ int main(int argc, char **argv)
 	    !json_bool(resp_json, "ok", false)) {
 		fprintf(stderr, "bpftime-macos-exec: spawn rejected: %s\n",
 			resp_json ? resp_json : "(no response)");
+		free(resp_json);
+		free(blob);
+		close(fd);
 		return 126;
 	}
 	long spawn_id = json_int(resp_json, "spawn_id", -1);
@@ -277,21 +424,48 @@ int main(int argc, char **argv)
 	if (spawn_id < 0 || host_pid < 0)
 		return 126;
 
+	install_cancel_handlers();
+
+	/* The shared pidmap must stay writable for later non-sudo callers:
+	 * make it world-writable + sticky (like /tmp). Failure to record the
+	 * mapping means the bridge cannot target this workload, so cancel it. */
 	mkdir(PIDMAP_DIR, 0777);
+	chmod(PIDMAP_DIR, 01777);
 	char map_path[128];
 	snprintf(map_path, sizeof(map_path), "%s/%d", PIDMAP_DIR,
 		 (int)getpid());
 	int mfd = open(map_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-	if (mfd >= 0) {
-		char line[64];
-		int n = snprintf(line, sizeof(line), "%ld %ld\n", host_pid,
-				 spawn_id);
-		(void)write(mfd, line, (size_t)n);
+	if (mfd < 0 ||
+	    dprintf(mfd, "%ld %ld\n", host_pid, spawn_id) < 0) {
+		char kill[160];
+		snprintf(kill, sizeof(kill),
+			 "{\"op\":\"cmd_ctl\",\"spawn_id\":%ld,"
+			 "\"action\":\"kill\",\"sig\":%d}",
+			 spawn_id, SIGTERM);
+		(void)send_frame(fd, kill, NULL, 0);
 		close(mfd);
+		close(fd);
+		return 126;
 	}
+	close(mfd);
 
-	int exit_code = 0;
+	int exit_code = 126; /* failure unless an exited frame is received */
+	bool got_exit = false;
+	bool kill_sent = false;
 	for (;;) {
+		if (cancel_requested && !kill_sent) {
+			/* Forward Ctrl-C / termination to the native workload so
+			 * it does not outlive the interpreter or stay held. */
+			char kill[160];
+			snprintf(kill, sizeof(kill),
+				 "{\"op\":\"cmd_ctl\",\"spawn_id\":%ld,"
+				 "\"action\":\"kill\",\"sig\":%d}",
+				 spawn_id, SIGTERM);
+			if (send_frame(fd, kill, NULL, 0) < 0)
+				break;
+			kill_sent = true;
+			cancel_requested = 0;
+		}
 		char ctl[256];
 		snprintf(ctl, sizeof(ctl),
 			 "{\"op\":\"cmd_ctl\",\"spawn_id\":%ld,"
@@ -315,18 +489,21 @@ int main(int argc, char **argv)
 			}
 		}
 		bool exited = json_bool(cj, "exited", false);
-		exit_code = (int)json_int(cj, "exit_code", 0);
 		long term_sig = json_int(cj, "term_sig", 0);
-		free(cj);
-		free(cb);
 		if (exited) {
+			exit_code = (int)json_int(cj, "exit_code", 0);
 			if (term_sig)
 				exit_code = 128 + (int)term_sig;
-			break;
+			got_exit = true;
 		}
+		free(cj);
+		free(cb);
+		if (exited)
+			break;
 		usleep(20 * 1000);
 	}
 	unlink(map_path);
 	close(fd);
-	return exit_code & 0xff;
+	/* A lost bridge or malformed reply must never look like success. */
+	return got_exit ? (exit_code & 0xff) : 126;
 }

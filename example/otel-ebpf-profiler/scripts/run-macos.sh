@@ -82,10 +82,18 @@ cleanup() {
 	local status=$?
 	trap - EXIT INT TERM
 	[[ -n "${VICTIM_PID}" ]] && kill -9 "${VICTIM_PID}" 2>/dev/null || true
-	vssh "rm -f /dev/shm/${VM_SHM:-bpftime_otel_vm_none}* 2>/dev/null || true" 2>/dev/null || true
-	vssh "pkill -9 -f '[o]telcol-ebpf-profiler' 2>/dev/null || true" 2>/dev/null || true
+	vssh "pid=\$(cat '${GUEST_PIDFILE:-/dev/null/none}' 2>/dev/null); [ -n \"\$pid\" ] && kill -9 \"\$pid\" 2>/dev/null; rm -f '${GUEST_PIDFILE:-/dev/null/none}' /dev/shm/${VM_SHM:-bpftime_otel_vm_none}* 2>/dev/null || true" 2>/dev/null || true
 	[[ -n "${VM_COLLECTOR_LAUNCH_PID}" ]] && kill -9 "${VM_COLLECTOR_LAUNCH_PID}" 2>/dev/null || true
-	[[ -n "${HOST_PID}" ]] && kill -9 "${HOST_PID}" 2>/dev/null || true
+	# SIGTERM first so the host runs its destructor and releases its named
+	# shared-memory segment; SIGKILL only if it does not exit in time.
+	if [[ -n "${HOST_PID}" ]]; then
+		kill -TERM "${HOST_PID}" 2>/dev/null || true
+		for _ in $(seq 1 20); do
+			kill -0 "${HOST_PID}" 2>/dev/null || break
+			sleep 0.25
+		done
+		kill -9 "${HOST_PID}" 2>/dev/null || true
+	fi
 	wait 2>/dev/null || true
 	echo "logs: ${LOG_DIR}" >&2
 	exit "${status}"
@@ -123,9 +131,11 @@ echo "mode=macos-cross-end bridge=${GW_IP}:${PORT} host_shm=${HOST_SHM} log_dir=
 
 # 2. Start unmodified arm64 Linux OTel eBPF collector inside the VM.
 VM_SHM="bpftime_otel_vm_$$"
-vssh "pkill -9 -f '[o]telcol-ebpf-profiler' 2>/dev/null || true" 2>/dev/null || true
-vssh "rm -f /dev/shm/bpftime_otel_vm_* 2>/dev/null || true" 2>/dev/null || true
-vssh "env \
+GUEST_PIDFILE="/tmp/${VM_SHM}.pid"
+# Scope all guest cleanup to this run's unique SHM name and pidfile; never a
+# broad pkill or /dev/shm glob that could hit another active run.
+vssh "rm -f '${GUEST_PIDFILE}' /dev/shm/${VM_SHM}* 2>/dev/null || true" 2>/dev/null || true
+vssh "echo \$\$ > '${GUEST_PIDFILE}'; exec env \
 	BPFTIME_GO_SECCOMP=1 \
 	BPFTIME_DARWIN_HOST='${GW_IP}:${PORT}' \
 	BPFTIME_TARGET_OSX=1 \
@@ -176,9 +186,20 @@ MACOS_VICTIM_PID="${VICTIM_PID}"
 echo "native macOS Mach-O victim pid=${MACOS_VICTIM_PID}" >&2
 
 sleep "${RUN_SECONDS}"
-kill "${VICTIM_PID}" 2>/dev/null || true
-wait "${VICTIM_PID}" 2>/dev/null || true
+if kill -0 "${VICTIM_PID}" 2>/dev/null; then
+	kill -TERM "${VICTIM_PID}" 2>/dev/null || true
+fi
+wait "${VICTIM_PID}" 2>/dev/null
+victim_rc=$?
 VICTIM_PID=""
+# The runner deliberately stops the still-running victim after RUN_SECONDS,
+# so SIGTERM (143) or a clean exit are expected. Any other status means the
+# instrumented process crashed and must fail the run rather than print PASS.
+if [[ "${victim_rc}" -ne 0 && "${victim_rc}" -ne 143 ]]; then
+	echo "instrumented victim exited unexpectedly with status ${victim_rc}" >&2
+	tail -n 80 "${LOG_DIR}/victim.log" >&2 || true
+	exit 1
+fi
 sleep "${FLUSH_WAIT}"
 
 # 4. Assertions.

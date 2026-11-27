@@ -72,9 +72,15 @@ SSH_KEY="$(read_json_field ssh_key)"
 SSH_USER="$(read_json_field ssh_user)"
 
 chmod 0600 "$SSH_KEY" 2>/dev/null || true
+remote_cmd=""
+for a in "$@"; do
+	# Re-quote each argument so SSH's remote shell rebuilds the exact argv
+	# array instead of re-splitting spaces and shell metacharacters.
+	remote_cmd+=" $(printf '%q' "$a")"
+done
 exec ssh -i "$SSH_KEY" \
 	-o BatchMode=yes \
 	-o StrictHostKeyChecking=no \
 	-o UserKnownHostsFile=/dev/null \
 	-o ConnectTimeout=10 \
-	"${SSH_USER}@${IP}" "$@"
+	"${SSH_USER}@${IP}" "$remote_cmd"
