@@ -186,4 +186,17 @@ TEST_CASE("bpftime_hash_map basic operations", "[bpftime_hash_map]")
 		REQUIRE(map.elem_lookup(&key2) != nullptr);
 		REQUIRE(*(int64_t *)map.elem_lookup(&key2) == value2);
 	}
+
+	SECTION("Tombstone-free O(1) reuse under high delete churn")
+	{
+		for (int i = 0; i < 5000; ++i) {
+			int64_t v = i * 10;
+			REQUIRE(map.elem_update(&i, &v));
+			REQUIRE(map.elem_delete(&i));
+		}
+		int absent = 999999;
+		REQUIRE((map.get_elem_count() == 0 && !map.elem_lookup(&absent)));
+		for (int i = 0; i < (int)num_buckets; ++i)
+			REQUIRE(map.elem_update(&i, &absent));
+	}
 }

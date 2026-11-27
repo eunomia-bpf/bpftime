@@ -914,23 +914,26 @@ static void *lpm_test_command(void *arg)
 			       sizeof(uint32_t));
 			if (info->cmd == 0) {
 				uint32_t value = j;
-				if (info->map->map_update_elem(
-					    key_p, &value, 0, false) != 0) {
+				ret = info->map->map_update_elem(key_p, &value,
+								 0, false);
+				if (ret != 0 && ret != -EBUSY) {
 					info->ok = false;
 					break;
 				}
 			} else if (info->cmd == 1) {
 				errno = 0;
 				ret = info->map->map_delete_elem(key_p, false);
-				if (ret != 0 && errno != ENOENT) {
+				if (ret != 0 && ret != -EBUSY &&
+				    errno != ENOENT) {
 					info->ok = false;
 					break;
 				}
 			} else if (info->cmd == 2) {
-				errno = 0;
+				errno = EDEADLK;
 				const void *result = info->map->map_lookup_elem(
 					key_p, false);
-				if (result == nullptr && errno != ENOENT) {
+				if (result == nullptr && errno != ENOENT &&
+				    errno != EDEADLK) {
 					info->ok = false;
 					break;
 				}

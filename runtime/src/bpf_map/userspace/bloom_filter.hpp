@@ -62,8 +62,8 @@ class bloom_filter_map_impl {
 						unsigned int nr_hashes) const;
 
     public:
-	// Map handler should lock externally
-	const static bool should_lock = true;
+	// Lock-free atomic bit operations (matches kernel bloom_filter.c)
+	const static bool should_lock = false;
 
 	/**
 	 * @brief Construct a new bloom filter map impl object.
