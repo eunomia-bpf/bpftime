@@ -199,7 +199,7 @@ TEST_CASE("bpftime_hash_map basic operations", "[bpftime_hash_map]")
 		for (int i = 0; i < (int)num_buckets; ++i)
 			REQUIRE(map.elem_update(&i, &absent));
 	}
-	shm_remove::remove("bpftime_hash_map_test");
+	::shm_remove::remove("bpftime_hash_map_test");
 }
 
 #if defined(__linux__)
@@ -210,7 +210,7 @@ TEST_CASE("bpftime_hash_map recovers stripe after child dies mid-upsert or mid-e
 {
 	const std::string shm_name =
 		"bpftime_hmap_recover_" + std::to_string(getpid());
-	shm_remove remover(shm_name.c_str());
+	::shm_remove remover(shm_name.c_str());
 	managed_shared_memory segment(create_only, shm_name.c_str(), 1 << 20);
 	const long page_sz = sysconf(_SC_PAGESIZE);
 	REQUIRE(page_sz >= 4096);
@@ -262,7 +262,9 @@ TEST_CASE("bpftime_hash_map recovers stripe after child dies mid-upsert or mid-e
 	REQUIRE(waitpid(c2, &st2, 0) == c2);
 	REQUIRE(WIFSIGNALED(st2));
 
-	REQUIRE(map->erase(&k7, nullptr, true) == 0);
+	REQUIRE(map->erase(&k7, nullptr, true) == -1);
+	REQUIRE(errno == ENOENT);
+	REQUIRE(map->elem_lookup(&k7) == nullptr);
 	REQUIRE(map->get_elem_count() == 0);
 
 	// Verify all 4 preallocated slots remain reusable (zero leaked slots).
