@@ -2,6 +2,7 @@
 
 Newest first. Read before starting a change. A pull request that reverses an entry is a design problem until a maintainer decides again. Every entry quotes the maintainer verbatim; changing a decision means adding a new entry.
 
+
 - **2026-11-26: compile-time shared-memory type gate and split series for per-process handle tables** (#959, #987). Objects placed in `boost::interprocess::managed_shared_memory` go through `bpftime::shm_construct` / `bpftime::shm_find_or_construct` (`runtime/include/bpftime_shm_safe.hpp`), where `shm_safe_type<T>` enforces at compile time: no `virtual` functions/destructors or `vptr`, no raw/member pointers (`mmap` addresses, `CUcontext`/`CUstream` handles, host strings), no C++ references, and no process-local STL heap containers or `std::mutex`; SHM constructors take a non-copyable `shm_init_ctx` instead of storing `managed_shared_memory &`. Plain `int` OS file descriptors (`map_fd`, `pfd`) are forbidden in SHM by review rule. Per single-responsibility and anti-over-engineering rules, the work lands as a 3-PR series without speculative metaprogramming or open-addressed hash tables: (a) `#987` for the minimal compile-time gate, `shm_init_ctx`, removal of the 7 `virtual` map destructors, and `uintptr_t` CUDA response layout; (b) CPU kernel-user maps moved to a load-time-`pthread_atfork`, O(1) direct-indexed `.bss` slot table; (c) GPU/CUDA maps and `bpf_attach_ctx_cuda` separated for GPU CI.
   > 创建进程局部引用 这个事情 在 bpftime 里面要不要规定一下? 是不是很多问题来源于?
   >
@@ -14,6 +15,24 @@ Newest first. Read before starting a change. A pull request that reverses an ent
   > bpftime SHM 编译期类型安全 PR（已创建并 CI 全绿） 过大了? 过度设计? 你也看看 commet
   >
   > 去修, 你来修
+
+- **2026-11-26: single-file SHM lock gateway (`runtime/include/robust_shm_mutex.hpp`), no global lock on per-CPU or primary hash/array/bloom maps, explicit L0–L3 lock inventory, and mandatory approval for any lock change** (#958, #988, #990).
+  1. **Single lock file (`runtime/include/robust_shm_mutex.hpp`):** all cross-process shared-memory lock primitives, RAII guards, blocking-vs-`trylock` dispatch (`with_robust_shm_lock`), and skip counters live exclusively in `runtime/include/robust_shm_mutex.hpp`. Defining or calling raw cross-process locks (`pthread_mutex_*`, `pthread_spin_*`, `boost::interprocess::interprocess_*mutex`, custom spinlocks) or bespoke lock-policy wrappers outside `runtime/include/robust_shm_mutex.hpp` is forbidden.
+  2. **No global `map_lock` on per-CPU maps, fixed-slot/atomic maps, or `HASH` / `PERCPU_HASH`:** `PERCPU_ARRAY`, `PERCPU_HASH`, `ARRAY`, `PROG_ARRAY`, `PERF_EVENT_ARRAY`, `BLOOM_FILTER`, `RINGBUF`, and `HASH` must all keep `should_lock = false`. `PERCPU_HASH` shares `bpftime_hash_map`'s preallocated fixed-slot array (with Boost `unordered_map` and `key_templates` removed) so `lookup` and per-CPU in-place updates are lock-free and Four-Zeros-compliant.
+  3. **Approved L0–L3 lock layering inventory:**
+     - **L0 (lock-free atomics / fixed arrays / seqlock):** `epoch_state` seqlock, `atomic_pid_set`, `ARRAY`, `PERCPU_ARRAY`, `PROG_ARRAY`, `PERF_EVENT_ARRAY`, `BLOOM_FILTER`, `RINGBUF` consumer & submit paths, `HASH` & `PERCPU_HASH` `lookup` / iteration / per-CPU slice updates, and `software_perf_event_data` steady-state TLS shard cache;
+     - **L1 (short pointer-free SHM mutual exclusion via `robust_shm_mutex::lock_and_recover`):** `bpftime_shm::cpu_exec_locks` and `ringbuf::reserve_lock`;
+     - **L2 (poison-on-death `robust_shm_mutex` via `with_robust_shm_lock` — `try_lock` on `LD_PRELOAD` helper hot paths, blocking `lock` on control-plane/consumer paths):** `bpftime_hash_map` 64 sharded write stripes (`HASH` / `PERCPU_HASH` `update` & `delete`), `bpf_map_handler::map_lock` (`LRU_HASH`, `LPM_TRIE`, `QUEUE`, `STACK`, `STACK_TRACE`, `HASH_OF_MAPS`), and cold-start `software_perf_event_data::shard_lock`;
+     - **L3 (control-plane / process-local):** `shm_lifecycle_lock` (`flock` around `/dev/shm` create/destroy) and process-local `std::mutex` (`ctx_mutex`, `g_cuda_watcher_mutex`, GDRCopy mapping state).
+  4. **Explicit reason & approval gate:** adding any new lock, adding a new lock callsite outside the inventory above, or changing an existing lock's layer, granularity, or recovery policy requires an explicit reason recorded in `DECISIONS.md` and prior maintainer approval before merge.
+  > 我们要确保仓库里面加任何锁都需要有明确的原因记录和批准流程, 不然一直出错?
+  >
+  > 我们是不是锁需要有明确的分层, 半年前的基础上增量改进?
+  >
+  > 整体代码需要增加多少? 100 行以内, 包含测试搞定? 都放在一个文件里面, 禁止在这个文件之外加锁?
+  >
+  > 按你说的去都改掉. 批准把 PERCPU_HASH 统一收敛到 bpftime_hash_map 的预分配定长槽位数组上（净删掉 per_cpu_hash_map 里的 Boost 哈希表与 key_template. 就在这个 PR 里面改; 文档的也要改, per cpu 这种都不要全局锁
+
 
 - **2026-11-26: forbid speculative lifecycle/GC state machines, test-only control-plane/IPC backdoors, and parallel rewrites of idempotent paths; close `#971` into minimal `#970`** (#970, #971). Three forms of speculative bloat are banned across the codebase and treated as `over-engineering` in review:
   1. **No unrequested symmetric teardown/GC or hypothetical edge-case state machines** without a real production caller or reproduced failure (e.g. `#971`'s runtime SHM link-deletion teardown pass on host `dlopen()` and its heap-allocating `live_uprobe_targets` `std::set` for duplicate same-offset links);
