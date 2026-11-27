@@ -1,6 +1,6 @@
 // bpftime_vz.swift
 //
-// Lightweight ARM64 Linux VM manager for the bpftime macOS eBPF bridge.
+// Lightweight ARM64 Linux VM manager for the bpftime macOS remote bridge.
 // Boots an Ubuntu 24.04 (noble) arm64 cloud image under the macOS
 // Virtualization.framework:
 //   - NAT virtio networking; the guest IP and host gateway are recorded in
@@ -8,8 +8,11 @@
 //   - virtiofs share of the host /Users tagged "host_users", mounted at the
 //     identical guest path so Mach-O workload paths map 1:1
 //   - NoCloud seed.iso carrying an embedded SSH public key (no password)
-//   - EFI boot straight from the cloud image; efi-nvram.bin is recreated on
-//     every run so an ungraceful kill never leaves corrupted UEFI variables
+//   - Direct kernel boot (VZLinuxBootLoader) when <vm-dir>/vmlinuz and
+//     initrd.img are present, otherwise EFI boot with a recreated variable
+//     store so an ungraceful kill never leaves corrupted UEFI variables
+//   - An exclusive non-blocking flock on disk.raw.lock serializes runs so
+//     concurrent invocations can never double-mount and corrupt disk.raw
 //   - vCPU count pinned to the host logical CPU count so per-CPU BPF map
 //     slot counts match the Darwin host 1:1
 //
@@ -51,6 +54,7 @@ struct CLI {
         func nextValue(for flag: String) -> String {
             guard i + 1 < args.count else { fail("missing value for \(flag)") }
             i += 1
+            guard !args[i].isEmpty else { fail("empty value for \(flag)") }
             return args[i]
         }
         while i < args.count {
@@ -76,6 +80,9 @@ struct Paths {
     var qcowImage: URL { dir.appendingPathComponent("noble-server-cloudimg-arm64.img") }
     var rawDisk: URL { dir.appendingPathComponent("disk.raw") }
     var rawDiskTmp: URL { dir.appendingPathComponent("disk.raw.tmp") }
+    var runLock: URL { dir.appendingPathComponent("disk.raw.lock") }
+    var kernel: URL { dir.appendingPathComponent("vmlinuz") }
+    var initrd: URL { dir.appendingPathComponent("initrd.img") }
     var partialImage: URL { dir.appendingPathComponent("noble-server-cloudimg-arm64.img.partial") }
     var checksums: URL { dir.appendingPathComponent("SHA256SUMS") }
     var seedSrc: URL { dir.appendingPathComponent("seed") }
@@ -308,6 +315,28 @@ func recreateEfiStore(_ paths: Paths) -> VZEFIVariableStore {
     }
 }
 
+func makeBootLoader(_ paths: Paths) -> VZBootLoader {
+    let fm = FileManager.default
+    // Direct kernel boot when the operator drops a kernel/initrd pair into
+    // the VM directory; otherwise fall back to EFI with a clean variable
+    // store (the image ships the removable \EFI\BOOT\BOOTAA64.EFI loader).
+    if fm.fileExists(atPath: paths.kernel.path)
+        && fm.fileExists(atPath: paths.initrd.path) {
+        if #available(macOS 13.0, *) {
+            let loader = VZLinuxBootLoader(kernelURL: paths.kernel)
+            loader.initialRamdiskURL = paths.initrd
+            loader.commandLine =
+                "console=hvc0 root=LABEL=cloudimg-rootfs ro fsck.mode=force fsck.repair=yes"
+            log("direct kernel boot: \(paths.kernel.lastPathComponent) + \(paths.initrd.lastPathComponent)")
+            return loader
+        }
+        fail("direct kernel boot requires macOS 13 or newer; remove vmlinuz/initrd.img for EFI boot")
+    }
+    let loader = VZEFIBootLoader()
+    loader.variableStore = recreateEfiStore(paths)
+    return loader
+}
+
 func buildConfiguration(_ paths: Paths, cli: CLI) throws
     -> VZVirtualMachineConfiguration
 {
@@ -317,9 +346,7 @@ func buildConfiguration(_ paths: Paths, cli: CLI) throws
     platform.machineIdentifier = loadOrCreateMachineIdentifier(paths)
     config.platform = platform
 
-    let bootLoader = VZEFIBootLoader()
-    bootLoader.variableStore = recreateEfiStore(paths)
-    config.bootLoader = bootLoader
+    config.bootLoader = makeBootLoader(paths)
 
     config.cpuCount = cli.cpus
     let minMem = VZVirtualMachineConfiguration.minimumAllowedMemorySize
@@ -445,7 +472,24 @@ func cmdSetup(_ paths: Paths) {
     log("setup complete")
 }
 
+func acquireRunLock(_ paths: Paths) -> Int32 {
+    // Exclusive, non-blocking: a second `bpftime-vz run` must fail fast
+    // instead of double-mounting disk.raw and corrupting the guest image.
+    let fd = open(paths.runLock.path, O_CREAT | O_RDWR | O_CLOEXEC, 0o644)
+    if fd < 0 {
+        fail("cannot open lock \(paths.runLock.path): \(String(cString: strerror(errno)))")
+    }
+    if flock(fd, LOCK_EX | LOCK_NB) != 0 {
+        if errno == EWOULDBLOCK {
+            fail("another bpftime-vz run already holds \(paths.runLock.path)")
+        }
+        fail("flock \(paths.runLock.path) failed: \(String(cString: strerror(errno)))")
+    }
+    return fd
+}
+
 func cmdRun(_ paths: Paths, cli: CLI) {
+    let runLockFd = acquireRunLock(paths)
     cmdSetup(paths)
     let mac = stableMacAddress().string
     // buildConfiguration's validate() is Apple's host-support and
@@ -511,6 +555,7 @@ func cmdRun(_ paths: Paths, cli: CLI) {
     withExtendedLifetime((sigTerm, sigInt, stateObservation)) {
         CFRunLoopRun()
     }
+    close(runLockFd)
 }
 
 func cmdIp(_ paths: Paths) {

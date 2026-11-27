@@ -4,13 +4,14 @@
 # End-to-end rootless OpenTelemetry eBPF profiler on Apple Silicon macOS.
 #
 # Topology:
-#   ARM64 Linux VM (bpftime-vz)                    macOS host (native arm64)
-#   --------------------------------------------   ----------------------------------------
-#   otelcol-ebpf-profiler (unmodified ELF arm64)   bpftime-darwin-host (:PORT, Boost SHM)
-#     LD_PRELOAD=libbpftime-syscall-server.so  <->   synthesizes Mach-O/dyld stub ELFs,
-#     BPFTIME_GO_SECCOMP=1                           translates libc:{malloc,free} -> xzone
-#     BPFTIME_DARWIN_HOST=192.168.64.1:PORT        victim-macos (native Mach-O arm64)
-#     BPFTIME_TARGET_OSX=1                           DYLD_INSERT_LIBRARIES=libbpftime-agent.dylib
+#   ARM64 Linux VM (bpftime-vz)                       macOS host (native arm64)
+#   ---------------------------------------------    ----------------------------------------
+#   otelcol-ebpf-profiler (unmodified ELF arm64)      bpftime-remote-host (--bind 192.168.64.1, Boost SHM)
+#     LD_PRELOAD=libbpftime-syscall-server.so  <->     synthesizes Mach-O/dyld stub ELFs,
+#     BPFTIME_GO_SECCOMP=1                             translates libc:{malloc,free} -> xzone
+#     BPFTIME_REMOTE_HOST=192.168.64.1:PORT           gateway-only bind; 256-bit BPFTIME_REMOTE_TOKEN
+#     BPFTIME_REMOTE_TOKEN=<256-bit hex>              victim-macos (native Mach-O arm64)
+#                                                     DYLD_INSERT_LIBRARIES=libbpftime-agent.dylib
 
 set -euo pipefail
 
@@ -18,8 +19,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 EXAMPLE_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="${BPFTIME_REPO_ROOT:-$(cd -- "${SCRIPT_DIR}/../../.." && pwd)}"
 MACOS_BUILD_DIR="${BPFTIME_BUILD_DIR:-${REPO_ROOT}/build}"
-DARWIN_HOST_BIN="${DARWIN_HOST_BIN:-${MACOS_BUILD_DIR}/tools/bpftime_darwin_host/bpftime-darwin-host}"
-AGENT_DYLIB="${DARWIN_AGENT_DYLIB:-${MACOS_BUILD_DIR}/runtime/agent/libbpftime-agent.dylib}"
+REMOTE_HOST_BIN="${REMOTE_HOST_BIN:-${MACOS_BUILD_DIR}/tools/bpftime_remote_host/bpftime-remote-host}"
+AGENT_DYLIB="${REMOTE_AGENT_DYLIB:-${MACOS_BUILD_DIR}/runtime/agent/libbpftime-agent.dylib}"
 
 VM_DIR="${BPFTIME_VM_DIR:-$HOME/.bpftime/macos-vm}"
 if [[ ! -f "${VM_DIR}/vm-info.json" ]]; then
@@ -47,10 +48,10 @@ if [[ -z "${COLLECTOR}" ]]; then
 	exit 1
 fi
 
-if [[ -z "${BPFTIME_DARWIN_PORT:-}" ]]; then
+if [[ -z "${BPFTIME_REMOTE_PORT:-}" ]]; then
 	PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); print(s.getsockname()[1]); s.close()')"
 else
-	PORT="${BPFTIME_DARWIN_PORT}"
+	PORT="${BPFTIME_REMOTE_PORT}"
 fi
 RUN_SECONDS="${RUN_SECONDS:-14}"
 STARTUP_WAIT="${STARTUP_WAIT:-30}"
@@ -60,7 +61,7 @@ LOG_DIR="${LOG_DIR:-${EXAMPLE_DIR}/.run-logs/macos-$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "${LOG_DIR}"
 VICTIM_MACOS="${LOG_DIR}/victim-macos"
 
-for f in "${DARWIN_HOST_BIN}" "${AGENT_DYLIB}" "${CONFIG}"; do
+for f in "${REMOTE_HOST_BIN}" "${AGENT_DYLIB}" "${CONFIG}"; do
 	if [[ ! -e "${f}" ]]; then
 		echo "required host artifact not found: ${f}" >&2
 		exit 1
@@ -82,17 +83,28 @@ cleanup() {
 	local status=$?
 	trap - EXIT INT TERM
 	[[ -n "${VICTIM_PID}" ]] && kill -9 "${VICTIM_PID}" 2>/dev/null || true
+	# Scope guest teardown to this run's unique pidfile and SHM name; never a
+	# broad pkill or /dev/shm glob that could hit another active run.
 	vssh "pid=\$(cat '${GUEST_PIDFILE:-/dev/null/none}' 2>/dev/null); [ -n \"\$pid\" ] && kill -9 \"\$pid\" 2>/dev/null; rm -f '${GUEST_PIDFILE:-/dev/null/none}' /dev/shm/${VM_SHM:-bpftime_otel_vm_none}* 2>/dev/null || true" 2>/dev/null || true
 	[[ -n "${VM_COLLECTOR_LAUNCH_PID}" ]] && kill -9 "${VM_COLLECTOR_LAUNCH_PID}" 2>/dev/null || true
 	# SIGTERM first so the host runs its destructor and releases its named
-	# shared-memory segment; SIGKILL only if it does not exit in time.
+	# shared-memory segment; SIGKILL only if it does not exit in time, after
+	# which the POSIX shm object (materialized at /tmp/<name> on Darwin) is
+	# unlinked explicitly so no host segment survives repeated runs.
 	if [[ -n "${HOST_PID}" ]]; then
+		local forced=0
 		kill -TERM "${HOST_PID}" 2>/dev/null || true
 		for _ in $(seq 1 20); do
 			kill -0 "${HOST_PID}" 2>/dev/null || break
 			sleep 0.25
 		done
-		kill -9 "${HOST_PID}" 2>/dev/null || true
+		if kill -0 "${HOST_PID}" 2>/dev/null; then
+			kill -9 "${HOST_PID}" 2>/dev/null || true
+			forced=1
+		fi
+		if [[ "${forced}" -eq 1 && -n "${HOST_SHM}" ]]; then
+			rm -f "/tmp/${HOST_SHM}" 2>/dev/null || true
+		fi
 	fi
 	wait 2>/dev/null || true
 	echo "logs: ${LOG_DIR}" >&2
@@ -100,30 +112,44 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# 1. Start dedicated bpftime-darwin-host on macOS.
+# 1. Start dedicated bpftime-remote-host on macOS. Bind only to the VZ NAT
+#    gateway (never 0.0.0.0) and require a fresh per-run 256-bit session token
+#    on the first frame of every connection, so only this VM can drive the
+#    host's spawn/prog_load operations.
+TOKEN_FILE="${LOG_DIR}/remote.token"
+( umask 077; python3 -c 'import secrets; print(secrets.token_hex(32))' >"${TOKEN_FILE}" )
+chmod 0600 "${TOKEN_FILE}"
+REMOTE_TOKEN="$(tr -d '\r\n' <"${TOKEN_FILE}")"
+if [[ "${#REMOTE_TOKEN}" -lt 64 ]]; then
+	echo "failed to provision a 256-bit remote token in ${TOKEN_FILE}" >&2
+	exit 1
+fi
 BPFTIME_AGENT_DYLIB="${AGENT_DYLIB}" \
 BPFTIME_SHM_MEMORY_MB=1024 \
 BPFTIME_LOG_OUTPUT="${LOG_DIR}/bpftime-host-shm.log" \
 SPDLOG_LEVEL=info \
-	"${DARWIN_HOST_BIN}" -p "${PORT}" >"${LOG_DIR}/darwin-host.log" 2>&1 &
+	"${REMOTE_HOST_BIN}" -p "${PORT}" --bind "${GW_IP}" --token-file "${TOKEN_FILE}" \
+	>"${LOG_DIR}/remote-host.log" 2>&1 &
 HOST_PID=$!
 
 HOST_SHM=""
 for ((i = 0; i < 20; i++)); do
 	if ! kill -0 "${HOST_PID}" 2>/dev/null; then
-		cat "${LOG_DIR}/darwin-host.log" >&2 || true
-		echo "bpftime-darwin-host exited early" >&2
+		cat "${LOG_DIR}/remote-host.log" >&2 || true
+		echo "bpftime-remote-host exited early" >&2
 		exit 1
 	fi
-	HOST_SHM="$(sed -n 's/.*created SHM segment \(bpftime_darwin_shm_[0-9]*\).*/\1/p' "${LOG_DIR}/darwin-host.log" | head -n 1)"
+	# Match whatever SHM segment name the daemon logged without pinning a
+	# platform-specific prefix.
+	HOST_SHM="$(sed -n 's/.*created SHM segment \([A-Za-z0-9_]*\).*/\1/p' "${LOG_DIR}/remote-host.log" | head -n 1)"
 	if [[ -n "${HOST_SHM}" ]]; then
 		break
 	fi
 	sleep 0.2
 done
 if [[ -z "${HOST_SHM}" ]]; then
-	cat "${LOG_DIR}/darwin-host.log" >&2 || true
-	echo "failed to detect SHM segment from bpftime-darwin-host" >&2
+	cat "${LOG_DIR}/remote-host.log" >&2 || true
+	echo "failed to detect SHM segment from bpftime-remote-host" >&2
 	exit 1
 fi
 
@@ -137,8 +163,8 @@ GUEST_PIDFILE="/tmp/${VM_SHM}.pid"
 vssh "rm -f '${GUEST_PIDFILE}' /dev/shm/${VM_SHM}* 2>/dev/null || true" 2>/dev/null || true
 vssh "echo \$\$ > '${GUEST_PIDFILE}'; exec env \
 	BPFTIME_GO_SECCOMP=1 \
-	BPFTIME_DARWIN_HOST='${GW_IP}:${PORT}' \
-	BPFTIME_TARGET_OSX=1 \
+	BPFTIME_REMOTE_HOST='${GW_IP}:${PORT}' \
+	BPFTIME_REMOTE_TOKEN='${REMOTE_TOKEN}' \
 	BPFTIME_GLOBAL_SHM_NAME='${VM_SHM}' \
 	BPFTIME_SHM_MEMORY_MB=512 \
 	BPFTIME_MAX_FD_COUNT=65536 \
@@ -156,7 +182,7 @@ VM_COLLECTOR_LAUNCH_PID=$!
 for ((i = 0; i < STARTUP_WAIT; i++)); do
 	if ! kill -0 "${VM_COLLECTOR_LAUNCH_PID}" 2>/dev/null; then
 		tail -n 120 "${LOG_DIR}/collector.log" >&2 || true
-		tail -n 80 "${LOG_DIR}/darwin-host.log" >&2 || true
+		tail -n 80 "${LOG_DIR}/remote-host.log" >&2 || true
 		echo "VM OTel collector exited during startup" >&2
 		exit 1
 	fi
@@ -168,7 +194,7 @@ done
 
 if ! grep -Fq "Attached probes" "${LOG_DIR}/collector.log" 2>/dev/null; then
 	tail -n 120 "${LOG_DIR}/collector.log" >&2 || true
-	tail -n 80 "${LOG_DIR}/darwin-host.log" >&2 || true
+	tail -n 80 "${LOG_DIR}/remote-host.log" >&2 || true
 	echo "VM OTel collector did not finish attaching probes within ${STARTUP_WAIT}s" >&2
 	exit 1
 fi
@@ -203,13 +229,13 @@ fi
 sleep "${FLUSH_WAIT}"
 
 # 4. Assertions.
-if [[ "$(grep -Ec 'Created uprobe/uretprobe perf event handler, module name .*libsystem_malloc\.dylib' "${LOG_DIR}/darwin-host.log" || true)" -lt 2 ]]; then
-	echo "darwin-host did not create both libsystem_malloc.dylib uprobe handlers" >&2
-	tail -n 80 "${LOG_DIR}/darwin-host.log" >&2 || true
+if [[ "$(grep -Ec 'Created uprobe/uretprobe perf event handler, module name .*libsystem_malloc\.dylib' "${LOG_DIR}/remote-host.log" || true)" -lt 2 ]]; then
+	echo "remote-host did not create both libsystem_malloc.dylib uprobe handlers" >&2
+	tail -n 80 "${LOG_DIR}/remote-host.log" >&2 || true
 	exit 1
 fi
 
-if ! grep -Fq "Attach successfully" "${LOG_DIR}"/bpftime-*log* "${LOG_DIR}/darwin-host.log" 2>/dev/null; then
+if ! grep -Fq "Attach successfully" "${LOG_DIR}"/bpftime-*log* "${LOG_DIR}/remote-host.log" 2>/dev/null; then
 	echo "macOS libbpftime-agent.dylib did not attach inside native victim" >&2
 	tail -n 80 "${LOG_DIR}/bpftime-macos-victim.log" >&2 || true
 	exit 1
@@ -220,7 +246,7 @@ if ! grep -Fq "Profiles" "${LOG_DIR}/collector.log" ||
 	! grep -Fq "process.pid: Int(${MACOS_VICTIM_PID})" "${LOG_DIR}/collector.log"; then
 	echo "VM OTel collector did not export a profile for native macOS victim (pid=${MACOS_VICTIM_PID})" >&2
 	tail -n 120 "${LOG_DIR}/collector.log" >&2 || true
-	tail -n 80 "${LOG_DIR}/darwin-host.log" >&2 || true
+	tail -n 80 "${LOG_DIR}/remote-host.log" >&2 || true
 	exit 1
 fi
 

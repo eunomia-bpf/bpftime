@@ -1,17 +1,19 @@
 #!/bin/bash
 # SPDX-License-Identifier: MIT
 #
-# Register bpftime-macos-exec as the binfmt_misc interpreter for Mach-O 64
+# Register bpftime-remote-exec as the binfmt_misc interpreter for Mach-O 64
 # and fat universal binaries inside the bpftime ARM64 Linux VM. After this,
 # execve() of any /Users/... Mach-O program (e.g. bpftrace -c ./app) is
-# transparently serviced by the Darwin host through the bridge.
+# transparently serviced by the remote target through the BPFTIME_REMOTE_HOST
+# bridge. bpftime-remote-exec is built by the generic remote bridge component
+# (tools/bpftime_remote), not by this VM launcher.
 #
 # Run inside the VM (cloud-init grants the ubuntu user passwordless sudo):
-#   sudo ./register_binfmt.sh [path-to-bpftime-macos-exec]
+#   sudo ./register_binfmt.sh [path-to-bpftime-remote-exec]
 
 set -euo pipefail
 
-INTERP="${1:-/usr/local/bin/bpftime-macos-exec}"
+INTERP="${1:-/usr/local/bin/bpftime-remote-exec}"
 
 if [[ ! -x "$INTERP" ]]; then
 	echo "register_binfmt: interpreter not found or not executable: $INTERP" >&2

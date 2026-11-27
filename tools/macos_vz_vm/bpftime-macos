@@ -1,15 +1,21 @@
 #!/bin/bash
 # SPDX-License-Identifier: MIT
 #
-# bpftime-macos - run stock Linux eBPF tools (bpftrace, BCC/python3,
-# clang -target bpf + libbpf, ...) inside the ARM64 bpftime-vz VM against
-# native macOS processes through the bpftime-darwin-host bridge.
+# bpftime-macos - convenience Virtualization.framework wrapper for running
+# stock Linux eBPF tools (bpftrace, BCC/python3, clang -target bpf + libbpf,
+# ...) inside the ARM64 bpftime-vz VM against native macOS processes.
+#
+# All cross-machine traffic goes through the generic, platform-neutral
+# BPFTIME_REMOTE_HOST remote bridge (bpftime-remote-host + the syscall-server
+# remote_bridge client + bpftime-remote-exec). This script only prepares the
+# VM and exports the bridge environment; it implements no wire protocol.
 #
 # The wrapper makes sure, on every invocation:
 #   1. the bpftime-vz VM is reachable over SSH (it never starts/stops the VM);
 #   2. virtiofs (/Users) and binfmt_misc (Mach-O interpreter) are ready;
-#   3. the VM-side libbpftime-syscall-server.so is built (first run only);
-#   4. bpftime-darwin-host is listening on the macOS host;
+#   3. the VM-side libbpftime-syscall-server.so and bpftime-remote-exec are
+#      built (first run only);
+#   4. bpftime-remote-host is listening on the macOS host;
 # then it execs the requested tool in the VM with the bridge environment
 # preloaded and streams its live output back to this terminal.
 #
@@ -23,7 +29,7 @@
 #   BPFTIME_VM_DIR       VM state directory holding vm-info.json
 #                        (default: $HOME/.bpftime/macos-vm)
 #   BPFTIME_BUILD_DIR    host build directory (default: <repo>/build)
-#   BPFTIME_DARWIN_PORT  host TCP port (default 49512)
+#   BPFTIME_REMOTE_PORT  host TCP port (default 49512)
 
 set -euo pipefail
 
@@ -31,11 +37,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 VM_DIR="${BPFTIME_VM_DIR:-$HOME/.bpftime/macos-vm}"
 BUILD_DIR="${BPFTIME_BUILD_DIR:-$REPO_ROOT/build}"
-PORT="${BPFTIME_DARWIN_PORT:-49512}"
+PORT="${BPFTIME_REMOTE_PORT:-49512}"
 VM_BUILD_REL='bpftime-build'
 VM_SRC_REL='bpftime-src'
 STATE_DIR="${TMPDIR:-/tmp}/bpftime-macos"
-HOST_BIN="$BUILD_DIR/tools/bpftime_darwin_host/bpftime-darwin-host"
+HOST_BIN="$BUILD_DIR/tools/bpftime_remote_host/bpftime-remote-host"
 AGENT_DYLIB="$BUILD_DIR/runtime/agent/libbpftime-agent.dylib"
 
 FORCE_REBUILD=0
@@ -79,7 +85,8 @@ ssh "${SSH_OPTS[@]}" -q "$SSH_USER@$VM_IP" true ||
 	fail "VM $VM_IP unreachable over SSH; is 'bpftime-vz run' alive?"
 log "VM reachable at $VM_IP"
 
-# 2. Remote source/build, virtiofs, binfmt_misc readiness.
+# 2. Remote source/build, virtiofs, binfmt_misc readiness. The stock Ubuntu
+#    cloud image ships no development toolchain, so provision it explicitly.
 REMOTE_READY_SNIPPET="set -e
 BUILD=\"\$HOME/$VM_BUILD_REL\"
 SRC=\"\$HOME/$VM_SRC_REL\"
@@ -88,21 +95,23 @@ if ! command -v cmake >/dev/null || ! command -v ninja >/dev/null || ! command -
 	sudo apt-get update
 	sudo apt-get install -y build-essential cmake ninja-build rsync python3
 fi
-if [[ $FORCE_REBUILD -eq 1 || ! -f \"\$BUILD/runtime/syscall-server/libbpftime-syscall-server.so\" ]]; then
+if [[ $FORCE_REBUILD -eq 1 || ! -f \"\$BUILD/runtime/syscall-server/libbpftime-syscall-server.so\" || ! -x \"\$BUILD/tools/bpftime_remote/bpftime-remote-exec\" ]]; then
 	cmake -G Ninja -S \"\$SRC\" -B \"\$BUILD\" \\
 		-DBPFTIME_ENABLE_FRIDA=OFF -DBPFTIME_LLVM_JIT=OFF \\
 		-DBPFTIME_UBPF_JIT=ON -DBUILD_BPFTIME_DAEMON=OFF \\
 		-DENABLE_EBPF_VERIFIER=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo
-	ninja -C \"\$BUILD\" bpftime-syscall-server bpftime-macos-exec
-	sudo cp -f \"\$BUILD/tools/macos_vz_vm/bpftime-macos-exec\" /usr/local/bin/bpftime-macos-exec
-	sudo chmod +x /usr/local/bin/bpftime-macos-exec
+	ninja -C \"\$BUILD\" bpftime-syscall-server bpftime-remote-exec
+	sudo cp -f \"\$BUILD/tools/bpftime_remote/bpftime-remote-exec\" /usr/local/bin/bpftime-remote-exec
+	sudo chmod +x /usr/local/bin/bpftime-remote-exec
 fi
 mountpoint -q /Users || sudo mount -t virtiofs host_users /Users
 if [[ ! -e /proc/sys/fs/binfmt_misc/bpftime_macho64 ]]; then
-	sudo \"\$SRC/tools/macos_vz_vm/register_binfmt.sh\" /usr/local/bin/bpftime-macos-exec
+	sudo \"\$SRC/tools/macos_vz_vm/register_binfmt.sh\" /usr/local/bin/bpftime-remote-exec
 fi
 echo REMOTE_READY"
 
+# Capture and inspect the SSH status separately: a failed build/mount must
+# abort the wrapper instead of falling through as a non-matching string.
 REMOTE_OUT="$(vssh "$REMOTE_READY_SNIPPET" 2>&1)" ||
 	fail "remote readiness command failed: $REMOTE_OUT"
 if [[ "$REMOTE_OUT" == *MISSING_SRC* ]]; then
@@ -114,33 +123,47 @@ if [[ "$REMOTE_OUT" == *MISSING_SRC* ]]; then
 	REMOTE_OUT="$(vssh "$REMOTE_READY_SNIPPET" 2>&1)" ||
 		fail "remote readiness after source sync failed: $REMOTE_OUT"
 fi
-[[ "$REMOTE_OUT" == *REMOTE_READY ]] ||
+[[ "$REMOTE_OUT" == *REMOTE_READY* ]] ||
 	fail "guest did not reach READY state: $REMOTE_OUT"
 log "VM build, virtiofs and binfmt_misc ready"
 
-# 3. bpftime-darwin-host on the macOS host.
+# 3. bpftime-remote-host on the macOS host. Access control (the blocking
+#    review finding): the daemon is bound to the VZ NAT gateway address only,
+#    never 0.0.0.0, so no machine outside this local VM can reach it, and it
+#    requires a 256-bit session token on the first frame of every connection.
 [[ -x "$HOST_BIN" ]] || fail "missing $HOST_BIN; build the macOS targets first:
-  cmake --build $BUILD_DIR --target bpftime-agent bpftime-darwin-host"
+  cmake --build $BUILD_DIR --target bpftime-agent bpftime-remote-host"
 HOST_PIDFILE="$STATE_DIR/host.$PORT.pid"
+TOKEN_FILE="$STATE_DIR/remote.token"
+if [[ ! -s "$TOKEN_FILE" ]]; then
+	( umask 077; python3 -c 'import secrets; print(secrets.token_hex(32))' >"$TOKEN_FILE" )
+fi
+chmod 0600 "$TOKEN_FILE"
+REMOTE_TOKEN="$(tr -d '\r\n' <"$TOKEN_FILE")"
+[[ "${#REMOTE_TOKEN}" -ge 64 ]] ||
+	fail "could not provision a 256-bit remote token in $TOKEN_FILE"
+# The listener owns the gateway address, so probe that same address locally.
 host_port_open() {
-	bash -c "exec 3<>/dev/tcp/127.0.0.1/$PORT" 2>/dev/null
+	bash -c "exec 3<>/dev/tcp/$GW_IP/$PORT" 2>/dev/null
 }
 if ! host_port_open; then
-	log "starting bpftime-darwin-host on 0.0.0.0:$PORT"
-	BPFTIME_DARWIN_PORT="$PORT" BPFTIME_AGENT_DYLIB="$AGENT_DYLIB" \
-		nohup "$HOST_BIN" >"$STATE_DIR/host.$PORT.log" 2>&1 &
+	log "starting bpftime-remote-host bound to $GW_IP:$PORT (VZ NAT gateway; token required)"
+	BPFTIME_REMOTE_PORT="$PORT" BPFTIME_AGENT_DYLIB="$AGENT_DYLIB" \
+		nohup "$HOST_BIN" -p "$PORT" --bind "$GW_IP" \
+			--token-file "$TOKEN_FILE" \
+			>"$STATE_DIR/host.$PORT.log" 2>&1 &
 	echo $! >"$HOST_PIDFILE"
 	for _ in $(seq 1 60); do
 		host_port_open && break
 		sleep 0.5
 	done
-	host_port_open || fail "darwin-host did not open port $PORT; see $STATE_DIR/host.$PORT.log"
+	host_port_open || fail "remote-host did not open $GW_IP:$PORT; see $STATE_DIR/host.$PORT.log"
 else
-	log "darwin-host already listening on port $PORT"
+	log "remote-host already listening on $GW_IP:$PORT"
 fi
 # The VM must be able to reach the host across the VZ NAT gateway.
 vssh "bash -c 'exec 3<>/dev/tcp/$GW_IP/$PORT'" ||
-	fail "VM cannot reach darwin-host at $GW_IP:$PORT"
+	fail "VM cannot reach remote-host at $GW_IP:$PORT"
 log "bridge endpoint $GW_IP:$PORT reachable from VM"
 
 # 4. Build the remote run script. It is base64-encoded and decoded into a
@@ -167,11 +190,12 @@ fi
 # $HOME-relative LD_PRELOAD would resolve to a nonexistent /root path and ld.so
 # silently ignores the preload, disabling the whole bridge. In this unquoted
 # heredoc, \$ stays literal for remote expansion while local gateway/build
-# values are injected directly.
+# values are injected directly. The target OS is negotiated by the bridge's
+# hello handshake, so no target-OS variable is needed here.
 PAYLOAD="$(cat <<EOF
 export LD_PRELOAD="/home/$SSH_USER/$VM_BUILD_REL/runtime/syscall-server/libbpftime-syscall-server.so"
-export BPFTIME_DARWIN_HOST="$GW_IP:$PORT"
-export BPFTIME_TARGET_OSX=1
+export BPFTIME_REMOTE_HOST="$GW_IP:$PORT"
+export BPFTIME_REMOTE_TOKEN="$REMOTE_TOKEN"
 export BPFTIME_SHM_MEMORY_MB=1024
 export BPFTIME_VM_BUILD="/home/$SSH_USER/$VM_BUILD_REL"
 $GO_SECCOMP_LINE
