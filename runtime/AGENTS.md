@@ -21,13 +21,16 @@ Safety Redlines and Host-process safety invariants are binding here.
   `lookup` and sharded write stripes). `LPM_TRIE` also keeps
   `should_lock = false`: a preallocated node pool with lock-free `lookup` and
   one recover-and-continue write lock. `HASH_OF_MAPS` stores its 4-byte inner
-  map ids in `bpftime_hash_map` and also keeps `should_lock = false`. All cross-process shared-memory lock
-  primitives, RAII guards, and blocking-vs-`trylock` dispatch live
+  map ids in `bpftime_hash_map` and also keeps `should_lock = false`. All host
+  cross-process shared-memory lock primitives, RAII guards, and
+  blocking-vs-`trylock` dispatch live
   **exclusively** in `runtime/include/robust_shm_mutex.hpp`
-  (`bpftime::robust_shm_mutex`, `PTHREAD_PROCESS_SHARED | PTHREAD_MUTEX_ROBUST`):
-  forbid defining or calling raw `pthread_mutex_*`, `pthread_spinlock_t`,
-  `boost::interprocess::interprocess_*mutex`, custom spinlocks, or bespoke lock
-  wrappers outside `runtime/include/robust_shm_mutex.hpp`, and never nest
+  (`bpftime::robust_shm_mutex`, `PTHREAD_PROCESS_SHARED | PTHREAD_MUTEX_ROBUST`;
+  GPU/PTX device-side spinlocks in `attach/nv_attach_impl/trampoline/` are out
+  of scope): forbid defining or calling raw host `pthread_mutex_*`,
+  `pthread_spinlock_t`, `boost::interprocess::interprocess_*mutex`, custom
+  spinlocks, or bespoke lock wrappers outside
+  `runtime/include/robust_shm_mutex.hpp`, and never nest
   private inner locks inside L2 container maps (`LRU_HASH`,
   `QUEUE`, `STACK`, `STACK_TRACE`, where `should_lock = true`
   delegates locking solely to `bpf_map_handler::map_lock` via

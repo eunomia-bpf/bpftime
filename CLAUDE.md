@@ -257,15 +257,17 @@ same pull request.
    fixed atomic PID arrays, `epoch_state` seqlock, `ARRAY`, `PERCPU_ARRAY`,
    `PERF_EVENT_ARRAY`, `BLOOM_FILTER`, and lock-free `HASH` / `PERCPU_HASH`
    lookups; per-CPU maps and primary hash/array/bloom maps must never use a
-   global `map_lock`). All cross-process shared-memory lock primitives, guards,
-   and blocking-vs-`trylock` dispatch live exclusively in
+   global `map_lock`). All host cross-process shared-memory lock primitives,
+   guards, and blocking-vs-`trylock` dispatch live exclusively in
    `runtime/include/robust_shm_mutex.hpp` (`PTHREAD_PROCESS_SHARED |
-   PTHREAD_MUTEX_ROBUST`); defining or calling raw `pthread_mutex_*`,
-   `pthread_spinlock_t`, `boost::interprocess::interprocess_*mutex`, custom
-   spinlocks, or bespoke lock wrappers outside `runtime/include/robust_shm_mutex.hpp`
-   is forbidden. Adding any new lock, new lock callsite, or changing any
-   existing lock in the L0–L3 inventory requires recording the explicit reason
-   in `DECISIONS.md` and obtaining prior maintainer approval.
+   PTHREAD_MUTEX_ROBUST`; GPU/PTX device-side spinlocks in `nv_attach_impl`
+   trampoline code are out of scope); defining or calling raw host
+   `pthread_mutex_*`, `pthread_spinlock_t`,
+   `boost::interprocess::interprocess_*mutex`, custom spinlocks, or bespoke
+   lock wrappers outside `runtime/include/robust_shm_mutex.hpp` is forbidden.
+   Adding any new lock, new lock callsite, or changing any existing lock in the
+   L0–L3 inventory requires recording the explicit reason in `DECISIONS.md` and
+   obtaining prior maintainer approval.
 3. **No hijacking host global resources in constructors.** Never clobber
    host signal handlers (e.g. `SIGUSR1`); do not spawn unsolicited background
    threads under `LD_PRELOAD`; preserve `errno`; avoid reentrant `malloc`.
