@@ -2,6 +2,7 @@
 #define _BPFTIME_BASE_ATTACH_IMPL_HPP
 
 #include "spdlog/spdlog.h"
+#include <atomic>
 #include <cstdint>
 #include <cerrno>
 #include <functional>
@@ -27,11 +28,14 @@ inline thread_local unsigned current_thread_attach_callback_depth = 0;
 inline thread_local unsigned long long
 	current_thread_attach_event_generation = 0;
 inline thread_local bool current_thread_attach_callbacks_suppressed = false;
+inline std::atomic<bool> process_attach_callbacks_suppressed{ false };
 
 class attach_callback_scope {
     public:
 	attach_callback_scope()
-		: active(!current_thread_attach_callbacks_suppressed &&
+		: active(!process_attach_callbacks_suppressed.load(
+				 std::memory_order_acquire) &&
+			 !current_thread_attach_callbacks_suppressed &&
 			 current_thread_attach_callback_depth == 0)
 	{
 		if (active) {

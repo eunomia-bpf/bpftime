@@ -4,6 +4,7 @@
  * All rights reserved.
  */
 #include "bpftime_shm.hpp"
+#include "base_attach_impl.hpp"
 #include "handler/map_handler.hpp"
 #include "handler/memfd_handler.hpp"
 #include <ebpf-vm.h>
@@ -124,11 +125,16 @@ static __attribute__((destructor(65535))) void __destruct_shm()
 	// by an agent instance
 	if (bpftime::shm_holder.global_shared_memory.get_open_type() ==
 	    bpftime::shm_open_type::SHM_OPEN_ONLY) {
+		const int saved_errno = errno;
+		bpftime::attach::process_attach_callbacks_suppressed.store(
+			true, std::memory_order_seq_cst);
 		// Try our best to remove the current pid from alive agent's set
 		int self_pid = getpid();
 		// It doesn't matter if the current pid is not in the set
 		bpftime::shm_holder.global_shared_memory
 			.remove_pid_from_alive_agent_set(self_pid);
+		errno = saved_errno;
+		return;
 	}
 
 	bpftime_destroy_global_shm();

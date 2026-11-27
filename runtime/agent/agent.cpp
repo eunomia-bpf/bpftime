@@ -70,6 +70,7 @@ enum agent_init_state {
 	AGENT_UNINITIALIZED = 0,
 	AGENT_INITIALIZING = 1,
 	AGENT_READY = 2,
+	AGENT_EXITING = 3,
 };
 static int initialized = AGENT_UNINITIALIZED;
 
@@ -436,30 +437,50 @@ static void stop_syscall_dispatch_at_exit() noexcept
 	reset_syscall_trace_global();
 }
 
+static void quiesce_agent_for_process_exit() noexcept
+{
+	const int saved_errno = errno;
+	static std::atomic<bool> exit_quiesced{ false };
+	if (exit_quiesced.exchange(true, std::memory_order_acq_rel)) {
+		errno = saved_errno;
+		return;
+	}
+	bpftime::attach::process_attach_callbacks_suppressed.store(
+		true, std::memory_order_release);
+	stop_syscall_dispatch_at_exit();
+	if (global_ctx_constructed.load(std::memory_order_acquire) &&
+	    bpftime_global_shm_is_initialized()) {
+		try {
+			shm_holder.global_shared_memory
+				.remove_pid_from_alive_agent_set(getpid());
+		} catch (...) {
+		}
+	}
+	__atomic_store_n(&initialized, AGENT_EXITING, __ATOMIC_SEQ_CST);
+	errno = saved_errno;
+}
+
 syscall_hooker_func_t orig_hooker;
 
 static void bpftime_agent_main_impl(const gchar *data,
 				    gboolean *stay_resident);
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
 
-static void detach_agent_at_process_exit()
-{
-	(void)perform_detach();
-}
-
 static void initialize_preloaded_agent()
 {
 	int stay_resident = 0;
 	injected_with_frida = false;
 	bpftime_agent_main_impl("", &stay_resident);
-	if (std::atexit(detach_agent_at_process_exit) != 0)
+	if (std::atexit(quiesce_agent_for_process_exit) != 0)
 		SPDLOG_WARN("Unable to register bpftime process-exit cleanup");
 }
 
 extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
 {
 	initialize_preloaded_agent();
-	return orig_main_func(argc, argv, envp);
+	int rc = orig_main_func(argc, argv, envp);
+	quiesce_agent_for_process_exit();
+	return rc;
 }
 
 extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
@@ -864,7 +885,7 @@ static void bpftime_agent_main_impl(const gchar *data,
 			recorded_alive_pid = true;
 			shm_lock.reset();
 			start_agent_ipc_server_once();
-			std::atexit(stop_syscall_dispatch_at_exit);
+			std::atexit(quiesce_agent_for_process_exit);
 			/* We don't want our library to be unloaded after we return. */
 			*stay_resident = TRUE;
 			setenv("BPFTIME_USED", "1", 0);
