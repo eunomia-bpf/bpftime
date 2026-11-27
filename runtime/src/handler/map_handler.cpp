@@ -714,8 +714,8 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 			"Map {} (nv_gpu_shared_array_map_impl) shared array",
 			name.c_str());
 		map_impl_ptr = shm_construct<nv_gpu_shared_array_map_impl>(
-			memory, boost::interprocess::anonymous_instance, memory,
-			value_size, max_entries);
+			memory, boost::interprocess::anonymous_instance,
+			shm_init_ctx(memory), value_size, max_entries);
 		init_refcnt();
 		shm_holder.global_shared_memory.set_enable_mock(true);
 		return 0;
@@ -736,8 +736,9 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		SPDLOG_INFO("Map {} (array_map_kernel_gpu_impl) shared array",
 			    name.c_str());
 		map_impl_ptr = shm_construct<array_map_kernel_gpu_impl>(
-			memory, boost::interprocess::anonymous_instance, memory,
-			attr.kernel_bpf_map_id, value_size, max_entries);
+			memory, boost::interprocess::anonymous_instance,
+			shm_init_ctx(memory), attr.kernel_bpf_map_id,
+			value_size, max_entries);
 		init_refcnt();
 		shm_holder.global_shared_memory.set_enable_mock(true);
 		return 0;
