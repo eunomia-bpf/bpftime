@@ -67,6 +67,25 @@ static int map_lookup_and_delete(int fd, const void *key, void *value)
 	return bpf_call(BPF_MAP_LOOKUP_AND_DELETE_ELEM, &attr);
 }
 
+static int map_delete(int fd, const void *key)
+{
+	union bpf_attr attr;
+	memset(&attr, 0, sizeof(attr));
+	attr.map_fd = fd;
+	attr.key = (unsigned long long)(unsigned long)key;
+	return bpf_call(BPF_MAP_DELETE_ELEM, &attr);
+}
+
+static int map_get_next_key(int fd, const void *key, void *next_key)
+{
+	union bpf_attr attr;
+	memset(&attr, 0, sizeof(attr));
+	attr.map_fd = fd;
+	attr.key = (unsigned long long)(unsigned long)key;
+	attr.next_key = (unsigned long long)(unsigned long)next_key;
+	return bpf_call(BPF_MAP_GET_NEXT_KEY, &attr);
+}
+
 /* bpf(cmd, NULL, size): the kernel reads an all-zero attr when size is 0
  * and faults on the NULL pointer otherwise. cilium/ebpf probes bpf() with
  * bpf(0, NULL, 0); the call must fail while the caller keeps running. */
@@ -231,6 +250,110 @@ static int check_map_held_by_prog(void)
 	return 0;
 }
 
+static int check_map_flags_all(void)
+{
+	unsigned int key = 3, next_key = 0;
+	unsigned long long value = 0x123456789abcdef0ULL, out = 0;
+
+	/* Default fixed-size hash map */
+	int hash_ro = map_create(BPF_MAP_TYPE_HASH, sizeof(key), sizeof(value),
+				 16, BPF_F_RDONLY);
+	int hash_wo = map_create(BPF_MAP_TYPE_HASH, sizeof(key), sizeof(value),
+				 16, BPF_F_WRONLY);
+	if (hash_ro < 0 || hash_wo < 0) {
+		printf("hash_create_ok=0 errno=%d\n", errno);
+		return 0;
+	}
+	errno = 0;
+	printf("hash_ro_update_ret=%d\n",
+	       map_update(hash_ro, &key, &value, BPF_ANY));
+	printf("hash_ro_update_errno=%d\n", errno);
+	errno = 0;
+	printf("hash_ro_delete_ret=%d\n", map_delete(hash_ro, &key));
+	printf("hash_ro_delete_errno=%d\n", errno);
+	errno = 0;
+	printf("hash_ro_lad_ret=%d\n",
+	       map_lookup_and_delete(hash_ro, &key, &out));
+	printf("hash_ro_lad_errno=%d\n", errno);
+	errno = 0;
+	printf("hash_ro_lookup_ret=%d\n", map_lookup(hash_ro, &key, &out));
+	printf("hash_ro_lookup_errno=%d\n", errno);
+
+	printf("hash_wo_update_ret=%d\n",
+	       map_update(hash_wo, &key, &value, BPF_ANY));
+	errno = 0;
+	printf("hash_wo_lookup_ret=%d\n", map_lookup(hash_wo, &key, &out));
+	printf("hash_wo_lookup_errno=%d\n", errno);
+	errno = 0;
+	printf("hash_wo_next_ret=%d\n",
+	       map_get_next_key(hash_wo, NULL, &next_key));
+	printf("hash_wo_next_errno=%d\n", errno);
+	errno = 0;
+	printf("hash_wo_lad_ret=%d\n",
+	       map_lookup_and_delete(hash_wo, &key, &out));
+	printf("hash_wo_lad_errno=%d\n", errno);
+	printf("hash_wo_exist_ret=%d\n",
+	       map_update(hash_wo, &key, &value, BPF_EXIST));
+
+	/* Array map */
+	int arr_ro = map_create(BPF_MAP_TYPE_ARRAY, sizeof(key), sizeof(value),
+				4, BPF_F_RDONLY);
+	int arr_wo = map_create(BPF_MAP_TYPE_ARRAY, sizeof(key), sizeof(value),
+				4, BPF_F_WRONLY);
+	if (arr_ro < 0 || arr_wo < 0) {
+		printf("arr_create_ok=0 errno=%d\n", errno);
+		return 0;
+	}
+	errno = 0;
+	printf("arr_ro_update_ret=%d\n",
+	       map_update(arr_ro, &key, &value, BPF_ANY));
+	printf("arr_ro_update_errno=%d\n", errno);
+	printf("arr_ro_lookup_ret=%d\n", map_lookup(arr_ro, &key, &out));
+	printf("arr_wo_update_ret=%d\n",
+	       map_update(arr_wo, &key, &value, BPF_ANY));
+	errno = 0;
+	printf("arr_wo_lookup_ret=%d\n", map_lookup(arr_wo, &key, &out));
+	printf("arr_wo_lookup_errno=%d\n", errno);
+
+	/* Queue map */
+	int q_ro = map_create(BPF_MAP_TYPE_QUEUE, 0, sizeof(value), 4,
+			      BPF_F_RDONLY);
+	int q_wo = map_create(BPF_MAP_TYPE_QUEUE, 0, sizeof(value), 4,
+			      BPF_F_WRONLY);
+	if (q_ro < 0 || q_wo < 0) {
+		printf("q_create_ok=0 errno=%d\n", errno);
+		return 0;
+	}
+	errno = 0;
+	printf("q_ro_update_ret=%d\n", map_update(q_ro, NULL, &value, BPF_ANY));
+	printf("q_ro_update_errno=%d\n", errno);
+	errno = 0;
+	printf("q_ro_lad_ret=%d\n", map_lookup_and_delete(q_ro, NULL, &out));
+	printf("q_ro_lad_errno=%d\n", errno);
+	printf("q_wo_update_ret=%d\n", map_update(q_wo, NULL, &value, BPF_ANY));
+	errno = 0;
+	printf("q_wo_lookup_ret=%d\n", map_lookup(q_wo, NULL, &out));
+	printf("q_wo_lookup_errno=%d\n", errno);
+	errno = 0;
+	printf("q_wo_lad_ret=%d\n", map_lookup_and_delete(q_wo, NULL, &out));
+	printf("q_wo_lad_errno=%d\n", errno);
+
+	/* Map-in-map RDONLY must reject before inner-fd lookup/dup */
+	int mim_ro = map_create(BPF_MAP_TYPE_ARRAY_OF_MAPS, sizeof(unsigned int),
+				sizeof(unsigned int), 2, BPF_F_RDONLY);
+	if (mim_ro < 0) {
+		printf("mim_create_ok=0 errno=%d\n", errno);
+		return 0;
+	}
+	unsigned int outer_key = 0;
+	int bogus_inner_fd = 99999;
+	errno = 0;
+	printf("mim_ro_update_ret=%d\n",
+	       map_update(mim_ro, &outer_key, &bogus_inner_fd, BPF_ANY));
+	printf("mim_ro_update_errno=%d\n", errno);
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	if (argc != 2) {
@@ -250,6 +373,9 @@ int main(int argc, char **argv)
 	}
 	if (strcmp(argv[1], "map-held-by-prog") == 0) {
 		return check_map_held_by_prog();
+	}
+	if (strcmp(argv[1], "map-flags-all") == 0) {
+		return check_map_flags_all();
 	}
 	return 64;
 }

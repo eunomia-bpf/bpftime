@@ -461,6 +461,10 @@ long syscall_context::handle_map_update(int fd, const void *key,
 	     type != bpftime::bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS)) {
 		return bpftime_map_update_elem(fd, key, value, flags);
 	}
+	if (attr.flags & BPF_F_RDONLY) {
+		errno = EPERM;
+		return -1;
+	}
 
 	const int inner_fd = *static_cast<const int *>(value);
 	if (!bpftime_is_map_fd(inner_fd)) {
@@ -476,7 +480,9 @@ long syscall_context::handle_map_update(int fd, const void *key,
 		std::lock_guard lock(map_in_map_refs_mutex);
 		long result = bpftime_map_update_elem(fd, key, &owned_fd, flags);
 		if (result < 0) {
+			int saved_errno = errno;
 			release_owned_map_fd(owned_fd);
+			errno = saved_errno;
 			return result;
 		}
 		auto &refs = map_in_map_refs[fd];
