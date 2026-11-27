@@ -182,10 +182,6 @@ public:
 	// Attach link handlers that are not yet instantiated without resetting
 	// active links. Non-blocking; skips when ctx_mutex or SHM epoch is busy.
 	int attach_uninstantiated_handlers(const runtime_config &config);
-	bool has_pending_uprobes() const noexcept
-	{
-		return has_pending_uprobe.load(std::memory_order_acquire);
-	}
 	// Register an attach implementation. Attach manager will take its
 	// ownership. The third argument is a function that initializes a
 	// corresponding attach private data with the given string.
@@ -221,7 +217,6 @@ public:
 
 private:
 	mutable std::mutex ctx_mutex;
-	std::atomic<bool> has_pending_uprobe{ false };
 	// Stable shm epoch_seq last seen (even). Used to detect session switch and
 	// rebind GPU resources/maps accordingly.
 	std::uint64_t last_epoch_seq_seen = 0;

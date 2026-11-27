@@ -980,20 +980,15 @@ dlopen(const char *filename, int flags)
 	if (handle && filename && !(flags & RTLD_NOLOAD) && depth_before == 0 &&
 	    getpid() == init_pid &&
 	    __atomic_load_n(&initialized, __ATOMIC_ACQUIRE) == AGENT_READY &&
-	    global_ctx_constructed.load(std::memory_order_acquire) &&
-	    ctx_holder.ctx.has_pending_uprobes()) {
+	    global_ctx_constructed.load(std::memory_order_acquire)) {
 		try {
 			std::unique_lock<std::mutex> lock(detach_mutex,
 							  std::try_to_lock);
 			if (lock.owns_lock() && agent_session_attached) {
 				attach_callback_suppression_scope suppress;
-				shm_lifecycle_lock shm_lock(
-					get_global_shm_name(), true);
-				if (shm_lock.owns_lock()) {
-					(void)ctx_holder.ctx
-						.attach_uninstantiated_handlers(
-							bpftime_get_runtime_config());
-				}
+				(void)ctx_holder.ctx
+					.attach_uninstantiated_handlers(
+						bpftime_get_runtime_config());
 			}
 		} catch (...) {
 		}
