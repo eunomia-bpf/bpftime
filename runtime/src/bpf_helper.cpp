@@ -228,7 +228,10 @@ static bool probe_read_memory(void *dst, const void *src, size_t size)
 			memcpy(dst, window->storage + (addr - base), size);
 			return true;
 		}
-		// Keep widened reads inside this 4 KiB page. Larger reads stay exact.
+		// Only reads no larger than the configured window (capped at
+		// PROBE_READ_AHEAD_CAP = 512 bytes) are widened, and the widened
+		// fetch is clamped to the current 4 KiB page; larger reads take the
+		// exact path below.
 		const size_t offset = addr & 4095u;
 		if (size <= bytes && size <= 4096 - offset) {
 			const size_t behind = std::min({ backward ? bytes - pre : pre,
