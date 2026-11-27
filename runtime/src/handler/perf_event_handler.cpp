@@ -12,6 +12,7 @@
 #include <boost/interprocess/detail/segment_manager_helper.hpp>
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
 #include <cstring>
+#include "bpftime_shm_safe.hpp"
 #include <handler/perf_event_handler.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
@@ -314,9 +315,9 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 	boost::interprocess::managed_shared_memory &mem)
 	: type((int)bpf_event_type::PERF_TYPE_SOFTWARE),
 	  data(boost::interprocess::make_managed_shared_ptr(
-		  mem.construct<software_perf_event_data>(
-			  boost::interprocess::anonymous_instance)(
-			  cpu, config, sample_type, mem),
+		  shm_construct<software_perf_event_data>(
+			  mem, boost::interprocess::anonymous_instance, cpu,
+			  config, sample_type, mem),
 		  mem))
 
 {
