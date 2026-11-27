@@ -136,8 +136,10 @@ TEST_CASE("Hash-of-maps supports lock-free concurrent helper lookups",
 	hash_map_of_maps_impl map(segment, sizeof(uint32_t), 64, 0);
 
 	constexpr uint32_t steady_keys = 16;
+	constexpr int fd_tag_a = 0x12340100;
+	constexpr int fd_tag_b = 0x56780200;
 	for (uint32_t k = 0; k < steady_keys; ++k) {
-		int fd = static_cast<int>(100 + k);
+		int fd = fd_tag_a + static_cast<int>(k);
 		REQUIRE(map.elem_update(&k, &fd, 0) == 0);
 	}
 
@@ -156,23 +158,25 @@ TEST_CASE("Hash-of-maps supports lock-free concurrent helper lookups",
 				std::this_thread::yield();
 			while (!stop.load(std::memory_order_acquire)) {
 				for (uint32_t k = 0; k < steady_keys; ++k) {
+					int exp_a = fd_tag_a + static_cast<int>(k);
+					int exp_b = fd_tag_b + static_cast<int>(k);
 					auto val = reinterpret_cast<uintptr_t>(
 						map.elem_lookup(&k));
-					if (val != 100 + k && val != 200 + k)
+					if (val != static_cast<uintptr_t>(exp_a) &&
+					    val != static_cast<uintptr_t>(exp_b))
 						failures.fetch_add(1);
 					auto *sp = static_cast<int *>(
 						map.elem_lookup_userspace(&k));
 					if (sp == nullptr ||
-					    (*sp != static_cast<int>(100 + k) &&
-					     *sp != static_cast<int>(200 + k)))
+					    (*sp != exp_a && *sp != exp_b))
 						failures.fetch_add(1);
 				}
 				// Key toggled between 0 and nonzero: userspace
-				// snapshot must never return a pointer to zero.
+				// snapshot must never return 0 or a torn value.
 				uint32_t toggle_k = steady_keys;
 				if (auto *tp = static_cast<int *>(
 					    map.elem_lookup_userspace(&toggle_k))) {
-					if (*tp == 0)
+					if (*tp != 0x07070707)
 						failures.fetch_add(1);
 				}
 				// Churned keys 32..47 are deleted and reinserted
@@ -205,17 +209,15 @@ TEST_CASE("Hash-of-maps supports lock-free concurrent helper lookups",
 	while (ready.load(std::memory_order_acquire) < num_readers)
 		std::this_thread::yield();
 	start.store(true, std::memory_order_release);
-	while (reads.load(std::memory_order_acquire) == 0)
-		std::this_thread::yield();
 	for (int iter = 0; iter < 500; ++iter) {
 		for (uint32_t k = 0; k < steady_keys; ++k) {
-			int fd = (iter % 2 == 0) ? static_cast<int>(200 + k) :
-						   static_cast<int>(100 + k);
+			int fd = ((iter % 2 == 0) ? fd_tag_b : fd_tag_a) +
+				 static_cast<int>(k);
 			if (map.elem_update(&k, &fd, 0) != 0)
 				failures.fetch_add(1);
 		}
 		uint32_t toggle_k = steady_keys;
-		int toggle_fd = (iter % 2 == 0) ? 0 : 777;
+		int toggle_fd = (iter % 2 == 0) ? 0 : 0x07070707;
 		if (map.elem_update(&toggle_k, &toggle_fd, 0) != 0)
 			failures.fetch_add(1);
 		uint32_t churn_k = 32 + static_cast<uint32_t>(iter % 16);
@@ -224,6 +226,8 @@ TEST_CASE("Hash-of-maps supports lock-free concurrent helper lookups",
 		    map.elem_delete(&churn_k) != 0)
 			failures.fetch_add(1);
 	}
+	while (reads.load(std::memory_order_acquire) < 8)
+		std::this_thread::yield();
 	stop.store(true, std::memory_order_release);
 
 	for (auto &r : readers)
