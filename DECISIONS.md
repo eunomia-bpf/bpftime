@@ -3,6 +3,15 @@
 Newest first. Read before starting a change. A pull request that reverses an entry is a design problem until a maintainer decides again. Every entry quotes the maintainer verbatim; changing a decision means adding a new entry.
 
 
+- **2026-11-27: non-blocking `dlopen()` retry and `L3` lock callsites for unmapped uprobes** (#970). When a Frida uprobe target DSO is not mapped at startup (`-ENOENT`), `bpf_attach_ctx` sets an atomic `has_pending_uprobes` flag and retries pending uprobe links on outermost successful non-`RTLD_NOLOAD` host `dlopen()` calls in the initialized PID, clearing `has_pending_uprobes` once no unmapped uprobe links remain so steady-state `dlopen()` returns before taking any lock or opening any lock file. While `has_pending_uprobes` is set, the `dlopen()` path uses three non-blocking `L3` lock callsites: (1) `detach_mutex` (`std::try_to_lock`) to avoid racing session teardown; (2) shared `shm_lifecycle_lock` (`LOCK_SH | LOCK_NB`) so `dlopen()` never scans SHM across concurrent `syscall-server` segment recreation or final unlink; and (3) `ctx_mutex` (`std::try_to_lock`) to serialize `bpf_attach_ctx` state without blocking the host loader.
+  > 测试过了 pytorch 的 cache allocatpr 能 work? 去测一下, 可以的话就这样 pr
+  >
+  > 最好也要 alphasedd 测试一下
+  >
+  > alpohaseed merlin
+  >
+  > 帮忙修掉
+
 - **2026-11-26: compile-time shared-memory type gate and split series for per-process handle tables** (#959, #987). Objects placed in `boost::interprocess::managed_shared_memory` go through `bpftime::shm_construct` / `bpftime::shm_find_or_construct` (`runtime/include/bpftime_shm_safe.hpp`), where `shm_safe_type<T>` enforces at compile time: no `virtual` functions/destructors or `vptr`, no raw/member pointers (`mmap` addresses, `CUcontext`/`CUstream` handles, host strings), no C++ references, and no process-local STL heap containers or `std::mutex`; SHM constructors take a non-copyable `shm_init_ctx` instead of storing `managed_shared_memory &`. Plain `int` OS file descriptors (`map_fd`, `pfd`) are forbidden in SHM by review rule. Per single-responsibility and anti-over-engineering rules, the work lands as a 3-PR series without speculative metaprogramming or open-addressed hash tables: (a) `#987` for the minimal compile-time gate, `shm_init_ctx`, removal of the 7 `virtual` map destructors, and `uintptr_t` CUDA response layout; (b) CPU kernel-user maps moved to a load-time-`pthread_atfork`, O(1) direct-indexed `.bss` slot table; (c) GPU/CUDA maps and `bpf_attach_ctx_cuda` separated for GPU CI.
   > 创建进程局部引用 这个事情 在 bpftime 里面要不要规定一下? 是不是很多问题来源于?
   >

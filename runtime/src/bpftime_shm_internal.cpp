@@ -1079,7 +1079,8 @@ std::uint64_t bpftime_shm::read_stable_epoch_seq(int max_tries) const
 						  __ATOMIC_ACQUIRE);
 		if (a & 1U) {
 			// Writer in progress.
-			usleep(1000);
+			if (i + 1 < max_tries)
+				usleep(1000);
 			continue;
 		}
 		std::uint64_t b = __atomic_load_n(&epoch_state->epoch_seq,
