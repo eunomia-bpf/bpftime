@@ -165,6 +165,12 @@ fi
 vssh "bash -c 'exec 3<>/dev/tcp/$GW_IP/$PORT'" ||
 	fail "VM cannot reach remote-host at $GW_IP:$PORT"
 log "bridge endpoint $GW_IP:$PORT reachable from VM"
+# Stage the session token into a 0600 guest file over SSH stdin. The secret
+# then never appears in a local ssh argv, the guest login-shell command, or
+# the base64 runner; the runner reads it from this file and removes it.
+GUEST_TOKEN_FILE="/tmp/bpftime-macos.token.$(id -u)"
+printf '%s' "$REMOTE_TOKEN" |
+	vssh "umask 077; cat > '$GUEST_TOKEN_FILE'; chmod 600 '$GUEST_TOKEN_FILE'"
 
 # 4. Build the remote run script. It is base64-encoded and decoded into a
 #    temp file on the VM so that (a) sudo's env_reset/LD_PRELOAD blocklist
@@ -195,7 +201,7 @@ fi
 PAYLOAD="$(cat <<EOF
 export LD_PRELOAD="/home/$SSH_USER/$VM_BUILD_REL/runtime/syscall-server/libbpftime-syscall-server.so"
 export BPFTIME_REMOTE_HOST="$GW_IP:$PORT"
-export BPFTIME_REMOTE_TOKEN="$REMOTE_TOKEN"
+export BPFTIME_REMOTE_TOKEN="\$(cat '$GUEST_TOKEN_FILE')"; rm -f '$GUEST_TOKEN_FILE'
 export BPFTIME_SHM_MEMORY_MB=1024
 export BPFTIME_VM_BUILD="/home/$SSH_USER/$VM_BUILD_REL"
 $GO_SECCOMP_LINE

@@ -272,10 +272,14 @@ func writeSeed(_ paths: Paths, pubKey: String) {
       - systemctl enable --now Users.mount
       - sh -c 'echo bpftime-vz cloud-init done > /run/bpftime-vz.ready'
     """
-    try! metaData.write(to: paths.seedSrc.appendingPathComponent("meta-data"),
-                        atomically: true, encoding: .utf8)
-    try! userData.write(to: paths.seedSrc.appendingPathComponent("user-data"),
-                        atomically: true, encoding: .utf8)
+    do {
+        try metaData.write(to: paths.seedSrc.appendingPathComponent("meta-data"),
+                           atomically: true, encoding: .utf8)
+        try userData.write(to: paths.seedSrc.appendingPathComponent("user-data"),
+                           atomically: true, encoding: .utf8)
+    } catch {
+        fail("failed to write cloud-init seed under \(paths.seedSrc.path): \(error)")
+    }
     // NoCloud requires the ISO volume label CIDATA.
     try? fm.removeItem(at: paths.seedIso)
     runProcess("/usr/bin/hdiutil", [
@@ -299,7 +303,11 @@ func loadOrCreateMachineIdentifier(_ paths: Paths) -> VZGenericMachineIdentifier
         return ident
     }
     let ident = VZGenericMachineIdentifier()
-    try! ident.dataRepresentation.write(to: paths.machineId)
+    do {
+        try ident.dataRepresentation.write(to: paths.machineId)
+    } catch {
+        fail("failed to persist machine identifier \(paths.machineId.path): \(error)")
+    }
     return ident
 }
 
@@ -377,10 +385,15 @@ func buildConfiguration(_ paths: Paths, cli: CLI) throws
     config.directorySharingDevices = [fsDevice]
 
     let serial = VZVirtioConsoleDeviceSerialPortConfiguration()
-    FileManager.default.createFile(atPath: paths.serialLog.path, contents: nil)
+    guard FileManager.default.createFile(atPath: paths.serialLog.path, contents: nil),
+          let nullHandle = FileHandle(forReadingAtPath: "/dev/null"),
+          let serialLogHandle = FileHandle(forWritingAtPath: paths.serialLog.path)
+    else {
+        fail("cannot open serial log \(paths.serialLog.path)")
+    }
     serial.attachment = VZFileHandleSerialPortAttachment(
-        fileHandleForReading: FileHandle(forReadingAtPath: "/dev/null")!,
-        fileHandleForWriting: FileHandle(forWritingAtPath: paths.serialLog.path)!)
+        fileHandleForReading: nullHandle,
+        fileHandleForWriting: serialLogHandle)
     config.serialPorts = [serial]
 
     try config.validate()
@@ -457,9 +470,14 @@ func writeInfo(_ paths: Paths, ip: String, mac: String, gateway: String) {
         "host_users_path": HOST_USERS_PATH,
         "network": "nat",
     ]
-    let data = try! JSONSerialization.data(
-        withJSONObject: info, options: [.prettyPrinted, .sortedKeys])
-    try! data.write(to: paths.infoJson)
+    let data: Data
+    do {
+        data = try JSONSerialization.data(
+            withJSONObject: info, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: paths.infoJson)
+    } catch {
+        fail("failed to write \(paths.infoJson.path): \(error)")
+    }
     log("guest reachable at \(ip) (host gateway \(gateway)); info -> \(paths.infoJson.path)")
 }
 
@@ -580,7 +598,11 @@ try? FileManager.default.createDirectory(
 
 switch cli.subcommand {
 case "setup":
+    // Hold the same exclusive lock as `run` so a concurrent setup and run
+    // cannot convert/publish disk.raw and mutate the seed state together.
+    let setupLockFd = acquireRunLock(paths)
     cmdSetup(paths)
+    close(setupLockFd)
 case "run":
     cmdRun(paths, cli: cli)
 case "ip":

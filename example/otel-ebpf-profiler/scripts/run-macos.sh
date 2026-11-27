@@ -79,18 +79,32 @@ VM_SHM=""
 VM_COLLECTOR_LAUNCH_PID=""
 VICTIM_PID=""
 
+darwin_shm_unlink() {
+	# Darwin POSIX shared memory is a dedicated namespace, not ordinary
+	# /tmp files, so the named segment must be removed with shm_unlink(2).
+	python3 - "$1" <<'PY' 2>/dev/null || true
+import ctypes, sys
+name = sys.argv[1]
+if not name.startswith("/"):
+    name = "/" + name
+libc = ctypes.CDLL("libSystem.B.dylib", use_errno=True)
+libc.shm_unlink(name.encode())
+PY
+}
+
 cleanup() {
 	local status=$?
 	trap - EXIT INT TERM
 	[[ -n "${VICTIM_PID}" ]] && kill -9 "${VICTIM_PID}" 2>/dev/null || true
-	# Scope guest teardown to this run's unique pidfile and SHM name; never a
-	# broad pkill or /dev/shm glob that could hit another active run.
-	vssh "pid=\$(cat '${GUEST_PIDFILE:-/dev/null/none}' 2>/dev/null); [ -n \"\$pid\" ] && kill -9 \"\$pid\" 2>/dev/null; rm -f '${GUEST_PIDFILE:-/dev/null/none}' /dev/shm/${VM_SHM:-bpftime_otel_vm_none}* 2>/dev/null || true" 2>/dev/null || true
+	# Scope guest teardown to this run's exact pidfile, token file, and SHM
+	# name. No wildcard: a PID-prefix glob could match another active run's
+	# segment (e.g. bpftime_otel_vm_123 vs bpftime_otel_vm_1234).
+	vssh "pid=\$(cat '${GUEST_PIDFILE:-/dev/null/none}' 2>/dev/null); [ -n \"\$pid\" ] && kill -9 \"\$pid\" 2>/dev/null; rm -f '${GUEST_PIDFILE:-/dev/null/none}' '${GUEST_TOKEN_FILE:-/dev/null/none}' '/dev/shm/${VM_SHM:-bpftime_otel_vm_none}' 2>/dev/null || true" 2>/dev/null || true
 	[[ -n "${VM_COLLECTOR_LAUNCH_PID}" ]] && kill -9 "${VM_COLLECTOR_LAUNCH_PID}" 2>/dev/null || true
 	# SIGTERM first so the host runs its destructor and releases its named
-	# shared-memory segment; SIGKILL only if it does not exit in time, after
-	# which the POSIX shm object (materialized at /tmp/<name> on Darwin) is
-	# unlinked explicitly so no host segment survives repeated runs.
+	# shared-memory segment; SIGKILL only if it does not exit in time. A
+	# SIGKILL bypasses the destructor, so the surviving POSIX shm object must
+	# be removed explicitly with shm_unlink(2), not by deleting a /tmp path.
 	if [[ -n "${HOST_PID}" ]]; then
 		local forced=0
 		kill -TERM "${HOST_PID}" 2>/dev/null || true
@@ -103,7 +117,7 @@ cleanup() {
 			forced=1
 		fi
 		if [[ "${forced}" -eq 1 && -n "${HOST_SHM}" ]]; then
-			rm -f "/tmp/${HOST_SHM}" 2>/dev/null || true
+			darwin_shm_unlink "${HOST_SHM}"
 		fi
 	fi
 	wait 2>/dev/null || true
@@ -158,13 +172,16 @@ echo "mode=macos-cross-end bridge=${GW_IP}:${PORT} host_shm=${HOST_SHM} log_dir=
 # 2. Start unmodified arm64 Linux OTel eBPF collector inside the VM.
 VM_SHM="bpftime_otel_vm_$$"
 GUEST_PIDFILE="/tmp/${VM_SHM}.pid"
-# Scope all guest cleanup to this run's unique SHM name and pidfile; never a
-# broad pkill or /dev/shm glob that could hit another active run.
-vssh "rm -f '${GUEST_PIDFILE}' /dev/shm/${VM_SHM}* 2>/dev/null || true" 2>/dev/null || true
-vssh "echo \$\$ > '${GUEST_PIDFILE}'; exec env \
+GUEST_TOKEN_FILE="/tmp/${VM_SHM}.token"
+# Scope all guest cleanup to this run's exact SHM name, pidfile and token;
+# never a broad pkill or /dev/shm glob that could hit another active run.
+vssh "rm -f '${GUEST_PIDFILE}' '${GUEST_TOKEN_FILE}' '/dev/shm/${VM_SHM}' 2>/dev/null || true" 2>/dev/null || true
+# Deliver the token over the SSH channel on stdin into a 0600 guest file, so
+# the secret never appears in a local ssh argv or the guest login-shell argv.
+printf '%s' "${REMOTE_TOKEN}" | vssh "umask 077; cat > '${GUEST_TOKEN_FILE}'; chmod 600 '${GUEST_TOKEN_FILE}'"
+vssh "echo \$\$ > '${GUEST_PIDFILE}'; export BPFTIME_REMOTE_TOKEN=\"\$(cat '${GUEST_TOKEN_FILE}')\"; exec env \
 	BPFTIME_GO_SECCOMP=1 \
 	BPFTIME_REMOTE_HOST='${GW_IP}:${PORT}' \
-	BPFTIME_REMOTE_TOKEN='${REMOTE_TOKEN}' \
 	BPFTIME_GLOBAL_SHM_NAME='${VM_SHM}' \
 	BPFTIME_SHM_MEMORY_MB=512 \
 	BPFTIME_MAX_FD_COUNT=65536 \
@@ -215,8 +232,13 @@ sleep "${RUN_SECONDS}"
 if kill -0 "${VICTIM_PID}" 2>/dev/null; then
 	kill -TERM "${VICTIM_PID}" 2>/dev/null || true
 fi
-wait "${VICTIM_PID}" 2>/dev/null
-victim_rc=$?
+# `wait` is the condition of an `if` so a non-zero (the deliberate SIGTERM,
+# 128+15=143) cannot trip `set -e` before victim_rc is captured and checked.
+if wait "${VICTIM_PID}" 2>/dev/null; then
+	victim_rc=0
+else
+	victim_rc=$?
+fi
 VICTIM_PID=""
 # The runner deliberately stops the still-running victim after RUN_SECONDS,
 # so SIGTERM (143) or a clean exit are expected. Any other status means the
