@@ -294,9 +294,13 @@ TEST_CASE(
 	REQUIRE(read_map_value(MAP_A_FD) == 1);
 
 	// Register the second uprobe link AFTER the child has already finished
-	// startup with zero startup -ENOENT uprobes.
+	// startup with zero startup -ENOENT uprobes, alongside an absent DSO
+	// uprobe whose in-memory check must stay non-fatal.
 	REQUIRE(create_array_map(MAP_B_FD, "dlopen_post_map_b") >= 0);
 	REQUIRE(create_hit_prog(PROG_B_FD, MAP_B_FD, "dlopen_post_prog_b") >= 0);
+	create_uprobe_link(PROG_B_FD,
+			   "/nonexistent/bpftime_missing_optional_target.so",
+			   0x10);
 	create_uprobe_link(PROG_B_FD, late_sym.path.c_str(), late_sym.offset);
 
 	char cmd = 'l';

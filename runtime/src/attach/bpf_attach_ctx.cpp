@@ -211,21 +211,20 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 int bpf_attach_ctx::attach_uninstantiated_handlers(const runtime_config &config)
 {
 	std::unique_lock<std::mutex> lock(ctx_mutex, std::try_to_lock);
+	if (!lock.owns_lock())
+		return 0;
+	shm_lifecycle_lock shm_lock(get_global_shm_name(), true);
+	if (!shm_lock.owns_lock())
+		return 0;
+	const std::uint64_t s =
+		shm_holder.global_shared_memory.read_stable_epoch_seq(1);
+	if (s == BPFTIME_EPOCH_SEQ_UNSTABLE ||
+	    (s != BPFTIME_EPOCH_SEQ_MISSING && s != last_epoch_seq_seen))
+		return 0;
 	const handler_manager *manager =
-		lock.owns_lock() ?
-			shm_holder.global_shared_memory.get_manager() :
-			nullptr;
+		shm_holder.global_shared_memory.get_manager();
 	if (!manager)
 		return 0;
-	auto epoch_ok = [&]() noexcept {
-		const std::uint64_t s =
-			shm_holder.global_shared_memory.read_stable_epoch_seq(1);
-		return s != BPFTIME_EPOCH_SEQ_UNSTABLE &&
-		       (s == BPFTIME_EPOCH_SEQ_MISSING || s == last_epoch_seq_seen);
-	};
-	if (!epoch_ok())
-		return 0;
-	std::optional<shm_lifecycle_lock> shm_lock;
 	for (int i = 0; i < (int)manager->size(); i++) {
 		if (!manager->is_allocated(i) ||
 		    instantiated_handlers.contains(i) ||
@@ -259,11 +258,6 @@ int bpf_attach_ctx::attach_uninstantiated_handlers(const runtime_config &config)
 			    !impl_it->second.first->is_module_mapped(
 				    uprobe_data._module_name.c_str()))
 				continue;
-		}
-		if (!shm_lock) {
-			shm_lock.emplace(get_global_shm_name(), true);
-			if (!shm_lock->owns_lock() || !epoch_ok())
-				return 0;
 		}
 		std::set<int> stk;
 		(void)instantiate_handler_at(manager, i, stk, config, false);

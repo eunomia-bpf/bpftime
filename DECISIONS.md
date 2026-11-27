@@ -47,6 +47,10 @@ Newest first. Read before starting a change. A pull request that reverses an ent
   > 解释一下, 你这个做法本质上是把 bpftime 转化成了 remote 的?
   >
   > 那我们要改名, 确保这个 remote 机制是通用的 remote 机制? 也就是trace 别的机器也行?
+- **2026-11-27: hold shared `shm_lifecycle_lock` across `dlopen()` handler scan and use in-memory `dl_iterate_phdr` for `is_module_mapped()`** (#1018 follow-up; amends deferred-lock note below). While scanning shared `manager` handlers inside `attach_uninstantiated_handlers()`, shared objects (`uprobe_perf_event_data::_module_name`) can be destroyed concurrently by `begin_new_session()` (`syscall-server`), so `shm_lifecycle_lock` (`LOCK_SH | LOCK_NB`) must be acquired before checking `epoch_seq` and dereferencing SHM handlers. On Linux, `frida_attach_impl::is_module_mapped()` queries `dl_iterate_phdr` in memory (`0` `/proc/self/maps` reads and `0` GLib hash-table allocations) instead of `gum_module_find_base_address()`.
+  > 1016可以精简一下
+  >
+  > 删掉 bpf_attach_ctx.hpp 的 has_pending_uprobe 闩锁
 
 - **2026-11-27: remove `has_pending_uprobe` latch and defer `shm_lifecycle_lock` on `dlopen()`** (#970 follow-up; closes #1016). Delete the process-local `has_pending_uprobe` / `has_pending_uprobes()` latch introduced in #970 instead of adding a shared-memory generation counter (#1016): a boolean set only from startup `-ENOENT` misses uprobe links registered in SHM after target startup. On outermost successful non-`RTLD_NOLOAD` host `dlopen()`, the agent takes only non-blocking process-local `try_to_lock(detach_mutex)` + `try_to_lock(ctx_mutex)`, skips already-instantiated and unmapped DSOs (`is_module_mapped`) in memory (`0` syscalls, `0` heap allocations), and lazily acquires shared `shm_lifecycle_lock` (`LOCK_SH | LOCK_NB`) only when an uninstantiated mapped uprobe actually needs to be attached.
 

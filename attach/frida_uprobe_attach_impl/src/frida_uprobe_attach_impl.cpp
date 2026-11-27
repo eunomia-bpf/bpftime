@@ -11,10 +11,13 @@
 #include <algorithm>
 #include <cerrno>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #if __APPLE__
 #include <mach-o/dyld.h>
+#else
+#include <link.h>
 #endif
 #include <memory>
 #include <string>
@@ -363,6 +366,35 @@ bool frida_attach_impl::is_module_mapped(const char *module_name) const
 	(void)module_name;
 	return true;
 #else
-	return get_module_base_addr(module_name) != nullptr;
+	if (!module_name || module_name[0] == '\0')
+		return true;
+	struct search_ctx {
+		const char *target;
+		bool has_slash;
+		bool found;
+	} ctx{ module_name, std::strchr(module_name, '/') != nullptr, false };
+	dl_iterate_phdr(
+		[](struct dl_phdr_info *info, size_t, void *data) -> int {
+			auto *s = static_cast<search_ctx *>(data);
+			const char *name = info->dlpi_name;
+			if (!name || name[0] == '\0')
+				return 0;
+			if (s->has_slash) {
+				if (std::strcmp(name, s->target) == 0) {
+					s->found = true;
+					return 1;
+				}
+				return 0;
+			}
+			const char *base = std::strrchr(name, '/');
+			base = base ? base + 1 : name;
+			if (std::strcmp(base, s->target) == 0) {
+				s->found = true;
+				return 1;
+			}
+			return 0;
+		},
+		&ctx);
+	return ctx.found;
 #endif
 }
