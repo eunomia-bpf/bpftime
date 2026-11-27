@@ -6,6 +6,7 @@
 #ifndef _HANDLER_MANAGER_HPP
 #define _HANDLER_MANAGER_HPP
 #include "bpftime_config.hpp"
+#include "bpftime_shm_safe.hpp"
 #include "handler/epoll_handler.hpp"
 #include "handler/memfd_handler.hpp"
 #include "spdlog/spdlog.h"
@@ -83,6 +84,7 @@ using handler_variant =
 	std::variant<unused_handler, bpf_map_handler, bpf_link_handler,
 		     bpf_prog_handler, bpf_perf_event_handler, epoll_handler,
 		     memfd_handler>;
+static_assert(shm_safe_type<handler_variant>);
 
 using handler_variant_allocator =
 	allocator<handler_variant, managed_shared_memory::segment_manager>;
@@ -125,6 +127,7 @@ class handler_manager {
     private:
 	handler_variant_vector handlers;
 };
+static_assert(shm_safe_type<handler_manager>);
 
 } // namespace bpftime
 

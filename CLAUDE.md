@@ -114,6 +114,7 @@ The codebase is organized into distinct components that interact through well-de
 1. **Shared Memory Architecture**: Uses boost::interprocess for zero-copy IPC between processes
    - Central `handler_manager` registry in shared memory
    - File descriptor abstraction for kernel compatibility
+   - Shared-memory objects are constructed through `bpftime::shm_construct` / `bpftime::shm_find_or_construct` (`runtime/include/bpftime_shm_safe.hpp`), where `shm_safe_type<T>` rejects `virtual` functions/`vptr`, raw/member pointers (including `mmap` addresses and `CUcontext`/`CUstream` handles), C++ references, and process-local STL heap containers or `std::mutex` at compile time, and `shm_init_ctx` prevents constructors from storing `managed_shared_memory &`. Plain `int` OS file descriptors pass C++ integer traits and are forbidden inside SHM objects by review rule; per-process OS/driver handles belong in `.bss` tables outside SHM.
 
 2. **Handler Pattern**: All eBPF objects (programs, maps, links) managed through handlers
    - Consistent interface for create/destroy/access

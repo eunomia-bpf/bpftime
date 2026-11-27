@@ -84,7 +84,9 @@ union HelperCallResponse {
 		int result;
 	} map_update, map_delete, trace_printk, puts;
 	struct {
-		const void *value;
+		// Device-side address returned to the GPU helper, stored as an
+		// integer rather than a host pointer inside cross-process SHM.
+		uintptr_t value;
 	} map_lookup;
 	struct {
 		uint64_t result;
