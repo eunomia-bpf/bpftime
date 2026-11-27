@@ -90,6 +90,8 @@ class lpm_trie_map_impl {
 			  node_unique_ptr(nullptr, node_deleter_type(sm)))... };
 	}
 	size_t shard_for(const bpf_lpm_trie_key *key) const noexcept;
+	bool reserve_slot(size_t shard) noexcept;
+	void release_slot(size_t shard) noexcept;
 	// Pure trie walk; caller MUST already hold stripes_[shard]. Resolves the
 	// candidate node and its inline value under the stripe lock so the
 	// is_intermediate flag is never read after the stripe is released.
