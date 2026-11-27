@@ -209,7 +209,16 @@ TEST_CASE("Hash-of-maps supports lock-free concurrent helper lookups",
 	while (ready.load(std::memory_order_acquire) < num_readers)
 		std::this_thread::yield();
 	start.store(true, std::memory_order_release);
+	while (reads.load(std::memory_order_acquire) == 0)
+		std::this_thread::yield();
 	for (int iter = 0; iter < 500; ++iter) {
+		if (iter == 250) {
+			const uint64_t mid_reads =
+				reads.load(std::memory_order_acquire);
+			while (reads.load(std::memory_order_acquire) ==
+			       mid_reads)
+				std::this_thread::yield();
+		}
 		for (uint32_t k = 0; k < steady_keys; ++k) {
 			int fd = ((iter % 2 == 0) ? fd_tag_b : fd_tag_a) +
 				 static_cast<int>(k);
