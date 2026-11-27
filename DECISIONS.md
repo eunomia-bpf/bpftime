@@ -25,6 +25,24 @@ Newest first. Read before starting a change. A pull request that reverses an ent
   >
   > upsert/erase 两处改用新函数。和 master 相比，生产代码 +50/-10。为啥还是这么多?
 
+- **2026-11-27: generic remote control-plane bridge (`bpftime-remote-host`, `BPFTIME_REMOTE_HOST`), macOS ARM64 preload agent, and zero-fork Linux VM tooling** (#1005, #1006, #1008, #1010, #1013). Unmodified Linux eBPF control-plane tools (`bpftrace`, `bcc`, `libbpf`, `opentelemetry-ebpf-profiler`) trace remote Linux or macOS processes through an OS-neutral client-server control-plane bridge while keeping the data plane (`libbpftime-agent.{so,dylib}`, Frida inline hooks, JIT, maps, ring buffers) in local shared memory on the target host:
+  1. **Generic remote protocol (`BPFTIME_REMOTE_HOST`, `BPFTIME_REMOTE_TOKEN`, `BPFTIME_ENABLE_REMOTE_BRIDGE`)**: `libbpftime-syscall-server.so` forwards control operations (`hello`, `proc_check`, `proc_maps`, `fetch_elf`, map/prog/perf_event/link ops, `spawn_cmd`/`resume_cmd`, and bounded `subscribe_events` streaming) over length-prefixed frames to `bpftime-remote-host` (built on both Linux and macOS; Linux serves real `/proc` and target ELF bytes, macOS synthesizes `/proc/<pid>/maps` and 64-bit stub ELFs with `.symtab`/`.note.stapsdt`/ARM64 `.eh_frame`). `bpftime-remote-host` binds `127.0.0.1` by default and requires constant-time 256-bit `BPFTIME_REMOTE_TOKEN` verification on every connection before accepting any operation. When `BPFTIME_REMOTE_HOST` is unset, `libbpftime-syscall-server.so` incurs zero runtime overhead.
+  2. **macOS ARM64 preload constructor & optional `BPFTIME_ENABLE_AGENT_IPC_SERVER`**: `libbpftime-agent.dylib` initializes synchronously once from a `dyld` constructor (returning immediately with zero syscalls/files when SHM is absent, zero FIFO/startup waits, reusing the opt-in `BPFTIME_ENABLE_AGENT_IPC` socket at `$TMPDIR/bpftime-agent-<pid>.sock`). On Apple Silicon macOS, `tools/macos_vz_vm/` (`bpftime-vz` + `bpftime-macos`) runs the stock ARM64 Linux control plane inside a rootless `Virtualization.framework` VM on top of `BPFTIME_REMOTE_HOST`.
+  3. **Delivery split**: shipped as separate minimal single-purpose pull requests tagged with `otel`, `linux`, and `macos` GitHub labels, alongside updating `example/otel-ebpf-profiler` to run in rootless userspace mode on Linux and macOS.
+  > 如何真实的把 bpftrace 和 bcc 以及别的 ebpf 工具, 在 macos 上面用 bpftime 跑起来? 不是替代, 确保真实弄好并且能 work?
+  >
+  > 控制面跑虚拟机里面是部署更方便?
+  >
+  > 最好能不用 fork, 但也要真实能追踪 macos 上面的东西?
+  >
+  > bpftime 本身对 otel ebpf profiler 支持的 example 是不是也要修? 实际上已经基本支持了? 你看看? 是不是也可以测试一下? 在 mac 和 linux 上面?
+  >
+  > 分开去做; 开的 PR 都要注明是 otel / linux / macos, 的 tag; 尽可能减少不必要的改动
+  >
+  > 解释一下, 你这个做法本质上是把 bpftime 转化成了 remote 的?
+  >
+  > 那我们要改名, 确保这个 remote 机制是通用的 remote 机制? 也就是trace 别的机器也行?
+
 - **2026-11-27: remove `has_pending_uprobe` latch and defer `shm_lifecycle_lock` on `dlopen()`** (#970 follow-up; closes #1016). Delete the process-local `has_pending_uprobe` / `has_pending_uprobes()` latch introduced in #970 instead of adding a shared-memory generation counter (#1016): a boolean set only from startup `-ENOENT` misses uprobe links registered in SHM after target startup. On outermost successful non-`RTLD_NOLOAD` host `dlopen()`, the agent takes only non-blocking process-local `try_to_lock(detach_mutex)` + `try_to_lock(ctx_mutex)`, skips already-instantiated and unmapped DSOs (`is_module_mapped`) in memory (`0` syscalls, `0` heap allocations), and lazily acquires shared `shm_lifecycle_lock` (`LOCK_SH | LOCK_NB`) only when an uninstantiated mapped uprobe actually needs to be attached.
 
 - **2026-11-27: the probe-read window is configurable and capped at 512 bytes in static TLS** (#984). `BPFTIME_PROBE_READ_WINDOW_BYTES` (0–512, default 512; 0 disables the window) and `BPFTIME_PROBE_READ_LOOKBEHIND_BYTES` (default 64, at most the window size) are read at startup. The per-thread window stays in `initial-exec` TLS, so a probe read never allocates, and 512 bytes keeps a late `dlopen()` of the agent inside glibc's static-TLS surplus. A larger window needs storage outside TLS and a new decision.
