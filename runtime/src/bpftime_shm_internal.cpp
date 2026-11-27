@@ -911,25 +911,26 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 				memory_size << 20);
 		}
 
-		manager = segment.find_or_construct<bpftime::handler_manager>(
-			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment,
-							      max_fd_count);
+		manager = shm_find_or_construct<bpftime::handler_manager>(
+			segment, bpftime::DEFAULT_GLOBAL_HANDLER_NAME, segment,
+			max_fd_count);
 		SPDLOG_DEBUG("done: bpftime_shm for server setup: manager");
 
-		runtime_config = segment.find_or_construct<struct runtime_config>(
-			bpftime::DEFAULT_AGENT_CONFIG_NAME)(config);
+		runtime_config = shm_find_or_construct<struct runtime_config>(
+			segment, bpftime::DEFAULT_AGENT_CONFIG_NAME, config);
 
-		injected_pids = segment.find_or_construct<alive_agent_pids>(
-			bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME)();
+		injected_pids = shm_find_or_construct<alive_agent_pids>(
+			segment, bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME);
 		alive_syscall_server_pids =
-			segment.find_or_construct<alive_syscall_server_pid_set>(
-				bpftime::DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME)();
+			shm_find_or_construct<alive_syscall_server_pid_set>(
+				segment,
+				bpftime::DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME);
 		epoch_state =
-			segment.find_or_construct<bpftime_global_epoch_state>(
-				"bpftime_global_epoch_state")();
+			shm_find_or_construct<bpftime_global_epoch_state>(
+				segment, "bpftime_global_epoch_state");
 		cpu_exec_locks =
-			segment.find_or_construct<bpftime_cpu_exec_locks>(
-				"bpftime_cpu_exec_locks")();
+			shm_find_or_construct<bpftime_cpu_exec_locks>(
+				segment, "bpftime_cpu_exec_locks");
 		SPDLOG_DEBUG("done: bpftime_shm for open_or_create setup");
 	} else if (type == shm_open_type::SHM_REMOVE_AND_CREATE) {
 		SPDLOG_DEBUG(
@@ -945,25 +946,26 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			shm_name, memory_size << 20);
 		SPDLOG_DEBUG("done: bpftime_shm for server setup: segment");
 
-		manager = segment.construct<bpftime::handler_manager>(
-			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment,
-							      max_fd_count);
+		manager = shm_construct<bpftime::handler_manager>(
+			segment, bpftime::DEFAULT_GLOBAL_HANDLER_NAME, segment,
+			max_fd_count);
 		SPDLOG_DEBUG("done: bpftime_shm for server setup: manager");
 
-		runtime_config = segment.construct<struct runtime_config>(
-			bpftime::DEFAULT_AGENT_CONFIG_NAME)(config);
+		runtime_config = shm_construct<struct runtime_config>(
+			segment, bpftime::DEFAULT_AGENT_CONFIG_NAME, config);
 		SPDLOG_DEBUG(
 			"done: bpftime_shm for server setup: runtime_config");
 
-		injected_pids = segment.construct<alive_agent_pids>(
-			bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME)();
+		injected_pids = shm_construct<alive_agent_pids>(
+			segment, bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME);
 		alive_syscall_server_pids =
-			segment.construct<alive_syscall_server_pid_set>(
-				bpftime::DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME)();
-		epoch_state = segment.construct<bpftime_global_epoch_state>(
-			"bpftime_global_epoch_state")();
-		cpu_exec_locks = segment.construct<bpftime_cpu_exec_locks>(
-			"bpftime_cpu_exec_locks")();
+			shm_construct<alive_syscall_server_pid_set>(
+				segment,
+				bpftime::DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME);
+		epoch_state = shm_construct<bpftime_global_epoch_state>(
+			segment, "bpftime_global_epoch_state");
+		cpu_exec_locks = shm_construct<bpftime_cpu_exec_locks>(
+			segment, "bpftime_cpu_exec_locks");
 		SPDLOG_DEBUG("done: bpftime_shm for server setup.");
 	} else if (type == shm_open_type::SHM_NO_CREATE) {
 		// not create any shm
@@ -995,8 +997,8 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			cuda_comm_shared_mem = pair.first;
 		} else {
 			cuda_comm_shared_mem =
-				segment.construct<cuda::CommSharedMem>(
-					"cuda_comm_shared_mem")();
+				shm_construct<cuda::CommSharedMem>(
+					segment, "cuda_comm_shared_mem");
 			memset(cuda_comm_shared_mem, 0,
 			       sizeof(cuda::CommSharedMem));
 			SPDLOG_DEBUG(

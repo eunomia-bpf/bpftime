@@ -25,6 +25,13 @@ Safety Redlines and Host-process safety invariants are binding here.
 - Fail open: unavailable shared memory, a full ringbuf, or an
   `ENOTRECOVERABLE` mutex skips tracing without blocking, aborting, or
   changing the host exit status.
+- Shared-memory objects are allocated via `bpftime::shm_construct` /
+  `bpftime::shm_find_or_construct` (`runtime/include/bpftime_shm_safe.hpp`),
+  enforcing `shm_safe_type<T>` (no `virtual` functions/`vptr`, raw/member
+  pointers, C++ references, or process-local STL heap containers/`std::mutex`)
+  and `shm_init_ctx` (never store `managed_shared_memory &` in SHM). Plain
+  `int` OS file descriptors are likewise forbidden in SHM by review rule; keep
+  per-process fds, `mmap` pointers, and CUDA handles in `.bss` tables.
 - Init and IPC paths never sleep/poll or take unbounded `flock(LOCK_EX)` or
   untimed socket waits (`SO_SNDTIMEO`/`SO_RCVTIMEO` + `MSG_NOSIGNAL` required):
   use non-blocking acquisition and leave startup ordering to the CLI.

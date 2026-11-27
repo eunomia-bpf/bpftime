@@ -60,7 +60,7 @@ union HelperCallResponse {
 		int result;
 	} map_update, map_delete, trace_printk, puts;
 	struct {
-		const void *value;
+		uintptr_t value;
 	} map_lookup;
 	struct {
 		uint64_t result;
@@ -621,7 +621,8 @@ int main()
 					// strcpy(hostMem->resp.map_lookup.value,
 					//        "your value");
 					hostMem->resp.map_lookup.value =
-						devPtrStr;
+						reinterpret_cast<uintptr_t>(
+							devPtrStr);
 				}
 				// std::atomic_thread_fence(std::memory_order_seq_cst);
 

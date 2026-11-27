@@ -53,7 +53,7 @@ class nv_gpu_shared_array_host_map_impl {
 	{
 		return 1;
 	}
-	virtual ~nv_gpu_shared_array_host_map_impl();
+	~nv_gpu_shared_array_host_map_impl();
 
 	CUdeviceptr try_initialize_for_agent_and_get_mapped_address();
 };

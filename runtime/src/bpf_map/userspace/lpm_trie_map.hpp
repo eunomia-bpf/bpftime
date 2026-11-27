@@ -6,6 +6,7 @@
 #ifndef _LPM_TRIE_MAP_HPP
 #define _LPM_TRIE_MAP_HPP
 
+#include "bpftime_shm_safe.hpp"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <boost/interprocess/containers/vector.hpp>
@@ -87,9 +88,8 @@ class lpm_trie_map_impl {
 	// Container maps delegate locking to bpf_map_handler::map_lock.
 	static constexpr bool should_lock = true;
 
-	lpm_trie_map_impl(boost::interprocess::managed_shared_memory &memory,
-			  unsigned int key_size, unsigned int value_size,
-			  unsigned int max_entries);
+	lpm_trie_map_impl(const shm_init_ctx &ctx, unsigned int key_size,
+			  unsigned int value_size, unsigned int max_entries);
 	~lpm_trie_map_impl();
 
 	void *elem_lookup(const void *key);

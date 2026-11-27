@@ -2,6 +2,19 @@
 
 Newest first. Read before starting a change. A pull request that reverses an entry is a design problem until a maintainer decides again. Every entry quotes the maintainer verbatim; changing a decision means adding a new entry.
 
+- **2026-11-26: compile-time shared-memory type gate and split series for per-process handle tables** (#959, #987). Objects placed in `boost::interprocess::managed_shared_memory` go through `bpftime::shm_construct` / `bpftime::shm_find_or_construct` (`runtime/include/bpftime_shm_safe.hpp`), where `shm_safe_type<T>` enforces at compile time: no `virtual` functions/destructors or `vptr`, no raw/member pointers (`mmap` addresses, `CUcontext`/`CUstream` handles, host strings), no C++ references, and no process-local STL heap containers or `std::mutex`; SHM constructors take a non-copyable `shm_init_ctx` instead of storing `managed_shared_memory &`. Plain `int` OS file descriptors (`map_fd`, `pfd`) are forbidden in SHM by review rule. Per single-responsibility and anti-over-engineering rules, the work lands as a 3-PR series without speculative metaprogramming or open-addressed hash tables: (a) `#987` for the minimal compile-time gate, `shm_init_ctx`, removal of the 7 `virtual` map destructors, and `uintptr_t` CUDA response layout; (b) CPU kernel-user maps moved to a load-time-`pthread_atfork`, O(1) direct-indexed `.bss` slot table; (c) GPU/CUDA maps and `bpf_attach_ctx_cuda` separated for GPU CI.
+  > 创建进程局部引用 这个事情 在 bpftime 里面要不要规定一下? 是不是很多问题来源于?
+  >
+  > 有没有办法用类型阻止这个事情发生? 说说完整的设计, 去把 959 扩展一下, 变成一个完整的修复, 并且检查所有的 PR 里面有没有
+  >
+  > 这个会违规引入 syscall 或者说之类的吗? ring buffer 我们会把 906 完全 revert
+  >
+  > 扩展 #959 的实现范围更收敛：新增单头文件 runtime/include/bpftime_shm_safe.hpp（shm_safe_type<T>、shm_construct、shm_init_ctx、零 syscall 的 .bss process_local_cache），同步更新 DECISIONS.md 与 AGENTS.md；去掉 7 个 SHM map 类的 virtual 析构；将 array_map_kernel_user、array_map_kernel_gpu、hash_map_kernel_user、percpu_array_map_kernel_user、perf_event_array_kernel_user、nv_gpu_shared_array_map 中的 map_fd / pfd / mmap_ptr / CUcontext / CUstream 全部迁出 SHM 到 .bss 局部表（完全不碰 ringbuf_map.*）；对外部 PR #328（SHM args.uprobe_multi 残留用户态指针）、#661（QNX tid 缺 atfork 重置）、#703（shm_lifecycle_lock 含 sleep_for 轮询）仅提交英文技术 Review 意见。去做
+  >
+  > bpftime SHM 编译期类型安全 PR（已创建并 CI 全绿） 过大了? 过度设计? 你也看看 commet
+  >
+  > 去修, 你来修
+
 - **2026-11-26: forbid speculative lifecycle/GC state machines, test-only control-plane/IPC backdoors, and parallel rewrites of idempotent paths; close `#971` into minimal `#970`** (#970, #971). Three forms of speculative bloat are banned across the codebase and treated as `over-engineering` in review:
   1. **No unrequested symmetric teardown/GC or hypothetical edge-case state machines** without a real production caller or reproduced failure (e.g. `#971`'s runtime SHM link-deletion teardown pass on host `dlopen()` and its heap-allocating `live_uprobe_targets` `std::set` for duplicate same-offset links);
   2. **No control-plane/IPC commands, flags, or hooks added solely to drive tests** when unused in default production modes (e.g. `#971`'s UNIX socket `"reconcile"` command while `BPFTIME_ENABLE_AGENT_IPC` defaults to off under bare `LD_PRELOAD`);
