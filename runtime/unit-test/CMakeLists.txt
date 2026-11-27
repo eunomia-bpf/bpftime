@@ -38,6 +38,7 @@ set(TEST_SOURCES
     maps/test_map_helper_errno.cpp
     maps/test_map_syscall_semantics.cpp
     maps/test_array_get_next_key.cpp
+    maps/test_array_map_lifetime.cpp
     maps/test_map_ops_fuzzer_replay.cpp
     # The libFuzzer entry point, replayed by test_map_ops_fuzzer_replay.cpp.
     ../fuzz/map_ops_fuzzer.cpp
@@ -94,6 +95,14 @@ if(${BPFTIME_ENABLE_CUDA_ATTACH})
 endif()
 option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})
+# Keep constructor-based VM registration, as the injected agent does. Merely
+# linking the static archives lets the linker discard these unreferenced TUs.
+foreach(_vm IN ITEMS llvm ubpf)
+    if(TARGET bpftime_${_vm}_vm_obj)
+        target_sources(bpftime_runtime_tests PRIVATE
+            $<TARGET_OBJECTS:bpftime_${_vm}_vm_obj>)
+    endif()
+endforeach()
 
 # Compile the header fallback without CMake's DEFAULT_VM_NAME override.
 # Keep this object unlinked so its runtime_config definition cannot violate ODR.
@@ -152,6 +161,7 @@ if(UNIX AND NOT APPLE)
         assets/agent_dlopen_target.c)
     set_property(TARGET bpftime-agent-dlopen-target PROPERTY POSITION_INDEPENDENT_CODE ON)
     set_property(TARGET bpftime-shm-allocation-test-helper PROPERTY C_STANDARD 99)
+    target_link_libraries(bpftime-shm-allocation-test-helper PRIVATE ${CMAKE_DL_LIBS})
     set_property(TARGET bpftime-runtime-options-test-helper PROPERTY C_STANDARD 99)
     set_property(TARGET bpftime-map-syscall-test-helper PROPERTY C_STANDARD 99)
     # The rootless constructor tests need a process that bypasses glibc
@@ -213,6 +223,11 @@ if(UNIX AND NOT APPLE AND BPFTIME_LLVM_JIT)
     # ORC resolves its statically linked EH-frame registration wrappers via
     # the process symbol table (also needed by existing x86 runtime tests).
     target_link_options(bpftime_runtime_tests PRIVATE -Wl,--export-dynamic)
+    if(BPFTIME_ENABLE_ROCM_ATTACH)
+        # HIP also loads a shared LLVM. Exported copies from our static LLVM
+        # would interpose its globals and can double-free them during shutdown.
+        target_link_options(bpftime_runtime_tests PRIVATE -Wl,--exclude-libs,ALL)
+    endif()
 endif()
 add_dependencies(bpftime_runtime_tests runtime bpftime-object)
 if(TARGET bpftime_frida_uprobe_attach_impl)

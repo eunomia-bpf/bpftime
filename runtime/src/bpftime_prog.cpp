@@ -303,14 +303,11 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 	// (call) are handled by the VM itself and are not audited here,
 	// mirroring prepare_for_signal_execution().
 	//
-	// CUDA programs (cuda__*) are exempt: their helpers (e.g. 503 =
-	// bpf_get_block_idx) are resolved on the device side. They are never
-	// registered into this host VM; ptxpass generates device PTX from an
-	// isolated VM with its own helper table, and the runtime trampoline
-	// provides the actual implementations (e.g. _bpf_helper_ext_0503).
-	// This VM is only used here to produce that device code, so the
-	// host-side audit does not apply.
-	if (!is_cuda()) {
+	// CUDA and ROCm helpers are resolved by their device compilers, not
+	// registered into this host VM. The CUDA trampoline and ROCm helper
+	// bitcode provide their implementations; each backend validates its
+	// supported helpers, so the host-side audit does not apply.
+	if (!is_cuda() && !is_rocm()) {
 		for (size_t i = 0; i < insns.size(); ++i) {
 			const struct ebpf_inst &inst = insns[i];
 			if (inst.code == 0x18) {
@@ -331,9 +328,9 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 			}
 		}
 	}
-	// CUDA programs never reach the jitted fn (execute throws, signal exec
+	// GPU programs never reach the jitted fn (execute throws, signal exec
 	// returns ENOTSUP); keep the pre-cleanup guard to avoid compiling them.
-	if (jit && !is_cuda()) {
+	if (jit && !is_cuda() && !is_rocm()) {
 #if defined(__x86_64__)
 		// The defect is in the uBPF x86_64 JIT only; the LLVM backend
 		// handles r0 atomics correctly, so do not change its path.
@@ -407,8 +404,8 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 			current_thread_exec_ctx = saved_ctx;
 		}
 	} exec_ctx_guard(memory, memory_size);
-	if (is_cuda()) {
-		throw std::runtime_error("Unable to execute CUDA program");
+	if (is_cuda() || is_rocm()) {
+		throw std::runtime_error("Unable to execute CUDA/ROCm program");
 	}
 	uint64_t val = 0;
 	int res = 0;
@@ -462,7 +459,7 @@ int bpftime_prog::prepare_for_signal_execution()
 	// The MPK access transition has not been audited for signal callbacks.
 	return -ENOTSUP;
 #endif
-	if (is_cuda() || loaded_from_aot)
+	if (is_cuda() || is_rocm() || loaded_from_aot)
 		return -ENOTSUP;
 	const char *backend = ebpf_get_vm_name(vm);
 	if (strcmp(backend, "llvm") != 0 && strcmp(backend, "ubpf") != 0)

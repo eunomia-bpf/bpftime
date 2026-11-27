@@ -2,6 +2,13 @@
 
 Newest first. Read before starting a change. A pull request that reverses an entry is a design problem until a maintainer decides again. Every entry quotes the maintainer verbatim; changing a decision means adding a new entry.
 
+- **2026-11-27: explicitly requested ROCm Array helper channel** ([#407](https://github.com/eunomia-bpf/bpftime/pull/407)). The author requested the shared-memory spinlock protocol and then authorized its Array implementation in the development session:
+  > 请参考CUDA上访问Maps的实现，实现ROCm的map访问：通过自旋锁在共享内存上实现一个简单的channel拿来实现helper。先调研并给我方案。
+  >
+  > 请先实现array map
+
+  This records the session authorization and its narrow scope: `BPFTIME_ENABLE_ROCM_ATTACH` (off by default), explicitly started through `bpftime start --rocm`, with an active Array probe. The CPU worker polls the coherent channel, sleeps between idle polls, and is joined only after outstanding instrumented dispatches finish. GPU system-scope atomic locking lives in the HIP helper because a GPU cannot use the CPU robust-mutex gateway. Requests have a five-second device deadline; timeout poisons the channel and future dispatches skip instrumentation. Array operations use retained, preallocated storage and no CPU map lock. This is a deliberate exception for the requested GPU RPC path, not permission to add polling, threads, or locks to ordinary CPU preload hooks or to change CUDA. The worker join still depends on OS scheduling and is not a hard real-time teardown guarantee. The public review of this scoped exception remains part of PR #407; this entry does not claim an approval from another reviewer.
+
 
 - **2026-11-27: non-blocking `dlopen()` retry and `L3` lock callsites for unmapped uprobes** (#970). When a Frida uprobe target DSO is not mapped at startup (`-ENOENT`), `bpf_attach_ctx` sets an atomic `has_pending_uprobes` flag and retries pending uprobe links on outermost successful non-`RTLD_NOLOAD` host `dlopen()` calls in the initialized PID, clearing `has_pending_uprobes` once no unmapped uprobe links remain so steady-state `dlopen()` returns before taking any lock or opening any lock file. While `has_pending_uprobes` is set, the `dlopen()` path uses three non-blocking `L3` lock callsites: (1) `detach_mutex` (`std::try_to_lock`) to avoid racing session teardown; (2) shared `shm_lifecycle_lock` (`LOCK_SH | LOCK_NB`) so `dlopen()` never scans SHM across concurrent `syscall-server` segment recreation or final unlink; and (3) `ctx_mutex` (`std::try_to_lock`) to serialize `bpf_attach_ctx` state without blocking the host loader.
   > 测试过了 pytorch 的 cache allocatpr 能 work? 去测一下, 可以的话就这样 pr

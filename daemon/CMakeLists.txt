@@ -54,6 +54,12 @@ target_link_libraries(libbpftime_daemon PRIVATE
     rt
 )
 
+if(BPFTIME_ENABLE_ROCM_ATTACH)
+    # Propagate ROCm's library paths and LLVM symbol visibility through this
+    # static library to the daemon executable, as for other runtime consumers.
+    target_link_libraries(libbpftime_daemon PUBLIC bpftime_rocm_attach_impl)
+endif()
+
 set_property(TARGET libbpftime_daemon PROPERTY CXX_STANDARD 20)
 
 add_dependencies(bpftime_daemon libbpftime_daemon)

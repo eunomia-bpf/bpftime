@@ -217,6 +217,15 @@ class bpftime_shm {
 #endif
 
     public:
+	std::pair<void *, size_t> mapped_region() const
+	{
+		return { segment.get_address(), segment.get_size() };
+	}
+	std::shared_ptr<array_map_impl> retain_array_map(int fd)
+	{
+		auto *map = try_get_map_handler(fd);
+		return map ? map->retain_array_map(segment) : nullptr;
+	}
 	// True when the fully-contained [addr, addr+size) range lies inside the
 	// mapped SHM segment. Backends with runtime memory safety checks
 	// (uBPF) use this to admit BPF map/context accesses that the kernel
@@ -372,6 +381,10 @@ public:
 	// Create an kprobe
 	int add_kprobe(std::optional<int> fd, const char *func_name,
 		       uint64_t addr, bool retprobe, size_t ref_ctr_off);
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+	int add_rocm_attach(std::optional<int> fd, const char *func_name,
+			    bool retprobe);
+#endif
 	// create a tracepoint fd
 	int add_tracepoint(int fd, int pid, int32_t tracepoint_id);
 	// create a software perf event fd, typically for a perf event

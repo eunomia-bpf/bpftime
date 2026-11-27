@@ -210,7 +210,9 @@ helper_result run_waiting_helper_with_live_pid(const std::string &shm_name,
 			_exit(125);
 		}
 		close(output_pipe[1]);
-		if (setenv("HOME", "/proc/bpftime-unwritable-home", 1) != 0 ||
+		if (unsetenv("BPFTIME_LOG_OUTPUT") != 0 ||
+		    unsetenv("SPDLOG_LEVEL") != 0 ||
+		    setenv("HOME", "/proc/bpftime-unwritable-home", 1) != 0 ||
 		    setenv("BPFTIME_GLOBAL_SHM_NAME", shm_name.c_str(), 1) !=
 			    0 ||
 		    setenv("BPFTIME_SHM_MEMORY_MB", "4", 1) != 0 ||
@@ -278,7 +280,7 @@ helper_result run_waiting_helper_with_live_pid(const std::string &shm_name,
 	return { status, std::move(output) };
 }
 
-helper_result run_agent_preload_without_shm()
+helper_result run_agent_without_shm(bool load_with_dlopen = false)
 {
 	const std::string shm_name = "bpftime-agent-missing-shm-test-" +
 				     std::to_string(getpid());
@@ -300,11 +302,15 @@ helper_result run_agent_preload_without_shm()
 		    setenv("HOME", "/proc/bpftime-unwritable-home", 1) != 0 ||
 		    setenv("BPFTIME_GLOBAL_SHM_NAME", shm_name.c_str(), 1) !=
 			    0 ||
-		    setenv("LD_PRELOAD", BPFTIME_AGENT_LIBRARY, 1) != 0) {
+		    setenv("BPFTIME_TEST_AGENT_LIBRARY", BPFTIME_AGENT_LIBRARY,
+			   1) != 0 ||
+		    (load_with_dlopen ? unsetenv("LD_PRELOAD") :
+			setenv("LD_PRELOAD", BPFTIME_AGENT_LIBRARY, 1)) != 0) {
 			_exit(126);
 		}
 		execl(BPFTIME_SHM_ALLOCATION_TEST_HELPER,
-		      BPFTIME_SHM_ALLOCATION_TEST_HELPER, "check-sigusr1",
+		      BPFTIME_SHM_ALLOCATION_TEST_HELPER,
+		      load_with_dlopen ? "agent-dlopen" : "check-sigusr1",
 		      nullptr);
 		_exit(127);
 	}
@@ -424,10 +430,46 @@ TEST_CASE("Syscall server preserves the console logger level name",
 	REQUIRE(result.output.empty());
 }
 
+TEST_CASE("Syscall server exits safely with debug file logging",
+	  "[allocation][syscall_server][logging][cleanup]")
+{
+	const std::string log_path = "/tmp/bpftime-syscall-exit-" +
+				     std::to_string(getpid()) + ".log";
+	unlink(log_path.c_str());
+	std::string shm_name;
+	auto result = run_allocation_helper("startup-ok", "4", "128",
+					    log_path.c_str(), "debug", false,
+					    &shm_name);
+	std::ifstream log(log_path);
+	std::string contents{ std::istreambuf_iterator<char>(log), {} };
+	unlink(log_path.c_str());
+	const bool shm_was_left =
+		boost::interprocess::shared_memory_object::remove(
+			shm_name.c_str());
+
+	REQUIRE(WIFEXITED(result.status));
+	REQUIRE(WEXITSTATUS(result.status) == 0);
+	REQUIRE(result.output.empty());
+	REQUIRE(contents.find("[debug]") != std::string::npos);
+	REQUIRE(contents.find("bpftime-syscall-server started") !=
+		std::string::npos);
+	REQUIRE_FALSE(shm_was_left);
+}
+
 TEST_CASE("Agent preload keeps missing shared memory off host stdio",
 	  "[allocation][agent][logging]")
 {
-	auto result = run_agent_preload_without_shm();
+	auto result = run_agent_without_shm();
+	REQUIRE(WIFEXITED(result.status));
+	REQUIRE(WEXITSTATUS(result.status) == 100);
+	REQUIRE(result.output.empty());
+}
+
+TEST_CASE("Agent resolves dependencies with dlopen without host side effects",
+	  "[agent][link][logging]")
+{
+	auto result = run_agent_without_shm(true);
+	INFO(result.output);
 	REQUIRE(WIFEXITED(result.status));
 	REQUIRE(WEXITSTATUS(result.status) == 100);
 	REQUIRE(result.output.empty());
@@ -479,6 +521,7 @@ TEST_CASE("Syscall server keeps shared memory while an agent pid is alive",
 		run_waiting_helper_with_live_pid(shm_name,
 						 live_pid_set::alive_agent);
 
+	INFO(result.output);
 	REQUIRE(WIFEXITED(result.status));
 	REQUIRE(WEXITSTATUS(result.status) == 0);
 	REQUIRE(result.output.empty());
@@ -497,6 +540,7 @@ TEST_CASE("Syscall server keeps shared memory while a peer server pid is alive",
 		run_waiting_helper_with_live_pid(shm_name,
 						 live_pid_set::syscall_server);
 
+	INFO(result.output);
 	REQUIRE(WIFEXITED(result.status));
 	REQUIRE(WEXITSTATUS(result.status) == 0);
 	REQUIRE(result.output.empty());
@@ -578,7 +622,7 @@ TEST_CASE("Agent preload never blocks on missing or locked shared memory",
 	  "[allocation][agent][shm]")
 {
 	const auto start = std::chrono::steady_clock::now();
-	const auto missing = run_agent_preload_without_shm();
+	const auto missing = run_agent_without_shm();
 	const auto missing_ms = std::chrono::duration_cast<
 		std::chrono::milliseconds>(
 			std::chrono::steady_clock::now() - start)

@@ -100,4 +100,29 @@ TEST_CASE("Reject programs calling unregistered helpers at load time",
 		REQUIRE(prog.bpftime_prog_load(false) == 0);
 	}
 #endif
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+	SECTION("ROCm program calling device-side helper must still load") {
+		// Helper 506 is supplied by ROCm device bitcode. Neither the
+		// host helper audit nor the host JIT should try to resolve it.
+		for (bool jit : { false, true }) {
+			CAPTURE(jit);
+			bpftime::runtime_config config;
+			config.set_vm_name("llvm");
+			struct ebpf_inst call_506 = { .code = 0x85,
+						     .dst_reg = 0,
+						     .src_reg = 0,
+						     .off = 0, .imm = 506 };
+			std::vector<struct ebpf_inst> insns = {
+				mov_r0, call_506, exit_insn
+			};
+			bpftime_prog prog(insns.data(), insns.size(),
+					  "t_helper__rocm", std::move(config));
+			REQUIRE(prog.is_rocm());
+			REQUIRE(prog.bpftime_prog_load(jit) == 0);
+			REQUIRE(prog.prepare_for_signal_execution() == -ENOTSUP);
+			uint64_t result = 0;
+			REQUIRE_THROWS(prog.bpftime_prog_exec(nullptr, 0, &result));
+		}
+	}
+#endif
 }

@@ -13,6 +13,15 @@ namespace bpftime
 {
 namespace attach
 {
+struct MapBasicInfo {
+	bool enabled;
+	int key_size;
+	int value_size;
+	int max_entries;
+	int map_type;
+	void *extra_buffer;
+	uint64_t max_thread_count;
+};
 using override_return_set_callback = std::function<void(uint64_t, uint64_t)>;
 
 // Used by filter to record the return value

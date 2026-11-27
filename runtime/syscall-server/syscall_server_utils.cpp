@@ -47,11 +47,22 @@
 #endif
 namespace bpftime
 {
-static std::once_flag g_startup_once;
-static std::exception_ptr g_startup_exception;
-static std::string g_syscall_server_shm_name;
-static pid_t g_syscall_server_shm_owner_pid = -1;
-static bool g_syscall_server_owns_shm = false;
+struct syscall_server_startup_state {
+	std::once_flag once;
+	std::exception_ptr exception;
+	std::string shm_name;
+	pid_t owner_pid = -1;
+	bool owns_shm = false;
+};
+
+static syscall_server_startup_state &startup_state()
+{
+	// HIP dependencies can call interposed libc functions before this DSO's
+	// global constructors run. Initialize state on first use, before registering
+	// its exit cleanup, so the name remains valid throughout that cleanup.
+	static syscall_server_startup_state state;
+	return state;
+}
 using namespace bpftime;
 namespace {
 // Probe a tracefs event id file through the next (non-interposed) libc
@@ -383,7 +394,7 @@ static bool pid_is_alive(int pid)
 
 static void remove_syscall_server_global_shm() noexcept
 {
-	if (g_syscall_server_shm_name.empty()) {
+	if (startup_state().shm_name.empty()) {
 		return;
 	}
 	// Static teardown (__destruct_shm) may already have unmapped the segment
@@ -391,17 +402,17 @@ static void remove_syscall_server_global_shm() noexcept
 	// would then fault. The liveness flag lives in ordinary .bss and stays
 	// readable, so once cleared only a name-based unlink is safe.
 	if (!bpftime_global_shm_is_initialized()) {
-		if (g_syscall_server_owns_shm &&
-		    getpid() == g_syscall_server_shm_owner_pid) {
+		if (startup_state().owns_shm &&
+		    getpid() == startup_state().owner_pid) {
 			try {
 				boost::interprocess::shared_memory_object::remove(
-					g_syscall_server_shm_name.c_str());
+					startup_state().shm_name.c_str());
 			} catch (...) {
 			}
 		}
 		return;
 	}
-	if (getpid() != g_syscall_server_shm_owner_pid) {
+	if (getpid() != startup_state().owner_pid) {
 		try {
 			shm_holder.global_shared_memory
 				.remove_pid_from_alive_syscall_server_set(
@@ -410,7 +421,7 @@ static void remove_syscall_server_global_shm() noexcept
 		}
 		return;
 	}
-	if (!g_syscall_server_owns_shm) {
+	if (!startup_state().owns_shm) {
 		try {
 			shm_holder.global_shared_memory
 				.remove_pid_from_alive_syscall_server_set(
@@ -419,7 +430,7 @@ static void remove_syscall_server_global_shm() noexcept
 		}
 		return;
 	}
-	shm_lifecycle_lock lifecycle_lock(g_syscall_server_shm_name.c_str());
+	shm_lifecycle_lock lifecycle_lock(startup_state().shm_name.c_str());
 	try {
 		shm_holder.global_shared_memory
 			.remove_pid_from_alive_syscall_server_set(getpid());
@@ -461,7 +472,7 @@ static void remove_syscall_server_global_shm() noexcept
 			return;
 		}
 		boost::interprocess::shared_memory_object::remove(
-			g_syscall_server_shm_name.c_str());
+			startup_state().shm_name.c_str());
 	} catch (...) {
 	}
 }
@@ -475,12 +486,12 @@ static bool initialize_global_shm_with_ownership()
 		if (error.get_error_code() !=
 		    boost::interprocess::already_exists_error) {
 			boost::interprocess::shared_memory_object::remove(
-				g_syscall_server_shm_name.c_str());
+				startup_state().shm_name.c_str());
 			throw;
 		}
 	} catch (...) {
 		boost::interprocess::shared_memory_object::remove(
-			g_syscall_server_shm_name.c_str());
+			startup_state().shm_name.c_str());
 		throw;
 	}
 	bpftime_initialize_global_shm(shm_open_type::SHM_CREATE_OR_OPEN);
@@ -489,17 +500,17 @@ static bool initialize_global_shm_with_ownership()
 
 void start_up(syscall_context &ctx)
 {
-	std::call_once(g_startup_once, [&ctx]() {
+	std::call_once(startup_state().once, [&ctx]() {
 		try {
 			SPDLOG_INFO("Starting syscall server..");
 			auto runtime_config = construct_runtime_config_from_env();
 			SPDLOG_INFO("Initialize syscall server");
 
-			g_syscall_server_shm_name = get_global_shm_name();
-			g_syscall_server_shm_owner_pid = getpid();
+			startup_state().shm_name = get_global_shm_name();
+			startup_state().owner_pid = getpid();
 			shm_lifecycle_lock lifecycle_lock(
-				g_syscall_server_shm_name.c_str());
-			g_syscall_server_owns_shm =
+				startup_state().shm_name.c_str());
+			startup_state().owns_shm =
 				initialize_global_shm_with_ownership();
 			std::atexit(remove_syscall_server_global_shm);
 			if (!shm_holder.global_shared_memory
@@ -507,7 +518,7 @@ void start_up(syscall_context &ctx)
 					     getpid())) {
 				SPDLOG_WARN(
 					"Unable to record alive syscall-server pid; disabling automatic shm removal");
-				g_syscall_server_owns_shm = false;
+				startup_state().owns_shm = false;
 			}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 			ctx.initialize_cuda();
@@ -563,11 +574,11 @@ void start_up(syscall_context &ctx)
 			SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
 			SPDLOG_INFO("bpftime-syscall-server started");
 		} catch (...) {
-			g_startup_exception = std::current_exception();
+			startup_state().exception = std::current_exception();
 		}
 	});
-	if (g_startup_exception)
-		std::rethrow_exception(g_startup_exception);
+	if (startup_state().exception)
+		std::rethrow_exception(startup_state().exception);
 }
 
 /*

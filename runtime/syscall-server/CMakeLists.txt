@@ -124,6 +124,10 @@ if (${TEST_LCOV})
     target_link_options(bpftime-syscall-server PRIVATE -fprofile-arcs)
 endif()
 
+if(${BPFTIME_ENABLE_ROCM_ATTACH})
+  target_compile_definitions(bpftime-syscall-server PRIVATE BPFTIME_ENABLE_ROCM_ATTACH=1)
+endif()
+
 # ---------------------------------------------------------------------------
 # Architecture guard: fail the build at configure time if the self-contained
 # syscall server ever grows an attach/ or frida/capstone dependency again.

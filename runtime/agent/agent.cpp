@@ -54,6 +54,11 @@ typedef int gboolean;
 #include "nv_attach_private_data.hpp"
 #include "nv_attach_impl.hpp"
 #endif
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+#include "rocm_attach_impl.hpp"
+#include "rocm_attach_private_data.hpp"
+#include "rocm_profiler.hpp"
+#endif
 
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 #include "syscall_trace_attach_impl.hpp"
@@ -876,6 +881,24 @@ static void bpftime_agent_main_impl(const gchar *data,
 					return priv_data;
 				});
 #endif
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+			ctx_holder.ctx.register_attach_impl(
+				{ ATTACH_ROCM_PROBE_AND_RETPROBE },
+				std::make_unique<attach::rocm_attach_impl>(),
+				[](const std::string_view &sv, int &err) {
+					std::unique_ptr<attach_private_data>
+						priv_data = std::make_unique<
+							rocm_attach_private_data>();
+					if (int e = priv_data->initialize_from_string(
+						    sv);
+					    e < 0) {
+						err = e;
+						return std::unique_ptr<
+							attach_private_data>();
+					}
+					return priv_data;
+				});
+#endif
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 			syscall_trace_impl_ptr->set_to_global();
 #endif
@@ -952,6 +975,43 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	injected_with_frida = true;
 	bpftime_agent_main_impl(data, stay_resident);
 }
+
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+static bool initialize_rocm_agent() noexcept
+{
+	injected_with_frida = false;
+	// This path shares normal agent initialization, but must not initialize
+	// HIP/HSA or replace host signal handlers during SDK registration.
+	if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) == AGENT_UNINITIALIZED) {
+		gboolean resident = FALSE;
+		bpftime_agent_main_impl("", &resident);
+	}
+	return __atomic_load_n(&initialized, __ATOMIC_SEQ_CST) == AGENT_READY;
+}
+
+static void finalize_rocm_agent() noexcept
+{
+	try {
+		(void)perform_detach();
+	} catch (...) {
+	}
+}
+
+extern "C" __attribute__((visibility("default")))
+rocprofiler_tool_configure_result_t *
+rocprofiler_configure(uint32_t version, const char *, uint32_t,
+		      rocprofiler_client_id_t *client)
+{
+	// Exporting the entry point must not turn ordinary LD_PRELOAD starts
+	// into profiler sessions. The CLI sets this only for start --rocm.
+	const char *enabled = getenv("BPFTIME_ROCM_ATTACH");
+	if (!enabled || strcmp(enabled, "1") != 0)
+		return nullptr;
+	install_agent_bootstrap_logger();
+	return configure_rocm_profiler(version, client, initialize_rocm_agent,
+				       finalize_rocm_agent);
+}
+#endif
 
 #ifdef __linux__
 extern "C" __attribute__((visibility("default"))) void *

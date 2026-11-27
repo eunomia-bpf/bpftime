@@ -4,6 +4,7 @@
  * All rights reserved.
  */
 #define _GNU_SOURCE
+#include <dlfcn.h>
 #include <dirent.h>
 #include <stddef.h>
 #include <sys/socket.h>
@@ -215,6 +216,26 @@ static int check_sigusr1_default(void)
 	return action.sa_handler == SIG_DFL ? 100 : 106;
 }
 
+static int check_agent_dlopen(void)
+{
+	const char *path = getenv("BPFTIME_TEST_AGENT_LIBRARY");
+	if (path == NULL)
+		return 107;
+	/* Resolve every dependency now, as a profiler loading a tool would. */
+	void *agent = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+	if (agent == NULL) {
+		fprintf(stderr, "dlopen agent: %s\n", dlerror());
+		return 108;
+	}
+	if (dlsym(agent, "bpftime_agent_main") == NULL)
+		return 109;
+	if (check_sigusr1_default() != 100)
+		return 110;
+	if (dlclose(agent) != 0)
+		return 111;
+	return check_sigusr1_default();
+}
+
 static volatile sig_atomic_t host_signal_seen;
 static void host_signal(int sig) { host_signal_seen = sig; }
 __attribute__((constructor)) static void install_host_signal(void)
@@ -293,6 +314,9 @@ int main(int argc, char **argv)
 	}
 	if (strcmp(argv[1], "check-sigusr1") == 0) {
 		return check_sigusr1_default();
+	}
+	if (strcmp(argv[1], "agent-dlopen") == 0) {
+		return check_agent_dlopen();
 	}
 	return 64;
 }

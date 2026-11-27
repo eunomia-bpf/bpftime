@@ -22,3 +22,6 @@
 [submodule ".agents/sources/agent-skills"]
 	path = .agents/sources/agent-skills
 	url = https://github.com/eunomia-bpf/agent-skills.git
+[submodule "attach/rocm_attach_impl/luthier"]
+	path = attach/rocm_attach_impl/luthier
+	url = https://github.com/eunomia-bpf/Luthier.git
