@@ -32,6 +32,7 @@ set(TEST_SOURCES
     maps/test_lpm_trie_inline_value.cpp
     maps/test_lpm_trie_lockfree.cpp
     maps/test_map_lock_dead_owner.cpp
+    maps/test_dup_map_shared_lock.cpp
 
     maps/test_lru_var_hash_map.cpp
     maps/test_lru_hash_map.cpp
