@@ -75,6 +75,11 @@ GW_IP="$(json_field gateway_ip)"
 SSH_KEY="$(json_field ssh_key)"
 SSH_USER="$(json_field ssh_user)"
 chmod 0600 "$SSH_KEY" 2>/dev/null || true
+# rsync's -e transport parser cannot carry a double quote in the identity
+# path; reject it clearly rather than mis-splitting it on first source sync.
+case "$SSH_KEY" in
+	*\"*) fail "SSH key path must not contain a double quote: $SSH_KEY" ;;
+esac
 
 SSH_OPTS=(-i "$SSH_KEY" -o BatchMode=yes -o StrictHostKeyChecking=no
 	-o UserKnownHostsFile=/dev/null -o ConnectTimeout=8)
@@ -118,10 +123,14 @@ REMOTE_OUT="$(vssh "$REMOTE_READY_SNIPPET" 2>&1)" ||
 	fail "remote readiness command failed: $REMOTE_OUT"
 if [[ "$REMOTE_OUT" == *MISSING_SRC* ]]; then
 	log "syncing bpftime source to VM (~first run)"
-	# Quote every SSH option so a path containing spaces survives rsync's
-	# parsing of the -e transport string (${SSH_OPTS[*]} would drop quoting).
+	# rsync (macOS ships openrsync) tokenizes the -e string with its own
+	# shell-style parser that does not honor bash backslash escapes, so wrap
+	# every option in double quotes to keep a spaced key/VM path as a single
+	# argument. SSH_KEY is rejected up front if it contains a double quote,
+	# which rsync's transport parser cannot represent.
+	rsync_rsh_quote() { printf '"%s"' "$1"; }
 	SSH_TRANSPORT="ssh"
-	for o in "${SSH_OPTS[@]}"; do SSH_TRANSPORT+=" $(printf '%q' "$o")"; done
+	for o in "${SSH_OPTS[@]}"; do SSH_TRANSPORT+=" $(rsync_rsh_quote "$o")"; done
 	rsync -az --delete -e "$SSH_TRANSPORT" \
 		--exclude='build/' --exclude='.git/' --exclude='results/' \
 		--exclude='*.o' --exclude='*.dylib' --exclude='*.so' \
