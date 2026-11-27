@@ -482,7 +482,8 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 	// also recomputes procfs translation on each call.
 	if (bpftime_identity_atfork_status != 0) {
 #if __linux__
-		const char *procfs = getenv("BPFTIME_HOST_PROCFS");
+		const char *procfs =
+			bpftime::get_agent_bootstrap_config().host_procfs;
 		return (uint64_t(get_host_nspid(procfs, "self", getpid())) << 32) |
 		       uint32_t(get_host_nspid(procfs, "thread-self",
 					      syscall(SYS_gettid)));
@@ -495,7 +496,8 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 #if __linux__
 	if (bpftime_cached_tid == -1) {
 		bpftime_cached_tid = static_cast<int>(syscall(SYS_gettid));
-		const char *procfs = getenv("BPFTIME_HOST_PROCFS");
+		const char *procfs =
+			bpftime::get_agent_bootstrap_config().host_procfs;
 		bpftime_cached_host_identity =
 			(uint64_t(get_host_nspid(procfs, "self", bpftime_cached_tgid)) << 32) |
 			uint32_t(get_host_nspid(procfs, "thread-self", bpftime_cached_tid));
@@ -655,16 +657,11 @@ uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t, uint64_t,
 		}
 	}
 	static const size_t tpbase_offset = [] {
-		const char *text =
-			getenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET");
-		if (text != nullptr) {
-			char *end = nullptr;
-			errno = 0;
-			unsigned long value = strtoul(text, &end, 0);
-			if (errno == 0 && end != text && *end == '\0' &&
-			    value <= task_storage_size - sizeof(void *))
-				return (size_t)value;
-		}
+		const auto &config = bpftime::get_agent_bootstrap_config();
+		if (config.has_system_analysis_tpbase_offset &&
+		    config.system_analysis_tpbase_offset <=
+			    task_storage_size - sizeof(void *))
+			return (size_t)config.system_analysis_tpbase_offset;
 		long resolved = bpftime_get_current_task_tpbase_offset();
 		return (size_t)resolved <=
 				       task_storage_size - sizeof(void *) ?
@@ -1006,10 +1003,11 @@ uint64_t bpf_ringbuf_submit(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 {
 	int32_t *ptr = (int32_t *)(uintptr_t)data;
 	int fd = ptr[-1];
-	if (flags != 0) {
-		SPDLOG_WARN(
-			"Currently only supports ringbuf_submit with flags=0");
-	}
+	// As in the kernel, the record is committed whatever the flags say.
+	// BPF_RB_NO_WAKEUP and BPF_RB_FORCE_WAKEUP only steer the consumer
+	// wakeup, which the polling consumer does without. A log line here
+	// would write on every submit of programs that pass them.
+	(void)flags;
 	bpftime_ringbuf_submit(fd, (void *)(uintptr_t)data, false);
 	return 0;
 }
@@ -1019,10 +1017,11 @@ uint64_t bpf_ringbuf_discard(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 {
 	int32_t *ptr = (int32_t *)(uintptr_t)data;
 	int fd = ptr[-1];
-	if (flags != 0) {
-		SPDLOG_WARN(
-			"Currently only supports ringbuf_submit with flags=0");
-	}
+	// As in the kernel, the record is committed whatever the flags say.
+	// BPF_RB_NO_WAKEUP and BPF_RB_FORCE_WAKEUP only steer the consumer
+	// wakeup, which the polling consumer does without. A log line here
+	// would write on every submit of programs that pass them.
+	(void)flags;
 	bpftime_ringbuf_submit(fd, (void *)(uintptr_t)data, true);
 	return 0;
 }

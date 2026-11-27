@@ -4,6 +4,7 @@
  * All rights reserved.
  */
 #include "bpftime_shm.hpp"
+#include "base_attach_impl.hpp"
 #include "handler/map_handler.hpp"
 #include "handler/memfd_handler.hpp"
 #include <ebpf-vm.h>
@@ -43,10 +44,13 @@ void stop_cuda_watcher_before_shm_unmap();
 #include <sys/mman.h>
 
 static bool global_shm_initialized = false;
+static std::optional<bpftime::runtime_config> uninitialized_shm_config;
 
 extern "C" void bpftime_initialize_global_shm(bpftime::shm_open_type type)
 {
 	using namespace bpftime;
+	reload_agent_bootstrap_config_from_env();
+	uninitialized_shm_config.reset();
 	// Use placement new, which will not allocate memory, but just
 	// call the constructor
 	new (&shm_holder.global_shared_memory) bpftime_shm(type);
@@ -124,11 +128,16 @@ static __attribute__((destructor(65535))) void __destruct_shm()
 	// by an agent instance
 	if (bpftime::shm_holder.global_shared_memory.get_open_type() ==
 	    bpftime::shm_open_type::SHM_OPEN_ONLY) {
+		const int saved_errno = errno;
+		bpftime::attach::process_attach_callbacks_suppressed.store(
+			true, std::memory_order_seq_cst);
 		// Try our best to remove the current pid from alive agent's set
 		int self_pid = getpid();
 		// It doesn't matter if the current pid is not in the set
 		bpftime::shm_holder.global_shared_memory
 			.remove_pid_from_alive_agent_set(self_pid);
+		errno = saved_errno;
+		return;
 	}
 
 	bpftime_destroy_global_shm();
@@ -912,25 +921,26 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 				memory_size << 20);
 		}
 
-		manager = segment.find_or_construct<bpftime::handler_manager>(
-			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment,
-							      max_fd_count);
+		manager = shm_find_or_construct<bpftime::handler_manager>(
+			segment, bpftime::DEFAULT_GLOBAL_HANDLER_NAME, segment,
+			max_fd_count);
 		SPDLOG_DEBUG("done: bpftime_shm for server setup: manager");
 
-		runtime_config = segment.find_or_construct<struct runtime_config>(
-			bpftime::DEFAULT_AGENT_CONFIG_NAME)(config);
+		runtime_config = shm_find_or_construct<struct runtime_config>(
+			segment, bpftime::DEFAULT_AGENT_CONFIG_NAME, config);
 
-		injected_pids = segment.find_or_construct<alive_agent_pids>(
-			bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME)();
+		injected_pids = shm_find_or_construct<alive_agent_pids>(
+			segment, bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME);
 		alive_syscall_server_pids =
-			segment.find_or_construct<alive_syscall_server_pid_set>(
-				bpftime::DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME)();
+			shm_find_or_construct<alive_syscall_server_pid_set>(
+				segment,
+				bpftime::DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME);
 		epoch_state =
-			segment.find_or_construct<bpftime_global_epoch_state>(
-				"bpftime_global_epoch_state")();
+			shm_find_or_construct<bpftime_global_epoch_state>(
+				segment, "bpftime_global_epoch_state");
 		cpu_exec_locks =
-			segment.find_or_construct<bpftime_cpu_exec_locks>(
-				"bpftime_cpu_exec_locks")();
+			shm_find_or_construct<bpftime_cpu_exec_locks>(
+				segment, "bpftime_cpu_exec_locks");
 		SPDLOG_DEBUG("done: bpftime_shm for open_or_create setup");
 	} else if (type == shm_open_type::SHM_REMOVE_AND_CREATE) {
 		SPDLOG_DEBUG(
@@ -946,25 +956,26 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			shm_name, memory_size << 20);
 		SPDLOG_DEBUG("done: bpftime_shm for server setup: segment");
 
-		manager = segment.construct<bpftime::handler_manager>(
-			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment,
-							      max_fd_count);
+		manager = shm_construct<bpftime::handler_manager>(
+			segment, bpftime::DEFAULT_GLOBAL_HANDLER_NAME, segment,
+			max_fd_count);
 		SPDLOG_DEBUG("done: bpftime_shm for server setup: manager");
 
-		runtime_config = segment.construct<struct runtime_config>(
-			bpftime::DEFAULT_AGENT_CONFIG_NAME)(config);
+		runtime_config = shm_construct<struct runtime_config>(
+			segment, bpftime::DEFAULT_AGENT_CONFIG_NAME, config);
 		SPDLOG_DEBUG(
 			"done: bpftime_shm for server setup: runtime_config");
 
-		injected_pids = segment.construct<alive_agent_pids>(
-			bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME)();
+		injected_pids = shm_construct<alive_agent_pids>(
+			segment, bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME);
 		alive_syscall_server_pids =
-			segment.construct<alive_syscall_server_pid_set>(
-				bpftime::DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME)();
-		epoch_state = segment.construct<bpftime_global_epoch_state>(
-			"bpftime_global_epoch_state")();
-		cpu_exec_locks = segment.construct<bpftime_cpu_exec_locks>(
-			"bpftime_cpu_exec_locks")();
+			shm_construct<alive_syscall_server_pid_set>(
+				segment,
+				bpftime::DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME);
+		epoch_state = shm_construct<bpftime_global_epoch_state>(
+			segment, "bpftime_global_epoch_state");
+		cpu_exec_locks = shm_construct<bpftime_cpu_exec_locks>(
+			segment, "bpftime_cpu_exec_locks");
 		SPDLOG_DEBUG("done: bpftime_shm for server setup.");
 	} else if (type == shm_open_type::SHM_NO_CREATE) {
 		// not create any shm
@@ -997,8 +1008,8 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			cuda_comm_shared_mem = pair.first;
 		} else {
 			cuda_comm_shared_mem =
-				segment.construct<cuda::CommSharedMem>(
-					"cuda_comm_shared_mem")();
+				shm_construct<cuda::CommSharedMem>(
+					segment, "cuda_comm_shared_mem");
 			memset(cuda_comm_shared_mem, 0,
 			       sizeof(cuda::CommSharedMem));
 			SPDLOG_DEBUG(
@@ -1255,11 +1266,21 @@ const struct runtime_config &bpftime_shm::get_runtime_config()
 
 const bpftime::runtime_config &bpftime_get_runtime_config()
 {
+	if (!global_shm_initialized) {
+		if (!uninitialized_shm_config.has_value())
+			uninitialized_shm_config.emplace(
+				bpftime::construct_runtime_config_from_env());
+		return *uninitialized_shm_config;
+	}
 	return shm_holder.global_shared_memory.get_runtime_config();
 }
 
 void bpftime_set_runtime_config(bpftime::runtime_config &&cfg)
 {
+	if (!global_shm_initialized) {
+		uninitialized_shm_config.emplace(std::move(cfg));
+		return;
+	}
 	shm_holder.global_shared_memory.set_runtime_config(std::move(cfg));
 }
 

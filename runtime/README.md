@@ -25,6 +25,15 @@ The runtime implements a sophisticated shared memory architecture using Boost.In
 
 ## Implementation Details
 
+### Startup configuration
+
+`bpftime_config.hpp` defines process-local `agent_bootstrap_config` in `.bss`
+for pre-SHM admission, SHM naming, explicit log output, rootless seccomp, host
+procfs, and task TLS offset, preserving `errno` without retaining `getenv`
+pointers. Shared settings continue to use `runtime_config` through
+`bpftime_get_runtime_config()` (`bpftime_runtime_config_v2` in SHM) without an
+extra local copy.
+
 ### Core APIs (`include/bpftime.hpp`)
 
 The main runtime API provides C interfaces for:

@@ -805,6 +805,19 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	}
 	try_startup();
 	errno = 0;
+	// The kernel copies min(size, sizeof(*attr)) bytes of the user pointer
+	// into a zeroed bpf_attr, so a NULL pointer faults only for a non-zero
+	// size and is otherwise the all-zero request. cilium/ebpf's
+	// ProbeBPFSyscall() issues bpf(0, NULL, 0) at startup.
+	union bpf_attr zero_attr;
+	if (attr == nullptr) {
+		if (size != 0) {
+			errno = EFAULT;
+			return -1;
+		}
+		memset(&zero_attr, 0, sizeof(zero_attr));
+		attr = &zero_attr;
+	}
 	char *errmsg;
 	switch (cmd) {
 	case 36: // BPF_TOKEN_CREATE, absent from the bundled Linux UAPI headers.

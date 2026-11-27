@@ -53,6 +53,7 @@ set(TEST_SOURCES
     test_config.cpp
     test_shm_allocation_failure.cpp
     test_atomic_pid_set.cpp
+    test_shm_type_safety.cpp
     test_software_perf_event.cpp
     test_software_perf_event_cache.cpp
     test_ringbuf_tail_wrap.cpp

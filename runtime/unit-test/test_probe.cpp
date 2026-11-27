@@ -4,6 +4,7 @@
 #include <malloc.h>
 #endif
 #include "bpftime_helper_group.hpp"
+#include "bpftime_config.hpp"
 #include "base_attach_impl.hpp"
 #include "bpftime_config.hpp"
 #include <algorithm>
@@ -309,6 +310,7 @@ TEST_CASE("Task storage covers host BTF and the no-BTF fallback")
 		const size_t offset = expected - sizeof(void *);
 		const std::string text = std::to_string(offset);
 		setenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET", text.c_str(), 1);
+		bpftime::reload_agent_bootstrap_config_from_env();
 		auto *task = reinterpret_cast<uint8_t *>(bpftime_get_current_task(0, 0, 0, 0, 0));
 		if (task == nullptr || malloc_usable_size(task) < expected ||
 		    reinterpret_cast<uintptr_t>(task) % 64 != 0)

@@ -8,6 +8,38 @@ Newest first. Read before starting a change. A pull request that reverses an ent
   > 这个能配置吗? 我觉得要能动态配置
   >
   > 先限制在 512
+
+- **2026-11-26: compile-time shared-memory type gate and split series for per-process handle tables** (#959, #987). Objects placed in `boost::interprocess::managed_shared_memory` go through `bpftime::shm_construct` / `bpftime::shm_find_or_construct` (`runtime/include/bpftime_shm_safe.hpp`), where `shm_safe_type<T>` enforces at compile time: no `virtual` functions/destructors or `vptr`, no raw/member pointers (`mmap` addresses, `CUcontext`/`CUstream` handles, host strings), no C++ references, and no process-local STL heap containers or `std::mutex`; SHM constructors take a non-copyable `shm_init_ctx` instead of storing `managed_shared_memory &`. Plain `int` OS file descriptors (`map_fd`, `pfd`) are forbidden in SHM by review rule. Per single-responsibility and anti-over-engineering rules, the work lands as a 3-PR series without speculative metaprogramming or open-addressed hash tables: (a) `#987` for the minimal compile-time gate, `shm_init_ctx`, removal of the 7 `virtual` map destructors, and `uintptr_t` CUDA response layout; (b) CPU kernel-user maps moved to a load-time-`pthread_atfork`, O(1) direct-indexed `.bss` slot table; (c) GPU/CUDA maps and `bpf_attach_ctx_cuda` separated for GPU CI.
+  > 创建进程局部引用 这个事情 在 bpftime 里面要不要规定一下? 是不是很多问题来源于?
+  >
+  > 有没有办法用类型阻止这个事情发生? 说说完整的设计, 去把 959 扩展一下, 变成一个完整的修复, 并且检查所有的 PR 里面有没有
+  >
+  > 这个会违规引入 syscall 或者说之类的吗? ring buffer 我们会把 906 完全 revert
+  >
+  > 扩展 #959 的实现范围更收敛：新增单头文件 runtime/include/bpftime_shm_safe.hpp（shm_safe_type<T>、shm_construct、shm_init_ctx、零 syscall 的 .bss process_local_cache），同步更新 DECISIONS.md 与 AGENTS.md；去掉 7 个 SHM map 类的 virtual 析构；将 array_map_kernel_user、array_map_kernel_gpu、hash_map_kernel_user、percpu_array_map_kernel_user、perf_event_array_kernel_user、nv_gpu_shared_array_map 中的 map_fd / pfd / mmap_ptr / CUcontext / CUstream 全部迁出 SHM 到 .bss 局部表（完全不碰 ringbuf_map.*）；对外部 PR #328（SHM args.uprobe_multi 残留用户态指针）、#661（QNX tid 缺 atfork 重置）、#703（shm_lifecycle_lock 含 sleep_for 轮询）仅提交英文技术 Review 意见。去做
+  >
+  > bpftime SHM 编译期类型安全 PR（已创建并 CI 全绿） 过大了? 过度设计? 你也看看 commet
+  >
+  > 去修, 你来修
+
+- **2026-11-26: single-file SHM lock gateway (`runtime/include/robust_shm_mutex.hpp`), no global lock on per-CPU or primary hash/array/bloom maps, explicit L0–L3 lock inventory, and mandatory approval for any lock change** (#958, #988, #990).
+  1. **Single lock file (`runtime/include/robust_shm_mutex.hpp`):** all cross-process shared-memory lock primitives, RAII guards, blocking-vs-`trylock` dispatch (`with_robust_shm_lock`), and skip counters live exclusively in `runtime/include/robust_shm_mutex.hpp`. Defining or calling raw cross-process locks (`pthread_mutex_*`, `pthread_spin_*`, `boost::interprocess::interprocess_*mutex`, custom spinlocks) or bespoke lock-policy wrappers outside `runtime/include/robust_shm_mutex.hpp` is forbidden.
+  2. **No global `map_lock` on per-CPU maps, fixed-slot/atomic maps, or `HASH` / `PERCPU_HASH`:** `PERCPU_ARRAY`, `PERCPU_HASH`, `ARRAY`, `PROG_ARRAY`, `PERF_EVENT_ARRAY`, `BLOOM_FILTER`, `RINGBUF`, and `HASH` must all keep `should_lock = false`. `PERCPU_HASH` shares `bpftime_hash_map`'s preallocated fixed-slot array (with Boost `unordered_map` and `key_templates` removed) so `lookup` and per-CPU in-place updates are lock-free and Four-Zeros-compliant.
+  3. **Approved L0–L3 lock layering inventory:**
+     - **L0 (lock-free atomics / fixed arrays / seqlock):** `epoch_state` seqlock, `atomic_pid_set`, `ARRAY`, `PERCPU_ARRAY`, `PROG_ARRAY`, `PERF_EVENT_ARRAY`, `BLOOM_FILTER`, `RINGBUF` consumer & submit paths, `HASH` & `PERCPU_HASH` `lookup` / iteration / per-CPU slice updates, and `software_perf_event_data` steady-state TLS shard cache;
+     - **L1 (short pointer-free SHM mutual exclusion via `robust_shm_mutex::lock_and_recover`):** `bpftime_shm::cpu_exec_locks` and `ringbuf::reserve_lock`;
+     - **L2 (poison-on-death `robust_shm_mutex` via `with_robust_shm_lock` — `try_lock` on `LD_PRELOAD` helper hot paths, blocking `lock` on control-plane/consumer paths):** `bpftime_hash_map` 64 sharded write stripes (`HASH` / `PERCPU_HASH` `update` & `delete`), `bpf_map_handler::map_lock` (`LRU_HASH`, `LPM_TRIE`, `QUEUE`, `STACK`, `STACK_TRACE`, `HASH_OF_MAPS`), and cold-start `software_perf_event_data::shard_lock`;
+     - **L3 (control-plane / process-local):** `shm_lifecycle_lock` (`flock` around `/dev/shm` create/destroy) and process-local `std::mutex` (`ctx_mutex`, `g_cuda_watcher_mutex`, GDRCopy mapping state).
+  4. **Explicit reason & approval gate:** adding any new lock, adding a new lock callsite outside the inventory above, or changing an existing lock's layer, granularity, or recovery policy requires an explicit reason recorded in `DECISIONS.md` and prior maintainer approval before merge.
+  > 我们要确保仓库里面加任何锁都需要有明确的原因记录和批准流程, 不然一直出错?
+  >
+  > 我们是不是锁需要有明确的分层, 半年前的基础上增量改进?
+  >
+  > 整体代码需要增加多少? 100 行以内, 包含测试搞定? 都放在一个文件里面, 禁止在这个文件之外加锁?
+  >
+  > 按你说的去都改掉. 批准把 PERCPU_HASH 统一收敛到 bpftime_hash_map 的预分配定长槽位数组上（净删掉 per_cpu_hash_map 里的 Boost 哈希表与 key_template. 就在这个 PR 里面改; 文档的也要改, per cpu 这种都不要全局锁
+
+
 - **2026-11-26: forbid speculative lifecycle/GC state machines, test-only control-plane/IPC backdoors, and parallel rewrites of idempotent paths; close `#971` into minimal `#970`** (#970, #971). Three forms of speculative bloat are banned across the codebase and treated as `over-engineering` in review:
   1. **No unrequested symmetric teardown/GC or hypothetical edge-case state machines** without a real production caller or reproduced failure (e.g. `#971`'s runtime SHM link-deletion teardown pass on host `dlopen()` and its heap-allocating `live_uprobe_targets` `std::set` for duplicate same-offset links);
   2. **No control-plane/IPC commands, flags, or hooks added solely to drive tests** when unused in default production modes (e.g. `#971`'s UNIX socket `"reconcile"` command while `BPFTIME_ENABLE_AGENT_IPC` defaults to off under bare `LD_PRELOAD`);

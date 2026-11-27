@@ -1,5 +1,6 @@
 #include "bpftime_config.hpp"
 #include "spdlog/spdlog.h"
+#include <cerrno>
 #include <string_view>
 #include <optional>
 #include <limits>
@@ -18,6 +19,67 @@ void bpftime::bpftime_set_probe_read_window_config(const runtime_config &config)
 	std::atomic_ref(probe_read_window_config_snapshot)
 		.store((bytes + 1) | (pre << 13), std::memory_order_relaxed);
 }
+template <size_t N>
+static bool copy_env(char (&out)[N], const char *name,
+		     const char *fallback = "") noexcept
+{
+	const char *value = std::getenv(name);
+	if (!value)
+		value = fallback;
+	const size_t len = strlen(value);
+	if (len >= N) {
+		out[0] = '\0';
+		return false;
+	}
+	memcpy(out, value, len + 1);
+	return true;
+}
+
+namespace bpftime
+{
+static agent_bootstrap_config bootstrap_config{};
+static bool bootstrap_initialized = false;
+
+void reload_agent_bootstrap_config_from_env() noexcept
+{
+	const int saved_errno = errno;
+	bootstrap_config = {};
+	copy_env(bootstrap_config.global_shm_name, "BPFTIME_GLOBAL_SHM_NAME",
+		 "bpftime_maps_shm");
+	bootstrap_config.invalid_process_filter = !copy_env(
+		bootstrap_config.allow_process, "BPFTIME_AGENT_ALLOW_PROCESS");
+	bootstrap_config.invalid_process_filter |= !copy_env(
+		bootstrap_config.deny_process, "BPFTIME_AGENT_DENY_PROCESS");
+	copy_env(bootstrap_config.log_output, "BPFTIME_LOG_OUTPUT");
+	bootstrap_config.has_log_output =
+		getenv("BPFTIME_LOG_OUTPUT") != nullptr;
+	copy_env(bootstrap_config.host_procfs, "BPFTIME_HOST_PROCFS");
+	if (const char *tpbase = getenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET");
+	    tpbase != nullptr && *tpbase != '\0') {
+		char *end = nullptr;
+		errno = 0;
+		unsigned long long value = strtoull(tpbase, &end, 0);
+		if (errno == 0 && end != tpbase && *end == '\0') {
+			bootstrap_config.system_analysis_tpbase_offset = value;
+			bootstrap_config.has_system_analysis_tpbase_offset =
+				true;
+		}
+	}
+	const char *ipc = getenv("BPFTIME_ENABLE_AGENT_IPC");
+	bootstrap_config.enable_agent_ipc =
+		ipc && *ipc && strcmp(ipc, "0") != 0;
+	bootstrap_config.go_seccomp = getenv("BPFTIME_GO_SECCOMP") != nullptr;
+	bootstrap_initialized = true;
+	errno = saved_errno;
+}
+
+const agent_bootstrap_config &get_agent_bootstrap_config() noexcept
+{
+	if (!bootstrap_initialized)
+		reload_agent_bootstrap_config_from_env();
+	return bootstrap_config;
+}
+} // namespace bpftime
 
 // Helper function to parse and validate numeric environment variables
 template<typename T>
@@ -37,8 +99,8 @@ static std::optional<T> parse_numeric_env(const char* env_name,
 			value = std::stoi(env_str);
 		} else if constexpr (std::is_same_v<T, long>) {
 			value = std::stol(env_str);
-		} else if constexpr (std::is_same_v<T, size_t> || std::is_same_v<T, unsigned long>) {
-			value = std::stoul(env_str);
+		} else if constexpr (std::is_unsigned_v<T>) {
+			value = static_cast<T>(std::stoull(env_str));
 		} else {
 			// Fallback for other types
 			value = static_cast<T>(std::stoll(env_str));
@@ -100,6 +162,7 @@ static void process_helper_sv(const std::string_view &str, const char delimiter,
 
 runtime_config bpftime::construct_runtime_config_from_env() noexcept
 {
+	const int saved_errno = errno;
 	bpftime::runtime_config runtime_config;
 	if (const char *custom_helpers = getenv("BPFTIME_HELPER_GROUPS");
 	    custom_helpers != nullptr) {
@@ -151,7 +214,7 @@ runtime_config bpftime::construct_runtime_config_from_env() noexcept
 
 	if (vm_name != nullptr) {
 		SPDLOG_INFO("Using VM: {}", vm_name);
-		runtime_config.set_vm_name(vm_name);
+		copy_env(runtime_config.vm_name, "BPFTIME_VM_NAME");
 	}
 
 	const char *verifier_level = std::getenv("BPFTIME_VERIFIER_LEVEL");
@@ -175,9 +238,10 @@ runtime_config bpftime::construct_runtime_config_from_env() noexcept
 		}
 	}
 
-	const char *logger_target = std::getenv("BPFTIME_LOG_OUTPUT");
-	if (logger_target != nullptr) {
-		runtime_config.set_logger_output_path(logger_target);
+	if (std::getenv("BPFTIME_LOG_OUTPUT") != nullptr) {
+		copy_env(runtime_config.logger_output_path, "BPFTIME_LOG_OUTPUT");
+	} else if (get_agent_bootstrap_config().go_seccomp) {
+		runtime_config.set_logger_output_path("console");
 	}
 
 	// Optional GDRCopy knobs for GPU map host-side lookup.
@@ -192,5 +256,10 @@ runtime_config bpftime::construct_runtime_config_from_env() noexcept
 		runtime_config.gpu_gdrcopy_max_per_key_bytes =
 			static_cast<uint64_t>(*max_bytes);
 	}
+	if (auto v = parse_numeric_env<uint64_t>("BPFTIME_MAP_GPU_THREAD_COUNT")) {
+		runtime_config.map_gpu_thread_count = *v;
+		runtime_config.has_map_gpu_thread_count = true;
+	}
+	errno = saved_errno;
 	return runtime_config;
 }

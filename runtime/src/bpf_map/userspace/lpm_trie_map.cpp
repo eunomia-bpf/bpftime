@@ -24,14 +24,14 @@ static constexpr uint32_t LPM_KEY_SIZE_MIN =
 static constexpr uint32_t LPM_KEY_SIZE_MAX =
 	sizeof(uint32_t) + LPM_DATA_SIZE_MAX;
 
-lpm_trie_map_impl::lpm_trie_map_impl(
-	boost::interprocess::managed_shared_memory &memory,
-	unsigned int key_size, unsigned int value_size,
-	unsigned int max_entries)
+lpm_trie_map_impl::lpm_trie_map_impl(const shm_init_ctx &ctx,
+				     unsigned int key_size,
+				     unsigned int value_size,
+				     unsigned int max_entries)
 	: _key_size(key_size), _value_size(value_size),
 	  _max_entries(max_entries),
-	  root(nullptr, node_deleter_type(memory.get_segment_manager())),
-	  n_entries(0), segment_manager_(memory.get_segment_manager())
+	  root(nullptr, node_deleter_type(ctx.segment_manager())),
+	  n_entries(0), segment_manager_(ctx.segment_manager())
 {
 	// Validate parameters
 	if (key_size < LPM_KEY_SIZE_MIN || key_size > LPM_KEY_SIZE_MAX) {

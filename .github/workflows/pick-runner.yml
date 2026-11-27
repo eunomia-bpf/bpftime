@@ -7,8 +7,9 @@ name: Pick runner
 # the newest runs, so a workflow never queues behind a full set of
 # organization runners, and a down cluster, whose jobs keep waiting, sends
 # later runs to GitHub. A fork or any API error also picks GitHub. The
-# repository or organization variable BPFTIME_LINUX_RUNNER, a JSON list of
-# runner labels, overrides the choice for the x64 jobs.
+# repository or organization variables BPFTIME_LINUX_RUNNER (a JSON list of
+# runner labels) and BPFTIME_LINUX_RUNNER_SLOTS (slot count) override the
+# choice and capacity for the x64 jobs without editing workflow files.
 
 on:
   workflow_call:
@@ -28,7 +29,9 @@ on:
       local-slots:
         description: Jobs the organization's runners with those labels run at once
         type: number
-        default: 4
+        # The x64 VM runners are three scale sets sharing these labels, with
+        # 4, 1 and 1 runners.
+        default: 6
     outputs:
       runner:
         description: JSON value for runs-on
@@ -48,8 +51,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           HOSTED: ${{ inputs.hosted }}
           JOBS: ${{ inputs.jobs }}
-          # The override applies to the x64 VM runners' jobs only.
+          # The overrides apply to the x64 VM runners' jobs only.
           FORCED: ${{ inputs.local == '["self-hosted","linux","x64","vm"]' && vars.BPFTIME_LINUX_RUNNER || '' }}
+          SLOTS_OVERRIDE: ${{ inputs.local == '["self-hosted","linux","x64","vm"]' && vars.BPFTIME_LINUX_RUNNER_SLOTS || '' }}
           LOCAL: ${{ inputs.local }}
           SLOTS: ${{ inputs.local-slots }}
         run: |
@@ -59,6 +63,8 @@ jobs:
           pick() { echo "runner=$1" >> "$GITHUB_OUTPUT"; echo "::notice title=Runner::$2"; exit 0; }
           [ -n "$FORCED" ] && pick "$FORCED" "BPFTIME_LINUX_RUNNER picks $FORCED"
           [ "$GITHUB_REPOSITORY" = eunomia-bpf/bpftime ] || pick "$hosted" "GitHub: the organization runners serve eunomia-bpf/bpftime only"
+          SLOTS=${SLOTS_OVERRIDE:-$SLOTS}
+          case "$SLOTS" in ''|*[!0-9]*) pick "$hosted" "GitHub: invalid BPFTIME_LINUX_RUNNER_SLOTS=$SLOTS" ;; esac
           # A job waiting for the organization runners belongs to a run that
           # has not completed, and that run's own status is often still
           # "queued": its picker job finished while its other jobs wait. Both
