@@ -79,7 +79,12 @@ def convert(src_path, dst_path, target_size):
                         comp_off = l2_entry & ((1 << comp_shift) - 1)
                         sectors = ((l2_entry >> comp_shift)
                                    & ((1 << width) - 1)) + 1
-                        comp_len = sectors * 512
+                        # `sectors` spans whole 512-byte sectors from the start
+                        # of the sector containing comp_off; subtract comp_off's
+                        # intra-sector offset to get the bytes readable there.
+                        comp_len = sectors * 512 - (comp_off & 511)
+                        if comp_len <= 0:
+                            die(f"invalid compressed extent at cluster {done - 1}")
                         src.seek(comp_off)
                         blob = src.read(comp_len)
                         if len(blob) != comp_len:
