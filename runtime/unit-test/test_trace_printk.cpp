@@ -34,15 +34,19 @@ TEST_CASE("bpf_trace_printk forwards explicit register arguments",
 	fflush(stdout);
 	int pipefd[2];
 	REQUIRE(pipe(pipefd) == 0);
-	REQUIRE(dup2(pipefd[1], STDOUT_FILENO) >= 0);
+	int redirect_rc = dup2(pipefd[1], STDOUT_FILENO);
 	close(pipefd[1]);
 
-	REQUIRE(bpftime_trace_printk(
+	// Keep this window free of Catch2 assertions: success reporters
+	// (-s/--success) would otherwise write into the captured pipe.
+	uint64_t helper_rc = 0;
+	if (redirect_rc >= 0) {
+		helper_rc = bpftime_trace_printk(
 			reinterpret_cast<uint64_t>(fmt), sizeof(fmt), P1, P2,
-			P3) == 0);
-	fflush(stdout);
-
-	REQUIRE(dup2(saved_stdout, STDOUT_FILENO) >= 0);
+			P3);
+		fflush(stdout);
+	}
+	int restore_rc = dup2(saved_stdout, STDOUT_FILENO);
 	close(saved_stdout);
 
 	char buf[sizeof(expected) + 16] = {};
@@ -53,6 +57,9 @@ TEST_CASE("bpf_trace_printk forwards explicit register arguments",
 		off += static_cast<size_t>(n);
 	close(pipefd[0]);
 
+	REQUIRE(redirect_rc >= 0);
+	REQUIRE(restore_rc >= 0);
+	REQUIRE(helper_rc == 0);
 	REQUIRE(off == sizeof(expected) - 1);
 	REQUIRE(std::memcmp(buf, expected, off) == 0);
 }
