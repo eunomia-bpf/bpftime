@@ -280,24 +280,30 @@ TEST_CASE("Preempted threads on one physical CPU get distinct vCPU slots without
 	const int workers = std::min<int>(4, ncpu);
 	const std::string shm_name =
 		"bpftime_vcpu_scratch_" + std::to_string(getpid());
+	const std::string map_shm_name = shm_name + "_map";
 	REQUIRE(setenv("BPFTIME_GLOBAL_SHM_NAME", shm_name.c_str(), 1) == 0);
 	boost::interprocess::shared_memory_object::remove(shm_name.c_str());
+	boost::interprocess::shared_memory_object::remove(map_shm_name.c_str());
 	bpftime_initialize_global_shm(shm_open_type::SHM_CREATE_ONLY);
 	struct cleanup {
 		const std::string &name;
+		const std::string &map_name;
 		~cleanup()
 		{
 			g_scratch_map = nullptr;
 			bpftime_destroy_global_shm();
 			boost::interprocess::shared_memory_object::remove(
+				map_name.c_str());
+			boost::interprocess::shared_memory_object::remove(
 				name.c_str());
 			unsetenv("BPFTIME_GLOBAL_SHM_NAME");
 		}
-	} cleanup{ shm_name };
+	} cleanup{ shm_name, map_shm_name };
 
-	per_cpu_array_map_impl map(
-		shm_holder.global_shared_memory.get_SharedMemory(),
-		64 * sizeof(uint64_t), 1, ncpu);
+	boost::interprocess::managed_shared_memory map_mem(
+		boost::interprocess::create_only, map_shm_name.c_str(),
+		2 << 20);
+	per_cpu_array_map_impl map(map_mem, 64 * sizeof(uint64_t), 1, ncpu);
 	g_scratch_map = &map;
 	g_scratch_corruptions = 0;
 	g_scratch_completed = 0;
@@ -388,17 +394,16 @@ TEST_CASE("vCPU slot recovers after holder process dies mid-BPF execution",
 	REQUIRE(waitpid(pid, &status, 0) == pid);
 	REQUIRE(WIFSIGNALED(status));
 
-	const int ncpu = std::min<int>(
-		BPFTIME_MAX_CPU_COUNT,
-		std::max<int>(1, sysconf(_SC_NPROCESSORS_ONLN)));
+	const int ncpu = shm_holder.global_shared_memory.vcpu_count();
+	REQUIRE(ncpu >= 1);
 	std::vector<int> leased;
 	for (int i = 0; i < ncpu; ++i) {
-		int s = shm_holder.global_shared_memory.try_lease_vcpu(0, ncpu);
+		int s = shm_holder.global_shared_memory.try_lease_vcpu(0);
 		REQUIRE(s >= 0);
 		leased.push_back(s);
 	}
 	uint64_t skips_before = get_shm_trylock_skip_count();
-	REQUIRE(shm_holder.global_shared_memory.try_lease_vcpu(0, ncpu) == -1);
+	REQUIRE(shm_holder.global_shared_memory.try_lease_vcpu(0) == -1);
 	REQUIRE(get_shm_trylock_skip_count() == skips_before + 1);
 	for (int s : leased)
 		shm_holder.global_shared_memory.release_vcpu(s);

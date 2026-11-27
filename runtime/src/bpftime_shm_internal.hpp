@@ -66,10 +66,20 @@ struct bpftime_vcpu_locks {
 #if BPFTIME_ENABLE_MPK
 	std::byte mpk_head_pad[4096];
 #endif
+	uint32_t ncpu;
 	robust_shm_recovering_mutex locks[BPFTIME_MAX_CPU_COUNT];
 #if BPFTIME_ENABLE_MPK
 	std::byte mpk_tail_pad[4096];
 #endif
+	bpftime_vcpu_locks()
+	{
+		long n = ::sysconf(_SC_NPROCESSORS_ONLN);
+		ncpu = n <= 0 ? 1U :
+				(n > BPFTIME_MAX_CPU_COUNT ?
+					 static_cast<uint32_t>(
+						 BPFTIME_MAX_CPU_COUNT) :
+					 static_cast<uint32_t>(n));
+	}
 };
 
 // Fixed-capacity, lock-free PID table stored directly in shared memory.
@@ -276,15 +286,25 @@ class bpftime_shm {
 	// Returns UINT64_MAX if the epoch couldn't be stabilized within max_tries.
 	std::uint64_t read_stable_epoch_seq(int max_tries = 200) const;
 	bool has_vcpu_locks() const noexcept { return vcpu_locks != nullptr; }
-	int try_lease_vcpu(int preferred, int ncpu) noexcept
+	int vcpu_count() const noexcept
 	{
-		const int n = ncpu < BPFTIME_MAX_CPU_COUNT ? ncpu : BPFTIME_MAX_CPU_COUNT;
-		return vcpu_locks ? try_lease_shm_slot(vcpu_locks->locks, n, preferred) : -1;
+		return vcpu_locks ? static_cast<int>(vcpu_locks->ncpu) : 0;
+	}
+	int try_lease_vcpu(int preferred) noexcept
+	{
+		return vcpu_locks ?
+			       try_lease_shm_slot(
+				       vcpu_locks->locks,
+				       static_cast<int>(vcpu_locks->ncpu),
+				       preferred) :
+			       -1;
 	}
 	void release_vcpu(int vcpu) noexcept
 	{
-		if (vcpu_locks && vcpu >= 0 && vcpu < BPFTIME_MAX_CPU_COUNT)
-			vcpu_locks->locks[vcpu].unlock();
+		if (vcpu_locks)
+			release_shm_slot(vcpu_locks->locks,
+					 static_cast<int>(vcpu_locks->ncpu),
+					 vcpu);
 	}
 
 	const handler_variant &get_handler(int fd) const;

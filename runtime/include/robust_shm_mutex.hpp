@@ -165,6 +165,13 @@ inline int try_lease_shm_slot(robust_shm_recovering_mutex *slots, int count,
 	return -1;
 }
 
+inline void release_shm_slot(robust_shm_recovering_mutex *slots, int count,
+			     int slot) noexcept
+{
+	if (slots && slot >= 0 && slot < count)
+		slots[slot].unlock();
+}
+
 class robust_shm_lock_guard {
 	robust_shm_mutex *mutex;
 

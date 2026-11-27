@@ -1041,6 +1041,11 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		if (pkey_mprotect(reinterpret_cast<void *>(lo), hi - lo,
 				  PROT_READ | PROT_WRITE, 0) == -1) {
 			SPDLOG_ERROR("pkey_mprotect reset for vcpu_locks failed");
+			(void)pkey_mprotect(segment.get_address(),
+					    segment.get_size(),
+					    PROT_READ | PROT_WRITE, 0);
+			(void)pkey_free(pkey);
+			pkey = -1;
 			return;
 		}
 	}
