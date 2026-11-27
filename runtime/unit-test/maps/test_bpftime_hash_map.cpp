@@ -199,4 +199,84 @@ TEST_CASE("bpftime_hash_map basic operations", "[bpftime_hash_map]")
 		for (int i = 0; i < (int)num_buckets; ++i)
 			REQUIRE(map.elem_update(&i, &absent));
 	}
+	shared_memory_object::remove("bpftime_hash_map_test");
 }
+
+#if defined(__linux__)
+#include <sys/wait.h>
+
+TEST_CASE("bpftime_hash_map recovers stripe after child dies mid-upsert or mid-erase",
+	  "[bpftime_hash_map][dead_owner]")
+{
+	const std::string shm_name =
+		"bpftime_hmap_recover_" + std::to_string(getpid());
+	::shm_remove remover(shm_name.c_str());
+	managed_shared_memory segment(create_only, shm_name.c_str(), 1 << 20);
+	const long page_sz = sysconf(_SC_PAGESIZE);
+	REQUIRE(page_sz >= 4096);
+	const size_t val_sz = static_cast<size_t>(page_sz) * 2;
+	auto *map = segment.construct<bpftime_hash_map>("hmap")(
+		segment, 4, sizeof(uint32_t), val_sz);
+	REQUIRE(map != nullptr);
+
+	auto make_half_guarded_buf = [&]() -> uint8_t * {
+		void *p = mmap(nullptr, val_sz, PROT_READ | PROT_WRITE,
+			       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		REQUIRE(p != MAP_FAILED);
+		REQUIRE(mprotect(static_cast<uint8_t *>(p) + page_sz, page_sz,
+				 PROT_NONE) == 0);
+		return static_cast<uint8_t *>(p);
+	};
+
+	// 1. Child dies with SIGSEGV inside upsert() while holding the stripe lock,
+	//    after counting and claiming a slot but before publishing it. The
+	//    non-blocking path recovers the stripe; the claimed slot stays leaked.
+	pid_t c1 = fork();
+	REQUIRE(c1 >= 0);
+	if (c1 == 0) {
+		uint8_t *bad_in = make_half_guarded_buf();
+		uint32_t k = 7;
+		(void)map->upsert(&k, bad_in, 0, true, 0, val_sz);
+		_exit(0);
+	}
+	int st1 = 0;
+	REQUIRE(waitpid(c1, &st1, 0) == c1);
+	REQUIRE(WIFSIGNALED(st1));
+
+	std::vector<uint8_t> good_val(val_sz, 0x5a);
+	uint32_t k7 = 7;
+	REQUIRE(map->elem_lookup(&k7) == nullptr);
+	REQUIRE(map->upsert(&k7, good_val.data(), 0, false, 0, val_sz) == 0);
+	REQUIRE(map->get_elem_count() == 2);
+
+	// 2. Child dies with SIGSEGV inside erase() while holding the stripe lock,
+	//    while copying the value out, before unlinking. The element is intact;
+	//    the blocking syscall path recovers the stripe and deletes it.
+	pid_t c2 = fork();
+	REQUIRE(c2 >= 0);
+	if (c2 == 0) {
+		uint8_t *bad_out = make_half_guarded_buf();
+		uint32_t k = 7;
+		(void)map->erase(&k, bad_out, true);
+		_exit(0);
+	}
+	int st2 = 0;
+	REQUIRE(waitpid(c2, &st2, 0) == c2);
+	REQUIRE(WIFSIGNALED(st2));
+
+	REQUIRE(map->elem_lookup(&k7) != nullptr);
+	REQUIRE(map->erase(&k7, nullptr, true) == 0);
+	REQUIRE(map->elem_lookup(&k7) == nullptr);
+	REQUIRE(map->get_elem_count() == 1);
+
+	// Both stripes keep working. The one slot leaked by the dead inserter
+	// leaves this 4-slot map room for 3 elements.
+	for (uint32_t k = 0; k < 3; ++k)
+		REQUIRE(map->upsert(&k, good_val.data(), 0, false, 0, val_sz) ==
+			0);
+	uint32_t k3 = 3;
+	REQUIRE(map->upsert(&k3, good_val.data(), 0, false, 0, val_sz) == -1);
+	REQUIRE(errno == E2BIG);
+	REQUIRE(map->get_elem_count() == 4);
+}
+#endif

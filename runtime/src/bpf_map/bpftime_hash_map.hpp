@@ -68,7 +68,8 @@ class bpftime_hash_map {
 	size_t _num_buckets, _max_element_count;
 	std::atomic<size_t> _count, _alloc_cursor;
 	std::atomic<uint64_t> _free_head;
-	mutable robust_shm_mutex _stripes[NUM_LOCK_STRIPES];
+	// One-store publish/unlink: a dead writer leaves chains intact, so recover.
+	mutable robust_shm_recovering_mutex _stripes[NUM_LOCK_STRIPES];
 	bytes_vec data_buffer;
 
 	uint8_t *raw(size_t off) const noexcept

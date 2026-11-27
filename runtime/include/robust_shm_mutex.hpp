@@ -24,6 +24,7 @@ namespace bpftime
 class robust_shm_mutex {
 	pthread_mutex_t mutex;
 	std::atomic<uint32_t> unrecoverable{ 0 };
+	const bool recover_dead_owner;
 
 	void latch_dead_owner() noexcept
 	{
@@ -35,7 +36,8 @@ class robust_shm_mutex {
 	}
 
     public:
-	robust_shm_mutex()
+	robust_shm_mutex(bool recover = false)
+		: recover_dead_owner(recover)
 	{
 		pthread_mutexattr_t attr;
 		int rc = pthread_mutexattr_init(&attr);
@@ -68,6 +70,9 @@ class robust_shm_mutex {
 		int rc = pthread_mutex_lock(&mutex);
 #ifdef __linux__
 		if (rc == EOWNERDEAD) {
+			if (recover_dead_owner &&
+			    pthread_mutex_consistent(&mutex) == 0)
+				return true;
 			latch_dead_owner();
 			try {
 				SPDLOG_ERROR(
@@ -114,8 +119,12 @@ class robust_shm_mutex {
 			return false;
 		const int saved = errno, rc = pthread_mutex_trylock(&mutex);
 #ifdef __linux__
-		if (rc == EOWNERDEAD)
+		if (rc == EOWNERDEAD) {
+			if (recover_dead_owner &&
+			    pthread_mutex_consistent(&mutex) == 0)
+				return errno = saved, true;
 			latch_dead_owner();
+		}
 #endif
 		bool ok = (rc == 0);
 		if (ok && unrecoverable.load(std::memory_order_acquire)) {
@@ -127,6 +136,12 @@ class robust_shm_mutex {
 	}
 
 	void unlock() { pthread_mutex_unlock(&mutex); }
+};
+
+// L1 for structures a dead owner cannot leave inconsistent: lock()/try_lock()
+// mark the mutex consistent on EOWNERDEAD and continue instead of latching.
+struct robust_shm_recovering_mutex : robust_shm_mutex {
+	robust_shm_recovering_mutex() : robust_shm_mutex(true) {}
 };
 
 inline std::atomic<uint64_t> shm_trylock_skips{ 0 };

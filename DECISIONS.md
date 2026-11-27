@@ -2,6 +2,17 @@
 
 Newest first. Read before starting a change. A pull request that reverses an entry is a design problem until a maintainer decides again. Every entry quotes the maintainer verbatim; changing a decision means adding a new entry.
 
+- **2026-11-27: `bpftime_hash_map` write stripes recover from a dead owner instead of poisoning** (#1020; supersedes the `bpftime_hash_map` stripes in the L2 line of the lock inventory below, which move to the L1 recover-and-continue policy). The `HASH`/`PERCPU_HASH` write path never leaves a bucket chain broken: an insert publishes the new slot with one release store to `head_idx`, an erase unlinks with one store, and the slot free list is lock-free. A writer that dies at any step therefore leaves every chain intact and leaks at most one slot, with `_count` one higher. The 64 stripes are `robust_shm_recovering_mutex`, a `robust_shm_mutex` whose `lock()`/`try_lock()` mark the mutex consistent on `EOWNERDEAD` and continue instead of latching; the call sites keep `with_robust_shm_lock` (`try_lock` on helper paths, which still skips and counts on contention, blocking `lock` on syscall paths), so a dead owner no longer leaves 1/64 of the map returning `EBUSY` for the session (the `pid_events` case after a child is killed). No per-step journal, no pool lock and no extra preallocated slots: a reserve cannot absorb the leak while the slot and `_count` drift together, and a leak only shows once the map is full. Maps built on Boost containers keep poison-on-death. `robust_shm_mutex::try_lock()` already unlocks a dead owner's mutex through `latch_dead_owner()` and is unchanged.
+  > 修复 robust_shm_mutex.hpp try_lock EOWNERDEAD 漏 unlock 及 bpftime_hash_map.hpp 分片单槽位回滚自愈（消除子进程被杀后 pid_events 永久 EBUSY）+ DECISIONS.md
+  >
+  > 是不是最好的方式, 就是完全不应该毒化? 尽可能不要 boost 容器?
+  >
+  > HASH/PERCPU_HASH 已经是定长槽位 只把毒化改成"恢复后继续"，替代 #1020 约 10 行 改. 我们是不是默认size 多预留 16 个或者向上取整一下之类的怎样?
+  >
+  > 你只做 hash 改动, 不需要构建测试, 直接改 pR 就好
+  >
+  > upsert/erase 两处改用新函数。和 master 相比，生产代码 +50/-10。为啥还是这么多?
+
 - **2026-11-27: remove `has_pending_uprobe` latch and defer `shm_lifecycle_lock` on `dlopen()`** (#970 follow-up; closes #1016). Delete the process-local `has_pending_uprobe` / `has_pending_uprobes()` latch introduced in #970 instead of adding a shared-memory generation counter (#1016): a boolean set only from startup `-ENOENT` misses uprobe links registered in SHM after target startup. On outermost successful non-`RTLD_NOLOAD` host `dlopen()`, the agent takes only non-blocking process-local `try_to_lock(detach_mutex)` + `try_to_lock(ctx_mutex)`, skips already-instantiated and unmapped DSOs (`is_module_mapped`) in memory (`0` syscalls, `0` heap allocations), and lazily acquires shared `shm_lifecycle_lock` (`LOCK_SH | LOCK_NB`) only when an uninstantiated mapped uprobe actually needs to be attached.
 
 - **2026-11-27: the probe-read window is configurable and capped at 512 bytes in static TLS** (#984). `BPFTIME_PROBE_READ_WINDOW_BYTES` (0–512, default 512; 0 disables the window) and `BPFTIME_PROBE_READ_LOOKBEHIND_BYTES` (default 64, at most the window size) are read at startup. The per-thread window stays in `initial-exec` TLS, so a probe read never allocates, and 512 bytes keeps a late `dlopen()` of the agent inside glibc's static-TLS surplus. A larger window needs storage outside TLS and a new decision.
