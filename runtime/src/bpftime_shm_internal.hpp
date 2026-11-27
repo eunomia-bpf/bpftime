@@ -60,6 +60,18 @@ struct bpftime_global_epoch_state {
 	std::uint64_t epoch_seq = 0;
 };
 
+static constexpr int BPFTIME_MAX_CPU_COUNT = 1024;
+
+struct bpftime_vcpu_locks {
+#if BPFTIME_ENABLE_MPK
+	std::byte mpk_head_pad[4096];
+#endif
+	robust_shm_recovering_mutex locks[BPFTIME_MAX_CPU_COUNT];
+#if BPFTIME_ENABLE_MPK
+	std::byte mpk_tail_pad[4096];
+#endif
+};
+
 // Fixed-capacity, lock-free PID table stored directly in shared memory.
 // Slot value 0 means empty. Every operation is atomic: no heap/SHM
 // allocation and no interprocess lock, so a process killed mid-operation
@@ -184,6 +196,7 @@ class bpftime_shm {
 	alive_syscall_server_pid_set *alive_syscall_server_pids = nullptr;
 
 	bpftime_global_epoch_state *epoch_state = nullptr;
+	bpftime_vcpu_locks *vcpu_locks = nullptr;
 
 	// local agent config can be used for test or local process
 	std::optional<struct runtime_config> local_runtime_config;
@@ -262,6 +275,17 @@ class bpftime_shm {
 	// Returns 0 if the epoch object isn't available.
 	// Returns UINT64_MAX if the epoch couldn't be stabilized within max_tries.
 	std::uint64_t read_stable_epoch_seq(int max_tries = 200) const;
+	bool has_vcpu_locks() const noexcept { return vcpu_locks != nullptr; }
+	int try_lease_vcpu(int preferred, int ncpu) noexcept
+	{
+		const int n = ncpu < BPFTIME_MAX_CPU_COUNT ? ncpu : BPFTIME_MAX_CPU_COUNT;
+		return vcpu_locks ? try_lease_shm_slot(vcpu_locks->locks, n, preferred) : -1;
+	}
+	void release_vcpu(int vcpu) noexcept
+	{
+		if (vcpu_locks && vcpu >= 0 && vcpu < BPFTIME_MAX_CPU_COUNT)
+			vcpu_locks->locks[vcpu].unlock();
+	}
 
 	const handler_variant &get_handler(int fd) const;
 	bool is_epoll_fd(int fd) const;

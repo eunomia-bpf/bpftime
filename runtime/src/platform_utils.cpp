@@ -1,11 +1,29 @@
 #include "platform_utils.hpp"
+#include "bpftime_shm_internal.hpp"
 #include "spdlog/spdlog.h"
+#include <cerrno>
+#include <unistd.h>
 
 namespace
 {
+constexpr int BPF_CPU_LEASE_EXHAUSTED = -3;
 constexpr int BPF_CPU_OUTSIDE_EXEC = -2;
 constexpr int BPF_CPU_LAZY_UNSET = -1;
 constinit thread_local int current_bpf_cpu = BPF_CPU_OUTSIDE_EXEC;
+constinit thread_local bool current_bpf_vcpu_leased = false;
+
+int host_vcpu_count() noexcept
+{
+	static const int count = []() noexcept {
+		const int saved = errno;
+		long n = ::sysconf(_SC_NPROCESSORS_ONLN);
+		errno = saved;
+		return n <= 0 ? 1 : (n > bpftime::BPFTIME_MAX_CPU_COUNT ?
+					     bpftime::BPFTIME_MAX_CPU_COUNT :
+					     static_cast<int>(n));
+	}();
+	return count;
+}
 
 #if __linux__
 int query_native_cpu()
@@ -31,10 +49,32 @@ int my_sched_getcpu()
 {
 	if (current_bpf_cpu >= 0)
 		return current_bpf_cpu;
+	if (current_bpf_cpu == BPF_CPU_LEASE_EXHAUSTED)
+		return -1;
 	int cpu = query_native_cpu();
-	if (current_bpf_cpu == BPF_CPU_LAZY_UNSET && cpu >= 0)
+	if (current_bpf_cpu != BPF_CPU_LAZY_UNSET)
+		return cpu;
+	auto &shm = bpftime::shm_holder.global_shared_memory;
+	if (shm.has_vcpu_locks()) {
+		int vcpu = shm.try_lease_vcpu(cpu, host_vcpu_count());
+		if (vcpu >= 0) {
+			current_bpf_cpu = vcpu;
+			current_bpf_vcpu_leased = true;
+			return vcpu;
+		}
+		current_bpf_cpu = BPF_CPU_LEASE_EXHAUSTED;
+		return -1;
+	}
+	if (cpu >= 0)
 		current_bpf_cpu = cpu;
 	return cpu;
+}
+
+int bpftime_get_perf_output_cpu()
+{
+	if (current_bpf_cpu >= 0)
+		return current_bpf_cpu;
+	return query_native_cpu();
 }
 
 bool bpftime_enter_bpf_exec() noexcept
@@ -47,6 +87,11 @@ bool bpftime_enter_bpf_exec() noexcept
 
 void bpftime_leave_bpf_exec() noexcept
 {
+	if (current_bpf_vcpu_leased) {
+		bpftime::shm_holder.global_shared_memory.release_vcpu(
+			current_bpf_cpu);
+		current_bpf_vcpu_leased = false;
+	}
 	current_bpf_cpu = BPF_CPU_OUTSIDE_EXEC;
 }
 

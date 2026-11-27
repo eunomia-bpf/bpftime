@@ -29,6 +29,7 @@
 #endif
 
 int my_sched_getcpu();
+int bpftime_get_perf_output_cpu();
 bool bpftime_enter_bpf_exec() noexcept;
 void bpftime_leave_bpf_exec() noexcept;
 

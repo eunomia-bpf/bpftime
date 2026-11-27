@@ -902,6 +902,9 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		epoch_state = seg_mgr->find_no_lock<bpftime_global_epoch_state>(
 					     "bpftime_global_epoch_state")
 				      .first;
+		vcpu_locks = seg_mgr->find_no_lock<bpftime_vcpu_locks>(
+					    "bpftime_vcpu_locks")
+				     .first;
 		SPDLOG_DEBUG("done: bpftime_shm for client setup");
 	} else if (type == shm_open_type::SHM_CREATE_OR_OPEN ||
 		   type == shm_open_type::SHM_CREATE_ONLY) {
@@ -935,6 +938,8 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		epoch_state =
 			shm_find_or_construct<bpftime_global_epoch_state>(
 				segment, "bpftime_global_epoch_state");
+		vcpu_locks = shm_find_or_construct<bpftime_vcpu_locks>(
+			segment, "bpftime_vcpu_locks");
 		SPDLOG_DEBUG("done: bpftime_shm for open_or_create setup");
 	} else if (type == shm_open_type::SHM_REMOVE_AND_CREATE) {
 		SPDLOG_DEBUG(
@@ -968,6 +973,8 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 				bpftime::DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME);
 		epoch_state = shm_construct<bpftime_global_epoch_state>(
 			segment, "bpftime_global_epoch_state");
+		vcpu_locks = shm_construct<bpftime_vcpu_locks>(
+			segment, "bpftime_vcpu_locks");
 		SPDLOG_DEBUG("done: bpftime_shm for server setup.");
 	} else if (type == shm_open_type::SHM_NO_CREATE) {
 		// not create any shm
@@ -1024,6 +1031,18 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			  PROT_READ | PROT_WRITE, pkey) == -1) {
 		SPDLOG_ERROR("pkey_mprotect failed");
 		return;
+	}
+	if (vcpu_locks != nullptr) {
+		const auto pg = static_cast<std::uintptr_t>(sysconf(_SC_PAGESIZE));
+		const auto lo = reinterpret_cast<std::uintptr_t>(vcpu_locks->locks) & ~(pg - 1);
+		const auto hi = (reinterpret_cast<std::uintptr_t>(
+					 vcpu_locks->locks + BPFTIME_MAX_CPU_COUNT) +
+				 pg - 1) & ~(pg - 1);
+		if (pkey_mprotect(reinterpret_cast<void *>(lo), hi - lo,
+				  PROT_READ | PROT_WRITE, 0) == -1) {
+			SPDLOG_ERROR("pkey_mprotect reset for vcpu_locks failed");
+			return;
+		}
 	}
 	is_mpk_init = true;
 #endif

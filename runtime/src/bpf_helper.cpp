@@ -1032,9 +1032,9 @@ uint64_t bpf_ringbuf_discard(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 			       uint64_t data, uint64_t size)
 {
-	int32_t current_cpu = my_sched_getcpu();
+	int32_t current_cpu = bpftime_get_perf_output_cpu();
 	if (unlikely(current_cpu == -1)) {
-		SPDLOG_ERROR(
+		SPDLOG_DEBUG(
 			"Unable to get current cpu when running perf event output");
 		return (uint64_t)-1;
 	}
@@ -1267,7 +1267,7 @@ uint64_t bpftime_get_smp_processor_id()
 {
 	int cpu = my_sched_getcpu();
 	if (cpu == -1) {
-		SPDLOG_ERROR("sched_getcpu error");
+		SPDLOG_DEBUG("sched_getcpu error");
 		return 0; // unlikely
 	}
 	return (uint64_t)cpu;
