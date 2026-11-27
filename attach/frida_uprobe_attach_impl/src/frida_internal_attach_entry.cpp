@@ -154,10 +154,12 @@ frida_internal_attach_entry::frida_internal_attach_entry(
 		ensure_listener(basic_attach_type);
 	} else if (basic_attach_type == ATTACH_UPROBE_OVERRIDE) {
 		gum_interceptor_begin_transaction(interceptor);
+		GumReplaceOptions options = {};
+		options.replacement_data = this;
 		if (int err = gum_interceptor_replace(
 			    interceptor, function,
 			    (void *)__bpftime_frida_attach_manager__override_handler,
-			    this, nullptr);
+			    nullptr, &options);
 		    err < 0) {
 			auto message = build_frida_attach_failure_message(
 				"gum_interceptor_replace", function,
@@ -177,7 +179,7 @@ frida_internal_attach_entry::frida_internal_attach_entry(
 				user_ret_ctx = ctx;
 			});
 	}
-	this->interceptor = gum_object_ref(interceptor);
+	this->interceptor = (GumInterceptor *)g_object_ref(interceptor);
 }
 
 frida_internal_attach_entry::~frida_internal_attach_entry()
@@ -193,7 +195,7 @@ frida_internal_attach_entry::~frida_internal_attach_entry()
 		gum_interceptor_revert(interceptor, function);
 		SPDLOG_DEBUG("Reverted function replace");
 	}
-	gum_object_unref(interceptor);
+	g_object_unref(interceptor);
 	SPDLOG_DEBUG("Destructor of frida_internal_attach_entry exiting..");
 }
 

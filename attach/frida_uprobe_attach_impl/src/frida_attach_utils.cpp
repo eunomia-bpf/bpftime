@@ -225,7 +225,13 @@ void *get_module_base_addr(const char *module_name)
 	}
 #endif
 	gum_module_load(module_name, nullptr);
-	return (void *)gum_module_find_base_address(module_name);
+	GumModule *module = gum_process_find_module_by_name(module_name);
+	if (!module) {
+		return nullptr;
+	}
+	void *base = (void *)gum_module_get_range(module)->base_address;
+	g_object_unref(module);
+	return base;
 }
 
 namespace {

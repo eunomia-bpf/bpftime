@@ -33,7 +33,7 @@ thread_local std::optional<void *>
 
 frida_attach_impl::~frida_attach_impl()
 {
-	gum_object_unref((GumInterceptor *)interceptor);
+	g_object_unref((GumInterceptor *)interceptor);
 }
 
 frida_attach_impl::frida_attach_impl(bool use_fuzzy_backtracer)

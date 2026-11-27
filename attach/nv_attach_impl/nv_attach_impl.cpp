@@ -352,9 +352,12 @@ nv_attach_impl::nv_attach_impl()
 			return;
 		}
 		gpointer original_tmp = nullptr;
+		GumReplaceOptions options = {};
+		options.replacement_data = &hook_state;
 		auto err = gum_interceptor_replace(interceptor, addr,
-						   replacement, &hook_state,
-						   (gpointer *)&original_tmp);
+						   replacement,
+						   (gpointer *)&original_tmp,
+						   &options);
 		if (err == GUM_REPLACE_OK) {
 			original_slot.store(original_tmp,
 					    std::memory_order_release);
