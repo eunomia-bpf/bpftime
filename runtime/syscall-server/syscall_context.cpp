@@ -103,7 +103,7 @@ std::string resolve_uprobe_map_file(const char *name)
 			return std::string(buffer, (size_t)rc);
 	} else if (rc == -EPERM || rc == -EACCES) {
 		if (auto resolution = rootless::resolve_map_files_path(name))
-			return resolution->accessible_path;
+			return resolution->logical_path;
 	}
 	SPDLOG_WARN("Unable to resolve uprobe map file {}", name);
 	return std::string(name);
