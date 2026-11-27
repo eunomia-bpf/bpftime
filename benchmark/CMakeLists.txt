@@ -39,3 +39,4 @@ if(BPFTIME_ENABLE_CUDA_ATTACH)
 endif()
 
 add_subdirectory(trap-uprobe)
+add_subdirectory(stackid-bench)

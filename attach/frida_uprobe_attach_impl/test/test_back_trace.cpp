@@ -70,13 +70,13 @@ TEST_CASE("Test with backtrace")
 		(void *)&__bpftime_test_attach_with_back_trace__func5,
 		[&](const pt_regs &regs) {
 			invoked = true;
-			auto stack = (std::vector<uint64_t> *)
-					     impl.call_attach_specific_function(
-						     "generate_stack", nullptr);
-			REQUIRE_FALSE(stack->empty());
+			stack_walk_data walk;
+			REQUIRE(impl.call_attach_specific_function(
+					"generate_stack", &walk) == &walk);
+			REQUIRE(walk.count > 0);
 			if (!use_fuzzy_backtracer) {
-				for (int i = 0; i < 4; i++) {
-					auto addr = stack->at(i);
+				for (size_t i = 0; i < 4; i++) {
+					auto addr = walk.frames[i];
 					GumDebugSymbolDetails debug_details;
 					REQUIRE(gum_symbol_details_from_address(
 							(GumReturnAddress)addr,
@@ -89,8 +89,6 @@ TEST_CASE("Test with backtrace")
 							.starts_with(expected_name));
 				}
 			}
-
-			delete stack;
 		});
 	REQUIRE(__bpftime_test_attach_with_back_trace__func1(100) == 635);
 	REQUIRE(invoked == true);
@@ -104,11 +102,12 @@ TEST_CASE("Fuzzy backtracer recovers a call chain without unwind metadata")
 		impl.create_uprobe_at(
 			(void *)&__bpftime_test_stripped_back_trace__func5,
 			[&](const pt_regs &) {
-				auto stack = (std::vector<uint64_t> *)
-						     impl.call_attach_specific_function(
-							     "generate_stack", nullptr);
-				REQUIRE(stack != nullptr);
-				for (const auto addr : *stack) {
+				stack_walk_data walk;
+				REQUIRE(impl.call_attach_specific_function(
+						"generate_stack", &walk) ==
+					&walk);
+				for (size_t i = 0; i < walk.count; ++i) {
+					const auto addr = walk.frames[i];
 					GumDebugSymbolDetails details;
 					if (gum_symbol_details_from_address(
 						    (GumReturnAddress)addr,
@@ -119,7 +118,6 @@ TEST_CASE("Fuzzy backtracer recovers a call chain without unwind metadata")
 						fixture_frames[use_fuzzy_backtracer]++;
 					}
 				}
-				delete stack;
 			});
 		REQUIRE(__bpftime_test_stripped_back_trace__func1(1) == 16);
 	}

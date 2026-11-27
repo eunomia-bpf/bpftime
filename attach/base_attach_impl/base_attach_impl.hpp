@@ -87,6 +87,12 @@ class attach_callback_suppression_scope {
 	bool previous;
 };
 
+struct stack_walk_data {
+	static constexpr size_t max_frames = 127;
+	size_t count = 0;
+	uint64_t frames[max_frames] = {};
+};
+
 // A wrapper function for an entry function of an ebpf program
 using ebpf_run_callback = std::function<int(void *memory, size_t memory_size,
 					    uint64_t *return_value)>;

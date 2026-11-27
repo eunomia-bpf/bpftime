@@ -22,7 +22,7 @@ TEST_CASE("Test stack trace map 1")
 	stack_trace_map_impl impl(mem, 4, 255 * 8, 10000);
 	std::vector<uint64_t> test_stack{ 1, 2, 3, 4, 5 };
 
-	int id1 = impl.fill_stack_trace(test_stack, false, false);
+	int id1 = impl.fill_stack_trace(test_stack.data(), test_stack.size(), false, false);
 	REQUIRE(id1 >= 0);
 	{
 		uint64_t *query_result = (uint64_t *)impl.elem_lookup(&id1);
@@ -45,7 +45,7 @@ make_collision(int max_entries, int total_count, int vector_size)
 			for (int j = 0; j < vector_size; j++) {
 				curr.push_back(rand(gen));
 			}
-			int hash = stack_trace_map::hash_stack_trace(curr) %
+			int hash = stack_trace_map::hash_stack_frames(curr.data(), curr.size()) %
 				   max_entries;
 			result[hash].push_back(curr);
 			if (result[hash].size() >= 5)
@@ -72,12 +72,12 @@ TEST_CASE("Test stack trace map 2")
 		REQUIRE(has_collision);
 	}
 	auto stk1 = generated[100].at(0);
-	int id1 = impl.fill_stack_trace(stk1, false, false);
+	int id1 = impl.fill_stack_trace(stk1.data(), stk1.size(), false, false);
 	REQUIRE(id1 >= 0);
 	// Make some collision
 	auto stk2 = generated[100].at(1);
 
-	int id2 = impl.fill_stack_trace(stk2, false, true);
+	int id2 = impl.fill_stack_trace(stk2.data(), stk2.size(), false, true);
 	REQUIRE(id1 == id2);
 	// The query result should be the same as id1
 	{
@@ -87,10 +87,10 @@ TEST_CASE("Test stack trace map 2")
 	SPDLOG_INFO("Checking insertion for two same stack trace..");
 	// Put two same entries into the map
 	auto stk3 = generated[233].at(2);
-	int id3 = impl.fill_stack_trace(stk3, true, false);
+	int id3 = impl.fill_stack_trace(stk3.data(), stk3.size(), true, false);
 
 	auto stk4 = generated[233].at(2);
-	int id4 = impl.fill_stack_trace(stk4, true, false);
+	int id4 = impl.fill_stack_trace(stk4.data(), stk4.size(), true, false);
 
 	// The query result should be the same as id4
 	{
@@ -119,12 +119,12 @@ find_colliding_stacks(uint32_t max_entries, size_t size_a, size_t size_b,
 	for (int i = 0; i < 20000; i++) {
 		auto v = make_stack(size_a);
 		occupied.emplace(
-			stack_trace_map::hash_stack_trace(v) % max_entries, v);
+			stack_trace_map::hash_stack_frames(v.data(), v.size()) % max_entries, v);
 	}
 	for (int i = 0; i < 20000; i++) {
 		auto v = make_stack(size_b);
 		uint32_t bucket =
-			stack_trace_map::hash_stack_trace(v) % max_entries;
+			stack_trace_map::hash_stack_frames(v.data(), v.size()) % max_entries;
 		auto it = occupied.find(bucket);
 		if (it != occupied.end() && it->second != v) {
 			stk_a = it->second;
@@ -145,15 +145,15 @@ TEST_CASE("Test stack trace map 3: equal-size different-content collision")
 	REQUIRE(find_colliding_stacks(1000, 3, 3, stk1, stk2, 0x1234));
 	REQUIRE(stk1.size() == stk2.size());
 	REQUIRE(stk1 != stk2);
-	REQUIRE(stack_trace_map::hash_stack_trace(stk1) % 1000 ==
-		stack_trace_map::hash_stack_trace(stk2) % 1000);
+	REQUIRE(stack_trace_map::hash_stack_frames(stk1.data(), stk1.size()) % 1000 ==
+		stack_trace_map::hash_stack_frames(stk2.data(), stk2.size()) % 1000);
 
-	int id1 = impl.fill_stack_trace(stk1, false, false);
+	int id1 = impl.fill_stack_trace(stk1.data(), stk1.size(), false, false);
 	REQUIRE(id1 >= 0);
 
 	// Kernel semantics: without BPF_F_REUSE_STACKID, a collision with a
 	// different stack returns -EEXIST and the original stack is kept.
-	int id2 = impl.fill_stack_trace(stk2, false, false);
+	int id2 = impl.fill_stack_trace(stk2.data(), stk2.size(), false, false);
 	REQUIRE(id2 == -EEXIST);
 	{
 		auto result = (uint64_t *)impl.elem_lookup(&id1);
@@ -162,7 +162,7 @@ TEST_CASE("Test stack trace map 3: equal-size different-content collision")
 	}
 
 	// With BPF_F_REUSE_STACKID the id is reused and the stack replaced.
-	int id3 = impl.fill_stack_trace(stk2, true, false);
+	int id3 = impl.fill_stack_trace(stk2.data(), stk2.size(), true, false);
 	REQUIRE(id3 == id1);
 	{
 		auto result = (uint64_t *)impl.elem_lookup(&id3);
@@ -172,7 +172,7 @@ TEST_CASE("Test stack trace map 3: equal-size different-content collision")
 
 	// Inserting the very same stack again deduplicates to the same id
 	// instead of reporting a collision.
-	int id4 = impl.fill_stack_trace(stk2, false, false);
+	int id4 = impl.fill_stack_trace(stk2.data(), stk2.size(), false, false);
 	REQUIRE(id4 == id3);
 }
 
@@ -185,13 +185,13 @@ TEST_CASE("Test stack trace map 4: different-size collision")
 	std::vector<uint64_t> stk1, stk2;
 	REQUIRE(find_colliding_stacks(1000, 3, 5, stk1, stk2, 0x5678));
 	REQUIRE(stk1.size() != stk2.size());
-	REQUIRE(stack_trace_map::hash_stack_trace(stk1) % 1000 ==
-		stack_trace_map::hash_stack_trace(stk2) % 1000);
+	REQUIRE(stack_trace_map::hash_stack_frames(stk1.data(), stk1.size()) % 1000 ==
+		stack_trace_map::hash_stack_frames(stk2.data(), stk2.size()) % 1000);
 
-	int id1 = impl.fill_stack_trace(stk1, false, false);
+	int id1 = impl.fill_stack_trace(stk1.data(), stk1.size(), false, false);
 	REQUIRE(id1 >= 0);
 
-	int id2 = impl.fill_stack_trace(stk2, false, false);
+	int id2 = impl.fill_stack_trace(stk2.data(), stk2.size(), false, false);
 	REQUIRE(id2 == -EEXIST);
 	{
 		auto result = (uint64_t *)impl.elem_lookup(&id1);
@@ -199,7 +199,7 @@ TEST_CASE("Test stack trace map 4: different-size collision")
 		REQUIRE(std::equal(stk1.begin(), stk1.end(), result));
 	}
 
-	int id3 = impl.fill_stack_trace(stk2, true, false);
+	int id3 = impl.fill_stack_trace(stk2.data(), stk2.size(), true, false);
 	REQUIRE(id3 == id1);
 	{
 		auto result = (uint64_t *)impl.elem_lookup(&id3);
@@ -218,13 +218,13 @@ TEST_CASE("Test stack trace map 5: fast hash comparison keeps legacy id reuse")
 	REQUIRE(find_colliding_stacks(1000, 3, 3, stk1, stk2, 0x9abc));
 	REQUIRE(stk1 != stk2);
 
-	int id1 = impl.fill_stack_trace(stk1, false, false);
+	int id1 = impl.fill_stack_trace(stk1.data(), stk1.size(), false, false);
 	REQUIRE(id1 >= 0);
 
 	// BPF_F_FAST_STACK_CMP compares by hash/bucket only: distinct stacks
 	// still share the id and never trigger -EEXIST.
-	int id2 = impl.fill_stack_trace(stk2, false, true);
+	int id2 = impl.fill_stack_trace(stk2.data(), stk2.size(), false, true);
 	REQUIRE(id2 == id1);
-	int id3 = impl.fill_stack_trace(stk2, true, true);
+	int id3 = impl.fill_stack_trace(stk2.data(), stk2.size(), true, true);
 	REQUIRE(id3 == id1);
 }

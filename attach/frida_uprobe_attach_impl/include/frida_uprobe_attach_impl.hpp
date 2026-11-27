@@ -92,6 +92,7 @@ class frida_attach_impl final : public base_attach_impl {
 
     private:
 	void *interceptor;
+	void *backtracer = nullptr;
 	std::unordered_map<int, std::unique_ptr<class frida_attach_entry> >
 		attaches;
 	std::unordered_map<void *,
