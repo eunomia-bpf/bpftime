@@ -87,6 +87,15 @@ void convert_gum_cpu_context_to_pt_regs(const ::_GumArm64CpuContext &context,
 	regs.regs[30] = context.lr;
 	regs.sp = context.sp;
 	regs.pc = context.pc;
+#if defined(__APPLE__) && defined(__aarch64__)
+	// arm64e signs instruction addresses (LR/x30 and PC) with Pointer
+	// Authentication, while kernel uprobe pt_regs carry canonical
+	// addresses. xpaci strips a code pointer's PAC and is a no-op on
+	// unsigned values; every Apple Silicon chip implements PAC and this
+	// block is Apple-only, so it never runs on non-PAC ARM64 hardware.
+	asm volatile("xpaci %0" : "+r"(regs.regs[30]));
+	asm volatile("xpaci %0" : "+r"(regs.pc));
+#endif
 	// Keep the condition flags from Gum but force the mode field to EL0t.
 	regs.pstate = context.nzcv & ~ARM64_PSR_MODE_MASK;
 }

@@ -36,6 +36,7 @@ set(TEST_SOURCES
     test/test_base_attach_impl.cpp
     test/test_back_trace.cpp
     test/test_register_conversion.cpp
+    test/test_arm64_uprobe_canonical_pc.cpp
     test/test_short_uprobe_reclaim.cpp
 )
 option(TEST_LCOV "option for lcov" OFF)

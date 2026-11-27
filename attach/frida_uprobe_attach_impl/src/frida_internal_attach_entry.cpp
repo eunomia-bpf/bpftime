@@ -320,6 +320,19 @@ static void uprobe_listener_on_enter(GumInvocationContext *ctx,
 	SPDLOG_TRACE("Handle uprobe at uprobe_listener_on_enter");
 	bpftime::pt_regs regs;
 	convert_gum_cpu_context_to_pt_regs(*ctx->cpu_context, regs);
+#if defined(__aarch64__) || defined(_M_ARM64)
+	// Do not rely on Frida's cpu_context->pc, which the inline-hook
+	// machinery populates and which is not an API guarantee to name the
+	// probed instruction. Kernel uprobes report the probed instruction
+	// address, so expose the canonical function entry from the attach
+	// specifier rather than the hook internals.
+	regs.pc = (uint64_t)(uintptr_t)hook_entry->get_function();
+#if defined(__APPLE__) && defined(__aarch64__)
+	// Strip arm64e PAC from the signed function pointer; xpaci is a
+	// no-op on an unsigned address.
+	asm volatile("xpaci %0" : "+r"(regs.pc));
+#endif
+#endif
 
 	// Same C-frame hazard as the override handler: a throw here would
 	// terminate the host, so a failed callback drops one event.

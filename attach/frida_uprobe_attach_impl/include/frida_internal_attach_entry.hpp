@@ -31,6 +31,13 @@ class frida_internal_attach_entry {
 	override_return_set_callback override_return_callback;
 
 	bool has_override() const;
+	// Resolved entry address of the probed function. On ARM64 this is the
+	// canonical PC handed to uprobe callbacks instead of Frida's
+	// inline-hook trampoline address.
+	void *get_function() const
+	{
+		return function;
+	}
 	void ensure_listener(int attach_type);
 	void run_filter_callback(const pt_regs &regs) const;
 	void iterate_uprobe_callbacks(const pt_regs &regs) const;
