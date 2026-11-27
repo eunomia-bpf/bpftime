@@ -25,6 +25,10 @@ class fix_size_hash_map_impl {
 			       size_t value_size);
 
 	void *elem_lookup(const void *key);
+	bool elem_lookup_copy(const void *key, void *value_out) const noexcept
+	{
+		return map_impl.elem_lookup_copy(key, value_out);
+	}
 
 	long elem_update(const void *key, const void *value, uint64_t flags,
 			 bool from_syscall = true);

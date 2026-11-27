@@ -51,14 +51,6 @@ class array_map_of_maps_impl : public array_map_impl {
 };
 
 class hash_map_of_maps_impl : public fix_size_hash_map_impl {
-	static int load_inner_id(const void *p) noexcept
-	{
-		if (((uintptr_t)p & 3U) == 0)
-			return __atomic_load_n(static_cast<const int *>(p),
-					       __ATOMIC_ACQUIRE);
-		return *static_cast<const int *>(p);
-	}
-
     public:
 	hash_map_of_maps_impl(
 		boost::interprocess::managed_shared_memory &memory,
@@ -70,25 +62,27 @@ class hash_map_of_maps_impl : public fix_size_hash_map_impl {
 
 	void *elem_lookup(const void *key)
 	{
-		auto value = fix_size_hash_map_impl::elem_lookup(key);
-		if (value == nullptr) {
+		int map_id = 0;
+		if (!fix_size_hash_map_impl::elem_lookup_copy(key, &map_id)) {
 			errno = ENOENT;
 			return nullptr;
 		}
-		return (void *)((u_int64_t)load_inner_id(value));
+		return (void *)((u_int64_t)map_id);
 	}
-	// See array_map_of_maps_impl::elem_lookup_userspace: return the stored
-	// 4-byte inner fd address for the syscall memcpy path instead of the
-	// pointer-sized helper handle.
+	// See array_map_of_maps_impl::elem_lookup_userspace: return a stable
+	// non-zero 4-byte snapshot address so the syscall caller cannot observe
+	// a concurrent delete or zero write between validation and memcpy.
 	void *elem_lookup_userspace(const void *key)
 	{
-		auto *stored = static_cast<int *>(
-			fix_size_hash_map_impl::elem_lookup(key));
-		if (stored == nullptr || load_inner_id(stored) == 0) {
+		int map_id = 0;
+		if (!fix_size_hash_map_impl::elem_lookup_copy(key, &map_id) ||
+		    map_id == 0) {
 			errno = ENOENT;
 			return nullptr;
 		}
-		return stored;
+		static thread_local int snapshot = 0;
+		snapshot = map_id;
+		return &snapshot;
 	}
 };
 

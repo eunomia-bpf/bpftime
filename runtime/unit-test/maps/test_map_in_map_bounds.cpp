@@ -118,10 +118,20 @@ TEST_CASE("Hash-of-maps supports lock-free concurrent helper lookups",
 {
 	REQUIRE_FALSE(hash_map_of_maps_impl::should_lock);
 
+	static const char *shm_z = "bpftime_hash_of_maps_zero_cap_test";
+	shm_cleanup cleanup_z(shm_z);
+	managed_shared_memory seg_z(create_only, shm_z, 65536);
+	hash_map_of_maps_impl zero_map(seg_z, sizeof(uint32_t), 0, 0);
+	uint32_t zk = 1;
+	int zfd = 9;
+	REQUIRE(zero_map.elem_lookup(&zk) == nullptr);
+	REQUIRE(zero_map.elem_update(&zk, &zfd, 0) == -1);
+	REQUIRE(errno == E2BIG);
+
 	static const char *shm_name = "bpftime_hash_of_maps_concurrent_test";
 	shm_cleanup cleanup(shm_name);
 	managed_shared_memory segment(create_only, shm_name, 1024 * 1024);
-	hash_map_of_maps_impl map(segment, sizeof(uint32_t), 128, 0);
+	hash_map_of_maps_impl map(segment, sizeof(uint32_t), 64, 0);
 
 	constexpr uint32_t steady_keys = 16;
 	for (uint32_t k = 0; k < steady_keys; ++k) {
@@ -129,37 +139,66 @@ TEST_CASE("Hash-of-maps supports lock-free concurrent helper lookups",
 		REQUIRE(map.elem_update(&k, &fd, 0) == 0);
 	}
 
+	std::atomic<bool> start{ false };
 	std::atomic<bool> stop{ false };
 	std::atomic<uint64_t> failures{ 0 };
-	std::thread writer([&]() {
-		uint32_t churn_base = 64;
-		for (int iter = 0; iter < 500; ++iter) {
-			uint32_t k = churn_base + static_cast<uint32_t>(iter % 32);
-			int fd = 1000 + (iter % 100);
-			if (map.elem_update(&k, &fd, 0) != 0)
-				failures.fetch_add(1);
-			if (iter % 2 == 1 && map.elem_delete(&k) != 0)
-				failures.fetch_add(1);
-		}
-		stop.store(true, std::memory_order_release);
-	});
+	std::atomic<uint64_t> reads{ 0 };
 
 	std::vector<std::thread> readers;
 	for (int t = 0; t < 8; ++t) {
 		readers.emplace_back([&]() {
+			while (!start.load(std::memory_order_acquire))
+				std::this_thread::yield();
 			while (!stop.load(std::memory_order_acquire)) {
 				for (uint32_t k = 0; k < steady_keys; ++k) {
 					auto val = reinterpret_cast<uintptr_t>(
 						map.elem_lookup(&k));
-					if (val != 100 + k)
+					if (val != 100 + k && val != 200 + k)
+						failures.fetch_add(1);
+					auto *sp = static_cast<int *>(
+						map.elem_lookup_userspace(&k));
+					if (sp == nullptr ||
+					    (*sp != static_cast<int>(100 + k) &&
+					     *sp != static_cast<int>(200 + k)))
 						failures.fetch_add(1);
 				}
+				// Key toggled between 0 and nonzero: userspace
+				// snapshot must never return a pointer to zero.
+				uint32_t toggle_k = steady_keys;
+				if (auto *tp = static_cast<int *>(
+					    map.elem_lookup_userspace(&toggle_k))) {
+					if (*tp == 0)
+						failures.fetch_add(1);
+				}
+				reads.fetch_add(1, std::memory_order_relaxed);
 			}
 		});
 	}
 
-	writer.join();
+	start.store(true, std::memory_order_release);
+	while (reads.load(std::memory_order_acquire) == 0)
+		std::this_thread::yield();
+	for (int iter = 0; iter < 500; ++iter) {
+		for (uint32_t k = 0; k < steady_keys; ++k) {
+			int fd = (iter % 2 == 0) ? static_cast<int>(200 + k) :
+						   static_cast<int>(100 + k);
+			if (map.elem_update(&k, &fd, 0) != 0)
+				failures.fetch_add(1);
+		}
+		uint32_t toggle_k = steady_keys;
+		int toggle_fd = (iter % 2 == 0) ? 0 : 777;
+		if (map.elem_update(&toggle_k, &toggle_fd, 0) != 0)
+			failures.fetch_add(1);
+		uint32_t churn_k = 32 + static_cast<uint32_t>(iter % 16);
+		int churn_fd = 1000 + iter;
+		if (map.elem_update(&churn_k, &churn_fd, 0) != 0 ||
+		    map.elem_delete(&churn_k) != 0)
+			failures.fetch_add(1);
+	}
+	stop.store(true, std::memory_order_release);
+
 	for (auto &r : readers)
 		r.join();
+	REQUIRE(reads.load() >= 8);
 	REQUIRE(failures.load() == 0);
 }
