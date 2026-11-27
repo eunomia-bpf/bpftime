@@ -13,7 +13,7 @@ uint32_t bpftime::probe_read_window_config_snapshot;
 static_assert(std::atomic_ref<uint32_t>::is_always_lock_free);
 void bpftime::bpftime_set_probe_read_window_config(const runtime_config &config) noexcept
 {
-	const auto bytes = std::min(config.probe_read_window_bytes, 4096u);
+	const auto bytes = std::min(config.probe_read_window_bytes, 512u);
 	const auto pre = std::min(config.probe_read_lookbehind_bytes, bytes);
 	std::atomic_ref(probe_read_window_config_snapshot)
 		.store((bytes + 1) | (pre << 13), std::memory_order_relaxed);
@@ -127,9 +127,9 @@ runtime_config bpftime::construct_runtime_config_from_env() noexcept
 		runtime_config.enable_frida_fuzzy_backtracer = true;
 	}
 
-	if (auto bytes = parse_numeric_env<int>("BPFTIME_PROBE_READ_WINDOW_BYTES", 0, 4096))
+	if (auto bytes = parse_numeric_env<int>("BPFTIME_PROBE_READ_WINDOW_BYTES", 0, 512))
 		runtime_config.probe_read_window_bytes = *bytes;
-	if (auto pre = parse_numeric_env<int>("BPFTIME_PROBE_READ_LOOKBEHIND_BYTES", 0, 4096))
+	if (auto pre = parse_numeric_env<int>("BPFTIME_PROBE_READ_LOOKBEHIND_BYTES", 0, 512))
 		runtime_config.probe_read_lookbehind_bytes = *pre;
 	runtime_config.probe_read_lookbehind_bytes =
 		std::min(runtime_config.probe_read_lookbehind_bytes,

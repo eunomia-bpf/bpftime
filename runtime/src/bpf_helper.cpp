@@ -108,7 +108,7 @@ __attribute__((weak)) bpftime::bpf_attach_ctx &get_global_attach_ctx()
 // (bpf_probe_read is also not in the async-signal-safe helper set).
 namespace
 {
-constexpr size_t PROBE_READ_AHEAD_CAP = 4096;
+constexpr size_t PROBE_READ_AHEAD_CAP = 512;
 
 struct probe_read_ahead_window {
 	const char *base = nullptr;
@@ -118,32 +118,17 @@ struct probe_read_ahead_window {
 	char storage[PROBE_READ_AHEAD_CAP];
 };
 
-// The 4 KiB window stays off static TLS: this runtime is built with
-// -ftls-model=initial-exec, so a multi-KB thread_local object would exhaust
-// the glibc static TLS surplus when the library is dlopen()ed after startup
-// ("cannot allocate memory in static TLS block"). A pthread key keeps the
-// per-thread storage on the heap, allocated lazily once per thread and freed
-// by the key destructor, mirroring the synthetic task_struct storage below.
-static pthread_key_t probe_read_ahead_key;
-static const int probe_read_ahead_key_status =
-	pthread_key_create(&probe_read_ahead_key, free);
+// The window lives in static TLS (this runtime is built with
+// -ftls-model=initial-exec), so a probe read never allocates: a heap buffer
+// would be allocated inside a helper that can run while the host holds its
+// malloc lock. A late dlopen() of the agent must fit its TLS into glibc's
+// small static-TLS surplus, which is why the window is capped at 512 bytes
+// (maintainer decision, DECISIONS.md 2026-11-27).
+thread_local probe_read_ahead_window tls_probe_read_ahead;
 
 static inline probe_read_ahead_window *get_probe_read_ahead_window() noexcept
 {
-	if (probe_read_ahead_key_status != 0)
-		return nullptr;
-	auto *window = static_cast<probe_read_ahead_window *>(
-		pthread_getspecific(probe_read_ahead_key));
-	if (window == nullptr) {
-		window = static_cast<probe_read_ahead_window *>(
-			calloc(1, sizeof(probe_read_ahead_window)));
-		if (window == nullptr ||
-		    pthread_setspecific(probe_read_ahead_key, window) != 0) {
-			free(window);
-			return nullptr;
-		}
-	}
-	return window;
+	return &tls_probe_read_ahead;
 }
 
 inline bool probe_read_ahead_active()
@@ -223,7 +208,8 @@ static bool probe_read_memory(void *dst, const void *src, size_t size)
 							  getpid();
 	const auto config = std::atomic_ref(bpftime::probe_read_window_config_snapshot)
 				    .load(std::memory_order_relaxed);
-	const size_t bytes = config ? (config & 8191u) - 1 : 512;
+	const size_t bytes = std::min<size_t>(
+		config ? (config & 8191u) - 1 : 512, PROBE_READ_AHEAD_CAP);
 	const size_t pre = config ? config >> 13 : 64;
 	if (auto *window = get_probe_read_ahead_window();
 	    probe_read_ahead_active() && bytes > 0 && window != nullptr) {

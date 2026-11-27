@@ -2,6 +2,12 @@
 
 Newest first. Read before starting a change. A pull request that reverses an entry is a design problem until a maintainer decides again. Every entry quotes the maintainer verbatim; changing a decision means adding a new entry.
 
+- **2026-11-27: the probe-read window is configurable and capped at 512 bytes in static TLS** (#984). `BPFTIME_PROBE_READ_WINDOW_BYTES` (0–512, default 512; 0 disables the window) and `BPFTIME_PROBE_READ_LOOKBEHIND_BYTES` (default 64, at most the window size) are read at startup. The per-thread window stays in `initial-exec` TLS, so a probe read never allocates, and 512 bytes keeps a late `dlopen()` of the agent inside glibc's static-TLS surplus. A larger window needs storage outside TLS and a new decision.
+  > bpftime 我们现在 probe read 是不是有缓存? 这个大小长度和方向是不是动态配置更好? 你想想? 这个窗口默认值多少比较好?
+  >
+  > 这个能配置吗? 我觉得要能动态配置
+  >
+  > 先限制在 512
 - **2026-11-26: the other hot-path items of the entry from #977 are approved** (#977, #979). These four, listed there without the maintainer's words, now stand:
   1. `process_vm_writev` on every `bpf_probe_write_user` in the default build (`ENABLE_PROBE_WRITE_CHECK` defaults to `ON`);
   2. one-time identity caching: `SYS_gettid` once per thread into TLS and `readlink("/proc/self/exe")` once per process, results cached, host `errno` preserved;
