@@ -11,6 +11,7 @@
 #include <boost/interprocess/containers/string.hpp>
 #include <boost/interprocess/containers/vector.hpp>
 #include <cstddef>
+#include <vector>
 #include <cstdint>
 #include <optional>
 #include <boost/interprocess/allocators/allocator.hpp>
@@ -88,6 +89,9 @@ struct software_perf_event_buffer {
 	size_t mmap_size() const;
 	bool has_data() const;
 	bool copy_next_record_to(software_perf_event_buffer &dst);
+	// Host-side consumer drain: copy the next record into a process-local
+	// heap vector and advance data_tail. False when empty or invalid.
+	bool drain_next_to_heap(std::vector<uint8_t> &out);
 
     private:
 	bool append_record(const void *record, size_t record_size);
@@ -143,6 +147,10 @@ struct software_perf_event_data {
 	int output_data(const void *buf, size_t size);
 	size_t mmap_size() const;
 	bool has_data();
+	// Drain producer shards, then copy the next consumer record into a
+	// process-local heap vector. False when empty or the shard lock is
+	// tainted.
+	bool drain_next_to_heap(std::vector<uint8_t> &out);
 
     private:
 	software_perf_event_shard *get_current_thread_shard();
