@@ -358,9 +358,13 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 			return with_robust_shm_lock(
 				impl->should_lock, from_syscall, map_lock,
 				[&]() -> int {
-					// LRU enforces BPF_F_WRONLY only on
-					// syscall access; helpers pass false.
-					if constexpr (is_lru_hash_v<impl_t>)
+					// LRU and HASH_OF_MAPS enforce
+					// BPF_F_WRONLY only on syscall access;
+					// helpers pass false.
+					if constexpr (is_lru_hash_v<impl_t> ||
+						      std::is_same_v<
+							      impl_t,
+							      hash_map_of_maps_impl>)
 						return impl->map_get_next_key(
 							key, next_key,
 							from_syscall);

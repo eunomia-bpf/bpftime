@@ -9,6 +9,8 @@
 #include <bpf_map/map_common_def.hpp>
 #include <cerrno>
 #include <cstdint>
+#include <cstring>
+#include "linux/bpf.h"
 #include "array_map.hpp"
 #include "fix_hash_map.hpp"
 
@@ -51,22 +53,27 @@ class array_map_of_maps_impl : public array_map_impl {
 };
 
 class hash_map_of_maps_impl : public fix_size_hash_map_impl {
+	uint32_t flags;
+
     public:
 	hash_map_of_maps_impl(
 		boost::interprocess::managed_shared_memory &memory,
-		uint32_t key_size, uint32_t max_entries, uint32_t /*flags*/)
+		uint32_t key_size, uint32_t max_entries, uint32_t flags)
 		: fix_size_hash_map_impl(memory, max_entries, key_size,
-					 sizeof(int))
+					 sizeof(int)),
+		  flags(flags)
 	{
 	}
 
 	void *elem_lookup(const void *key)
 	{
-		int map_id = 0;
-		if (!fix_size_hash_map_impl::elem_lookup_copy(key, &map_id)) {
+		uint64_t raw_val = 0;
+		if (!fix_size_hash_map_impl::elem_lookup_copy(key, &raw_val)) {
 			errno = ENOENT;
 			return nullptr;
 		}
+		int map_id = 0;
+		std::memcpy(&map_id, &raw_val, sizeof(map_id));
 		return (void *)((u_int64_t)map_id);
 	}
 	// See array_map_of_maps_impl::elem_lookup_userspace: return a stable
@@ -74,15 +81,66 @@ class hash_map_of_maps_impl : public fix_size_hash_map_impl {
 	// a concurrent delete or zero write between validation and memcpy.
 	void *elem_lookup_userspace(const void *key)
 	{
+		if (flags & BPF_F_WRONLY) {
+			errno = EPERM;
+			return nullptr;
+		}
+		uint64_t raw_val = 0;
+		if (!fix_size_hash_map_impl::elem_lookup_copy(key, &raw_val)) {
+			errno = ENOENT;
+			return nullptr;
+		}
 		int map_id = 0;
-		if (!fix_size_hash_map_impl::elem_lookup_copy(key, &map_id) ||
-		    map_id == 0) {
+		std::memcpy(&map_id, &raw_val, sizeof(map_id));
+		if (map_id == 0) {
 			errno = ENOENT;
 			return nullptr;
 		}
 		static thread_local int snapshot = 0;
 		snapshot = map_id;
 		return &snapshot;
+	}
+
+	long elem_update(const void *key, const void *value,
+			 uint64_t update_flags, bool from_syscall = true)
+	{
+		if (from_syscall && (flags & BPF_F_RDONLY)) {
+			errno = EPERM;
+			return -1;
+		}
+		return fix_size_hash_map_impl::elem_update(key, value,
+							   update_flags,
+							   from_syscall);
+	}
+
+	long elem_delete(const void *key, bool from_syscall = true)
+	{
+		if (from_syscall && (flags & BPF_F_RDONLY)) {
+			errno = EPERM;
+			return -1;
+		}
+		return fix_size_hash_map_impl::elem_delete(key, from_syscall);
+	}
+
+	int lookup_and_delete(const void *key, void *value_out,
+			      bool from_syscall = false)
+	{
+		if (from_syscall && (flags & (BPF_F_RDONLY | BPF_F_WRONLY))) {
+			errno = EPERM;
+			return -1;
+		}
+		return fix_size_hash_map_impl::lookup_and_delete(
+			key, value_out, from_syscall);
+	}
+
+	int map_get_next_key(const void *key, void *next_key,
+			     bool from_syscall = false)
+	{
+		if (from_syscall && (flags & BPF_F_WRONLY)) {
+			errno = EPERM;
+			return -1;
+		}
+		return fix_size_hash_map_impl::map_get_next_key(key, next_key);
 	}
 };
 

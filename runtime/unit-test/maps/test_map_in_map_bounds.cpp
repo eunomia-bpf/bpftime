@@ -1,4 +1,6 @@
 #include <bpf_map/userspace/map_in_maps.hpp>
+#include "bpftime_handler.hpp"
+#include "linux/bpf.h"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/shared_memory_object.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -139,14 +141,17 @@ TEST_CASE("Hash-of-maps supports lock-free concurrent helper lookups",
 		REQUIRE(map.elem_update(&k, &fd, 0) == 0);
 	}
 
+	constexpr int num_readers = 8;
+	std::atomic<int> ready{ 0 };
 	std::atomic<bool> start{ false };
 	std::atomic<bool> stop{ false };
 	std::atomic<uint64_t> failures{ 0 };
 	std::atomic<uint64_t> reads{ 0 };
 
 	std::vector<std::thread> readers;
-	for (int t = 0; t < 8; ++t) {
+	for (int t = 0; t < num_readers; ++t) {
 		readers.emplace_back([&]() {
+			ready.fetch_add(1, std::memory_order_release);
 			while (!start.load(std::memory_order_acquire))
 				std::this_thread::yield();
 			while (!stop.load(std::memory_order_acquire)) {
@@ -170,11 +175,35 @@ TEST_CASE("Hash-of-maps supports lock-free concurrent helper lookups",
 					if (*tp == 0)
 						failures.fetch_add(1);
 				}
+				// Churned keys 32..47 are deleted and reinserted
+				// concurrently: either absent or holding the
+				// matching key's descriptor.
+				for (uint32_t ck = 32; ck < 48; ++ck) {
+					auto val = reinterpret_cast<uintptr_t>(
+						map.elem_lookup(&ck));
+					if (val != 0 &&
+					    (val < 1000 || val >= 1500 ||
+					     ((val - 1000) % 16 != (ck - 32))))
+						failures.fetch_add(1);
+					if (auto *cp = static_cast<int *>(
+						    map.elem_lookup_userspace(
+							    &ck))) {
+						int cv = *cp;
+						if (cv < 1000 || cv >= 1500 ||
+						    (static_cast<uint32_t>(cv -
+									   1000) %
+							     16 !=
+						     (ck - 32)))
+							failures.fetch_add(1);
+					}
+				}
 				reads.fetch_add(1, std::memory_order_relaxed);
 			}
 		});
 	}
 
+	while (ready.load(std::memory_order_acquire) < num_readers)
+		std::this_thread::yield();
 	start.store(true, std::memory_order_release);
 	while (reads.load(std::memory_order_acquire) == 0)
 		std::this_thread::yield();
@@ -201,4 +230,110 @@ TEST_CASE("Hash-of-maps supports lock-free concurrent helper lookups",
 		r.join();
 	REQUIRE(reads.load() >= 8);
 	REQUIRE(failures.load() == 0);
+}
+
+TEST_CASE("Hash-of-maps enforces BPF_F_RDONLY/BPF_F_WRONLY",
+	  "[maps][map_in_map][map_flags]")
+{
+	static const char *shm_name = "bpftime_hash_of_maps_flags_test";
+	shm_cleanup cleanup(shm_name);
+	managed_shared_memory segment(create_only, shm_name, 1024 * 1024);
+
+	uint32_t k1 = 1, k2 = 2, next_k = 0;
+	int fd1 = 11, out = 0;
+
+	{
+		hash_map_of_maps_impl rdonly(segment, sizeof(uint32_t), 16,
+					     BPF_F_RDONLY);
+		errno = 0;
+		REQUIRE(rdonly.elem_update(&k1, &fd1, BPF_ANY, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(rdonly.elem_delete(&k1, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(rdonly.lookup_and_delete(&k1, &out, true) == -1);
+		REQUIRE(errno == EPERM);
+
+		// Program/non-syscall writes and helper reads keep working.
+		REQUIRE(rdonly.elem_update(&k1, &fd1, BPF_ANY, false) == 0);
+		REQUIRE(rdonly.elem_lookup(&k1) ==
+			reinterpret_cast<void *>(fd1));
+		auto *sp = static_cast<int *>(rdonly.elem_lookup_userspace(&k1));
+		REQUIRE(sp != nullptr);
+		REQUIRE(*sp == fd1);
+		REQUIRE(rdonly.map_get_next_key(nullptr, &next_k, true) == 0);
+		REQUIRE(next_k == k1);
+	}
+
+	{
+		hash_map_of_maps_impl wronly(segment, sizeof(uint32_t), 16,
+					     BPF_F_WRONLY);
+		REQUIRE(wronly.elem_update(&k1, &fd1, BPF_ANY, true) == 0);
+		REQUIRE(wronly.elem_update(&k2, &fd1, BPF_NOEXIST, true) == 0);
+
+		errno = 0;
+		REQUIRE(wronly.elem_lookup_userspace(&k1) == nullptr);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(wronly.map_get_next_key(nullptr, &next_k, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(wronly.lookup_and_delete(&k1, &out, true) == -1);
+		REQUIRE(errno == EPERM);
+
+		// Helper lookups and helper next-key stay unrestricted.
+		REQUIRE(wronly.elem_lookup(&k1) ==
+			reinterpret_cast<void *>(fd1));
+		REQUIRE(wronly.map_get_next_key(nullptr, &next_k, false) == 0);
+		REQUIRE(wronly.elem_delete(&k2, true) == 0);
+	}
+
+	// End-to-end check through bpf_map_handler dispatch.
+	auto *manager = segment.construct<handler_manager>(
+		"_hash_of_maps_flags_manager")(segment, MIN_MAX_FD_COUNT);
+	constexpr int rd_fd = 1, wr_fd = 2;
+	REQUIRE(manager->set_handler(
+			rd_fd,
+			bpf_map_handler(rd_fd, BPF_MAP_TYPE_HASH_OF_MAPS,
+					sizeof(uint32_t), sizeof(uint32_t), 16,
+					BPF_F_RDONLY, "hm_rd", segment),
+			segment) == rd_fd);
+	REQUIRE(manager->set_handler(
+			wr_fd,
+			bpf_map_handler(wr_fd, BPF_MAP_TYPE_HASH_OF_MAPS,
+					sizeof(uint32_t), sizeof(uint32_t), 16,
+					BPF_F_WRONLY, "hm_wr", segment),
+			segment) == wr_fd);
+
+	{
+		auto &hm = std::get<bpf_map_handler>((*manager)[rd_fd]);
+		errno = 0;
+		REQUIRE(hm.map_update_elem(&k1, &fd1, BPF_ANY, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(hm.map_delete_elem(&k1, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(hm.map_lookup_elem(&k1, true) == nullptr);
+		REQUIRE(errno == ENOENT);
+	}
+	{
+		auto &hm = std::get<bpf_map_handler>((*manager)[wr_fd]);
+		REQUIRE(hm.map_update_elem(&k1, &fd1, BPF_ANY, true) == 0);
+		errno = 0;
+		REQUIRE(hm.map_lookup_elem(&k1, true) == nullptr);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(hm.bpf_map_get_next_key(nullptr, &next_k, true) == -1);
+		REQUIRE(errno == EPERM);
+		REQUIRE(hm.map_lookup_elem(&k1, false) ==
+			reinterpret_cast<void *>(fd1));
+		REQUIRE(hm.bpf_map_get_next_key(nullptr, &next_k, false) == 0);
+		REQUIRE(hm.map_delete_elem(&k1, true) == 0);
+	}
+
+	manager->clear_id_at(rd_fd, segment);
+	manager->clear_id_at(wr_fd, segment);
+	segment.destroy_ptr(manager);
 }
