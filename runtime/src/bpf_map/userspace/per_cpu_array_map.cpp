@@ -38,6 +38,10 @@ void *per_cpu_array_map_impl::elem_lookup(const void *key)
 			errno = ENOENT;
 			return nullptr;
 		}
+		if (cpu < 0 || cpu >= ncpu) {
+			errno = EINVAL;
+			return nullptr;
+		}
 		uint32_t key_val = *(uint32_t *)key;
 		if (key_val >= max_ent) {
 			errno = ENOENT;
@@ -56,6 +60,10 @@ long per_cpu_array_map_impl::elem_update(const void *key, const void *value,
 		// return impl[cpu].elem_update(key, value, flags);
 		if (key == nullptr) {
 			errno = ENOENT;
+			return -1;
+		}
+		if (cpu < 0 || cpu >= ncpu) {
+			errno = EINVAL;
 			return -1;
 		}
 		uint32_t key_val = *(uint32_t *)key;

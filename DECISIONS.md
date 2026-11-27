@@ -2,6 +2,18 @@
 
 Newest first. Read before starting a change. A pull request that reverses an entry is a design problem until a maintainer decides again. Every entry quotes the maintainer verbatim; changing a decision means adding a new entry.
 
+- **2026-11-27: no per-CPU execution locks (`bpftime_cpu_exec_locks` / `bpf_cpu_execution_guard`); `PERCPU_ARRAY` stays lock-free with lazy per-invocation CPU ID pinning** (#730, #937). Remove `#730` and `#937`'s global `bpf_cpu_execution_guard` and `bpftime_cpu_exec_locks` from `bpftime_prog_exec` and shared memory (superseding `bpftime_shm::cpu_exec_locks` in L1 below). `bpftime_prog_exec` must never call `sched_getcpu()` or take any per-CPU lock on entry; `PERCPU_ARRAY` stays completely lock-free (`should_lock = false`), matching the pre-`#730` `#298` design and Linux kernel `migrate_disable()` / sleepable-uprobe semantics where per-CPU slots are not mutex-serialized across preempted tasks. Only when a running BPF program actually calls `my_sched_getcpu()` (`PERCPU_*` maps, `bpf_get_smp_processor_id`, `bpf_perf_event_output`) is the logical CPU queried once and cached in a `thread_local int` for the duration of that outermost `bpftime_prog_exec` call (`0` locks, `0` atomics, `0` syscalls, and `0 ns` `sched_getcpu()` cost for programs that do not touch per-CPU state).
+  > bpf_cpu_execution_guard 每次无条件调 sched_getcpu() + 跨进程 ROBUST 锁加解锁（第二大头，约 90–130 ns）有必要这个吗? per-CPU 状态的程序 也不需要吧? 我觉得我们用户态不应该考虑 cpu, 而是所有的 cpu 模型都会被映射到thread?
+  >
+  > sched_getcpu() 在 PERCPU_ARRAY / PERCPU_HASH 里面那是不是也行?
+  >
+  > 在第一次真正进入 PERCPU_ARRAY / PERCPU_HASH（即 my_sched_getcpu()）时按需调一次并 trylock， 是不是原先就是这样的? 为啥当时改了? 追溯一下完整历史
+  >
+  > PERCPU_ARRAY 完全不拿锁我觉得要.
+  >
+  > Scratch 大结构体被抢占踩脏：线程 A 在核 3 调 lookup 拿到 &data[0][3] 写了一半被时钟中断切走，线程 B 被调度上核 3 调 sched_getcpu() 也会拿到同一个 &data[0][3] 把 A 的半截事件覆盖掉，A 恢复后发进 ringbuf 的就是拼装脏数据。内核会出现这样的吗
+  >
+  > 修了吗? 代码是不是要显著减少? 这个 descision 也需要写进去避免再次弄乱
 
 - **2026-11-27: non-blocking `dlopen()` retry and `L3` lock callsites for unmapped uprobes** (#970). When a Frida uprobe target DSO is not mapped at startup (`-ENOENT`), `bpf_attach_ctx` sets an atomic `has_pending_uprobes` flag and retries pending uprobe links on outermost successful non-`RTLD_NOLOAD` host `dlopen()` calls in the initialized PID, clearing `has_pending_uprobes` once no unmapped uprobe links remain so steady-state `dlopen()` returns before taking any lock or opening any lock file. While `has_pending_uprobes` is set, the `dlopen()` path uses three non-blocking `L3` lock callsites: (1) `detach_mutex` (`std::try_to_lock`) to avoid racing session teardown; (2) shared `shm_lifecycle_lock` (`LOCK_SH | LOCK_NB`) so `dlopen()` never scans SHM across concurrent `syscall-server` segment recreation or final unlink; and (3) `ctx_mutex` (`std::try_to_lock`) to serialize `bpf_attach_ctx` state without blocking the host loader.
   > 测试过了 pytorch 的 cache allocatpr 能 work? 去测一下, 可以的话就这样 pr

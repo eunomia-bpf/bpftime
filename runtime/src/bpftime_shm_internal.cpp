@@ -901,9 +901,6 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		epoch_state = seg_mgr->find_no_lock<bpftime_global_epoch_state>(
 					     "bpftime_global_epoch_state")
 				      .first;
-		cpu_exec_locks = seg_mgr->find_no_lock<bpftime_cpu_exec_locks>(
-					 "bpftime_cpu_exec_locks")
-				  .first;
 		SPDLOG_DEBUG("done: bpftime_shm for client setup");
 	} else if (type == shm_open_type::SHM_CREATE_OR_OPEN ||
 		   type == shm_open_type::SHM_CREATE_ONLY) {
@@ -937,9 +934,6 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		epoch_state =
 			shm_find_or_construct<bpftime_global_epoch_state>(
 				segment, "bpftime_global_epoch_state");
-		cpu_exec_locks =
-			shm_find_or_construct<bpftime_cpu_exec_locks>(
-				segment, "bpftime_cpu_exec_locks");
 		SPDLOG_DEBUG("done: bpftime_shm for open_or_create setup");
 	} else if (type == shm_open_type::SHM_REMOVE_AND_CREATE) {
 		SPDLOG_DEBUG(
@@ -973,8 +967,6 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 				bpftime::DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME);
 		epoch_state = shm_construct<bpftime_global_epoch_state>(
 			segment, "bpftime_global_epoch_state");
-		cpu_exec_locks = shm_construct<bpftime_cpu_exec_locks>(
-			segment, "bpftime_cpu_exec_locks");
 		SPDLOG_DEBUG("done: bpftime_shm for server setup.");
 	} else if (type == shm_open_type::SHM_NO_CREATE) {
 		// not create any shm
@@ -1031,43 +1023,8 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		SPDLOG_ERROR("pkey_mprotect failed");
 		return;
 	}
-	if (cpu_exec_locks != nullptr) {
-		const auto page_sz =
-			static_cast<std::uintptr_t>(sysconf(_SC_PAGESIZE));
-		const auto start = reinterpret_cast<std::uintptr_t>(
-					   cpu_exec_locks->locks) &
-				   ~(page_sz - 1);
-		const auto end =
-			(reinterpret_cast<std::uintptr_t>(
-				 cpu_exec_locks->locks + BPFTIME_MAX_CPU_COUNT) +
-			 page_sz - 1) &
-			~(page_sz - 1);
-		if (pkey_mprotect(reinterpret_cast<void *>(start), end - start,
-				  PROT_READ | PROT_WRITE, 0) == -1) {
-			SPDLOG_ERROR(
-				"pkey_mprotect reset for cpu_exec_locks failed");
-			return;
-		}
-	}
 	is_mpk_init = true;
 #endif
-}
-
-void bpftime_shm::unlock_bpf_cpu(int cpu)
-{
-	shm_write_window_guard shm_window(*this);
-	if (cpu_exec_locks != nullptr && cpu >= 0 &&
-	    cpu < BPFTIME_MAX_CPU_COUNT)
-		cpu_exec_locks->locks[cpu].unlock();
-}
-
-bool bpftime_shm::acquire_bpf_cpu(int cpu)
-{
-	shm_write_window_guard shm_window(*this);
-	if (cpu_exec_locks == nullptr || cpu < 0 ||
-	    cpu >= BPFTIME_MAX_CPU_COUNT)
-		return false;
-	return cpu_exec_locks->locks[cpu].lock_and_recover();
 }
 
 std::uint64_t bpftime_shm::read_stable_epoch_seq(int max_tries) const

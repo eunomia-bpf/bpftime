@@ -24,8 +24,8 @@ using uint64_vec_allocator = boost::interprocess::allocator<
 	uint64_t, boost::interprocess::managed_shared_memory::segment_manager>;
 using uint64_vec = boost::interprocess::vector<uint64_t, uint64_vec_allocator>;
 
-template <class T>
-static inline T ensure_on_current_cpu(std::function<T(int cpu)> func)
+template <class T, class F>
+static inline T ensure_on_current_cpu(F &&func)
 {
 	return func(my_sched_getcpu());
 }
