@@ -50,10 +50,6 @@ class bpftime_hasher {
 // Preallocated index-chained hash map shared by HASH and PERCPU_HASH (modeled
 // on kernel/bpf/hashtab.c): O(1) slot free-list reuse with zero tombstones,
 // lock-free lookup/iteration, and 64-way striped robust_shm_mutex writes.
-// A writer that dies inside a stripe never leaves a bucket chain broken: an
-// insert publishes with one store to head_idx, an erase unlinks with one store,
-// and the free list is lock-free. So a dead owner's stripe is recovered and
-// reused (with_robust_shm_recover_lock); the death leaks at most one slot.
 class bpftime_hash_map {
     public:
 	static constexpr size_t NUM_LOCK_STRIPES = 64;
@@ -72,7 +68,8 @@ class bpftime_hash_map {
 	size_t _num_buckets, _max_element_count;
 	std::atomic<size_t> _count, _alloc_cursor;
 	std::atomic<uint64_t> _free_head;
-	mutable robust_shm_mutex _stripes[NUM_LOCK_STRIPES];
+	// One-store publish/unlink: a dead writer leaves chains intact, so recover.
+	mutable robust_shm_recovering_mutex _stripes[NUM_LOCK_STRIPES];
 	bytes_vec data_buffer;
 
 	uint8_t *raw(size_t off) const noexcept
@@ -263,8 +260,8 @@ class bpftime_hash_map {
 		}
 		const size_t b =
 			bpftime_hasher::hash_func(key, _key_size) % _num_buckets;
-		return with_robust_shm_recover_lock(
-			blocking, _stripes[b % NUM_LOCK_STRIPES],
+		return with_robust_shm_lock(
+			true, blocking, _stripes[b % NUM_LOCK_STRIPES],
 			[&]() -> long {
 				auto *bh = bucket(b);
 				const uint32_t head = __atomic_load_n(
@@ -328,7 +325,8 @@ class bpftime_hash_map {
 				__atomic_store_n(&bh->head_idx, claim,
 						 __ATOMIC_RELEASE);
 				return 0L;
-			});
+			},
+			"bpftime_hash_map");
 	}
 
 	long erase(const void *key, void *value_out, bool blocking)
@@ -339,8 +337,8 @@ class bpftime_hash_map {
 		}
 		const size_t b =
 			bpftime_hasher::hash_func(key, _key_size) % _num_buckets;
-		return with_robust_shm_recover_lock(
-			blocking, _stripes[b % NUM_LOCK_STRIPES],
+		return with_robust_shm_lock(
+			true, blocking, _stripes[b % NUM_LOCK_STRIPES],
 			[&]() -> long {
 				auto *bh = bucket(b);
 				uint32_t prev = END_IDX;
@@ -385,7 +383,8 @@ class bpftime_hash_map {
 				}
 				errno = ENOENT;
 				return -1L;
-			});
+			},
+			"bpftime_hash_map");
 	}
 
 	int map_get_next_key(const void *key, void *next_key) const noexcept
