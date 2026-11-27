@@ -108,6 +108,8 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			last_epoch_seq_seen = seq;
 		}
 		const std::uint64_t epoch_before = last_epoch_seq_seen;
+		const std::uint64_t link_seq_before =
+			manager->get_link_create_seq();
 		// Failed (handler id, first error) pairs of this scan. The
 		// vector stays empty on the common success path, so a normal
 		// scan performs no heap allocation here.
@@ -159,6 +161,8 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 		// succeeded the other is instantiated by the end of the
 		// scan, so drop it from the final failure set.
 		auto finalize_scan = [&]() {
+			last_link_create_seq_seen.store(
+				link_seq_before, std::memory_order_release);
 			if (failures.empty())
 				return;
 			std::string detail;
@@ -222,6 +226,7 @@ int bpf_attach_ctx::attach_uninstantiated_handlers(const runtime_config &config)
 	if (seq == BPFTIME_EPOCH_SEQ_UNSTABLE ||
 	    (seq != BPFTIME_EPOCH_SEQ_MISSING && seq != last_epoch_seq_seen))
 		return 0;
+	const std::uint64_t link_seq_before = manager->get_link_create_seq();
 	bool any_pending = false;
 	for (int i = 0; i < (int)manager->size(); i++) {
 		if (!manager->is_allocated(i) ||
@@ -264,8 +269,24 @@ int bpf_attach_ctx::attach_uninstantiated_handlers(const runtime_config &config)
 		    -ENOENT)
 			any_pending = true;
 	}
+	last_link_create_seq_seen.store(link_seq_before,
+					std::memory_order_release);
 	has_pending_uprobe.store(any_pending, std::memory_order_release);
 	return 0;
+}
+
+bool bpf_attach_ctx::has_pending_uprobes() const noexcept
+{
+	if (has_pending_uprobe.load(std::memory_order_acquire))
+		return true;
+	if (!bpftime_global_shm_is_initialized())
+		return false;
+	const handler_manager *manager =
+		shm_holder.global_shared_memory.get_manager();
+	return manager != nullptr &&
+	       manager->get_link_create_seq() !=
+		       last_link_create_seq_seen.load(
+			       std::memory_order_acquire);
 }
 
 bpf_attach_ctx::~bpf_attach_ctx()
@@ -692,6 +713,7 @@ void bpf_attach_ctx::reset_instantiated_state_unlocked()
 	instantiated_perf_events.clear();
 	instantiated_handlers.clear();
 	has_pending_uprobe.store(false, std::memory_order_relaxed);
+	last_link_create_seq_seen.store(0, std::memory_order_relaxed);
 }
 
 } // namespace bpftime

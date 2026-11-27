@@ -91,6 +91,8 @@ int handler_manager::set_handler(int fd, handler_variant &&handler,
 				return init_rc;
 			}
 		}
+	} else if (std::holds_alternative<bpf_link_handler>(handlers[fd])) {
+		link_create_seq.fetch_add(1, std::memory_order_release);
 	}
 	return fd;
 }
@@ -174,6 +176,7 @@ void handler_manager::clear_all(managed_shared_memory &memory)
 			clear_id_at(i, memory);
 		}
 	}
+	link_create_seq.store(0, std::memory_order_release);
 }
 
 } // namespace bpftime

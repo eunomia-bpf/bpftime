@@ -11,6 +11,7 @@
 #include "handler/memfd_handler.hpp"
 #include "spdlog/spdlog.h"
 #include <boost/interprocess/interprocess_fwd.hpp>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -115,6 +116,11 @@ class handler_manager {
 
 	void clear_all(managed_shared_memory &memory);
 
+	std::uint64_t get_link_create_seq() const noexcept
+	{
+		return link_create_seq.load(std::memory_order_acquire);
+	}
+
 	handler_manager(const handler_manager &) = delete;
 	handler_manager(handler_manager &&) noexcept = default;
 	handler_manager &operator=(const handler_manager &) = delete;
@@ -122,6 +128,7 @@ class handler_manager {
 
     private:
 	handler_variant_vector handlers;
+	std::atomic<std::uint64_t> link_create_seq{ 0 };
 };
 static_assert(shm_safe_type<handler_manager>);
 
