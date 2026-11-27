@@ -6,10 +6,7 @@ if(BPFTIME_LLVM_JIT)
   # The factory registers from a constructor; no ordinary symbol reference
   # pulls its archive member into this executable.
   target_link_libraries(bpftimetool PRIVATE
-    "$<LINK_LIBRARY:WHOLE_ARCHIVE,bpftime_llvm_vm>")
-  # runtime can also bring this archive in transitively without a feature.
-  set_property(TARGET bpftimetool PROPERTY
-    LINK_LIBRARY_OVERRIDE_bpftime_llvm_vm WHOLE_ARCHIVE)
+    -Wl,--whole-archive bpftime_llvm_vm -Wl,--no-whole-archive)
 endif()
 if(${BPFTIME_ENABLE_CUDA_ATTACH})
   include(../../cmake/cuda.cmake)

@@ -208,4 +208,9 @@ cmake --build build --target bpftime_rocm_channel_tests
 Recoverable compilation/attachment errors preserve the original dispatch.
 Upstream LLVM/Luthier still contain fatal compiler paths, so these checks do
 not establish support for arbitrary kernels or untrusted BPF programs.
+In the tested gfx1201 Debug build, a separate entry payload containing only
+an Array lookup followed by an atomic increment triggers a Luthier machine
+verifier error (`V_WRITELANE_B32` uses an undefined physical register) and
+aborts the victim. The supplied example and roundtrip payloads pass, but
+their success does not establish fail-open behavior for other payload shapes.
 
