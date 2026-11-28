@@ -178,3 +178,44 @@ TEST_CASE("Hash-of-maps lookups never return the id of a key that reused the slo
 	REQUIRE(hits.load() > 0);
 	REQUIRE(wrong.load() == 0);
 }
+
+TEST_CASE("Hash-of-maps syscall lookups never return the id of a key that reused the slot",
+	  "[maps][map_in_map]")
+{
+	static const char *shm_name =
+		"bpftime_hash_of_maps_syscall_slot_reuse_test";
+	shm_cleanup cleanup(shm_name);
+	managed_shared_memory segment(create_only, shm_name, 65536);
+	hash_map_of_maps_impl map(segment, sizeof(uint32_t), 4, 0);
+
+	// Same race through the syscall wrapper, which hands back a thread-local
+	// snapshot: a lookup of `a` must return `a`'s id or nothing, never the
+	// id of `b` that took over the freed slot.
+	const uint32_t a = 1, b = 2;
+	const int id_a = 0x0a0a0a0a, id_b = 0x0b0b0b0b;
+	REQUIRE(map.elem_update(&a, &id_a, 0) == 0);
+	std::atomic<bool> stop{ false };
+	std::atomic<uint64_t> hits{ 0 }, wrong{ 0 };
+	std::thread reader([&]() {
+		while (!stop.load(std::memory_order_relaxed)) {
+			auto *id = static_cast<int *>(
+				map.elem_lookup_userspace(&a));
+			if (id == nullptr)
+				continue;
+			if (*id == id_a)
+				hits.fetch_add(1, std::memory_order_relaxed);
+			else
+				wrong.fetch_add(1, std::memory_order_relaxed);
+		}
+	});
+	for (int i = 0; i < 200000; ++i) {
+		(void)map.elem_delete(&a);
+		(void)map.elem_update(&b, &id_b, 0);
+		(void)map.elem_delete(&b);
+		(void)map.elem_update(&a, &id_a, 0);
+	}
+	stop.store(true);
+	reader.join();
+	REQUIRE(hits.load() > 0);
+	REQUIRE(wrong.load() == 0);
+}
