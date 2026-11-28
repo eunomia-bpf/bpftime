@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <dlfcn.h>
+#include <link.h>
 #include <fstream>
 #include <string>
 #include <utility>
@@ -158,12 +159,27 @@ std::string read_line(int fd)
 	return result;
 }
 
+
+// Late attach comes from the loader's r_brk; a failure shows its first bytes.
+std::string r_brk_bytes()
+{
+	const auto *p = reinterpret_cast<const unsigned char *>(_r_debug.r_brk);
+	std::string out = "r_brk bytes:";
+	for (int i = 0; p != nullptr && i < 16; i++) {
+		char hex[4];
+		snprintf(hex, sizeof(hex), " %02x", p[i]);
+		out += hex;
+	}
+	return out;
+}
+
 } // namespace
 
 TEST_CASE(
 	"Preloaded agent skips unmapped DSOs at startup and attaches them on dlopen without resetting active links",
 	"[agent][dlopen]")
 {
+	INFO(r_brk_bytes());
 	shm_fixture shm;
 	const auto initial_sym = dso_symbol_offset("libc.so.6", "getpgid");
 	const auto late_sym = dso_symbol_offset(
@@ -244,6 +260,7 @@ TEST_CASE(
 	"Preloaded agent attaches uprobe links registered in SHM after startup on subsequent dlopen",
 	"[agent][dlopen]")
 {
+	INFO(r_brk_bytes());
 	shm_fixture shm;
 	const auto initial_sym = dso_symbol_offset("libc.so.6", "getpgid");
 	const auto late_sym = dso_symbol_offset(
@@ -316,6 +333,7 @@ TEST_CASE(
 TEST_CASE("Preloaded agent dlopen finds a bare name through the caller's RUNPATH",
 	  "[agent][dlopen]")
 {
+	INFO(r_brk_bytes());
 	shm_fixture shm;
 	const auto late_sym = dso_symbol_offset(
 		BPFTIME_AGENT_DLOPEN_TARGET_LIB, "bpftime_dlopen_target_func");

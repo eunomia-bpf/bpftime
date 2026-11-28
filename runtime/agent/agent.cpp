@@ -19,6 +19,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <cstdint>
@@ -1002,10 +1003,10 @@ void write_code(gpointer mem, gpointer user_data)
 	memcpy(mem, code->data, code->size);
 }
 
-// _dl_debug_state is a lone return after an optional landing pad; on x86-64
-// alignment padding follows it. Its return becomes a branch to a trampoline
-// next to the loader, which jumps to on_loader_change(), and that returns to
-// the loader as the original return did.
+// _dl_debug_state has an empty body: after an optional landing pad, at most a
+// frame pointer pushed and popped, then its return. A branch right after the
+// landing pad goes to a trampoline next to the loader, which jumps to
+// on_loader_change(); that returns to the loader as the original return did.
 bool redirect_loader_notifications()
 {
 	auto *site = reinterpret_cast<uint8_t *>(_r_debug.r_brk);
@@ -1014,9 +1015,15 @@ bool redirect_loader_notifications()
 	if (site == nullptr)
 		return false;
 #if defined(__x86_64__)
-	const size_t ret = memcmp(site, "\xf3\x0f\x1e\xfa", 4) == 0 ? 4 : 0;
-	if (site[ret] != 0xc3 ||
-	    (reinterpret_cast<uintptr_t>(site) & 15) + 5 > 16)
+	if (memcmp(site, "\xf3\x0f\x1e\xfa", 4) == 0) // endbr64
+		site += 4;
+	// push %rbp; mov %rsp,%rbp; pop %rbp
+	const size_t ret = memcmp(site, "\x55\x48\x89\xe5\x5d", 5) == 0 ? 5 : 0;
+	if (site[ret] != 0xc3)
+		return false;
+	// A shorter body leaves the branch's tail in the padding after the
+	// return, inside the function's 16-byte slot.
+	if (ret < 4 && (reinterpret_cast<uintptr_t>(site) & 15) + 5 > 16)
 		return false;
 	for (size_t i = ret + 1; i < 5; i++)
 		if (site[i] != 0 &&
@@ -1037,7 +1044,16 @@ bool redirect_loader_notifications()
 	auto *insn = reinterpret_cast<uint32_t *>(site);
 	if (insn[0] == 0xd503245f) // bti c
 		++insn;
-	if (*insn != 0xd65f03c0) // ret
+	// paciasp, autiasp, nop, stp x29, x30, [sp, #-16]!; mov x29, sp;
+	// ldp x29, x30, [sp], #16
+	static const uint32_t empty_body[] = { 0xd503233f, 0xd50323bf,
+					       0xd503201f, 0xa9bf7bfd,
+					       0x910003fd, 0xa8c17bfd };
+	size_t ret = 0;
+	while (ret < 8 && std::find(std::begin(empty_body), std::end(empty_body),
+				    insn[ret]) != std::end(empty_body))
+		++ret;
+	if (insn[ret] != 0xd65f03c0) // ret
 		return false;
 	site = reinterpret_cast<uint8_t *>(insn);
 	const GumAddressSpec spec{ site, (gsize(1) << 27) - page };
