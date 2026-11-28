@@ -118,6 +118,16 @@ class bpftime_hash_map {
 			__atomic_store_n(reinterpret_cast<uint64_t *>(d + i), v,
 					 __ATOMIC_RELAXED);
 		}
+		// One store for an aligned 4-byte tail (HASH_OF_MAPS inner ids),
+		// so a lock-free reader never sees it half-written.
+		if (((uintptr_t)(d + i) & 3U) == 0 && i + 4 <= len) {
+			uint32_t v = 0;
+			if (s != nullptr)
+				std::memcpy(&v, s + i, 4);
+			__atomic_store_n(reinterpret_cast<uint32_t *>(d + i), v,
+					 __ATOMIC_RELAXED);
+			i += 4;
+		}
 		for (; i < len; ++i)
 			__atomic_store_n(&d[i], s ? s[i] : uint8_t(0),
 					 __ATOMIC_RELAXED);
@@ -128,6 +138,14 @@ class bpftime_hash_map {
 	{
 		auto *d = static_cast<uint8_t *>(dst);
 		const auto *s = static_cast<const uint8_t *>(src);
+		// One load pairs with the single aligned 4-byte store above.
+		if (len == 4 && ((uintptr_t)s & 3U) == 0) {
+			const uint32_t v = __atomic_load_n(
+				reinterpret_cast<const uint32_t *>(s),
+				__ATOMIC_RELAXED);
+			std::memcpy(d, &v, 4);
+			return;
+		}
 		for (size_t i = 0; i < len; ++i)
 			d[i] = __atomic_load_n(&s[i], __ATOMIC_RELAXED);
 	}
@@ -177,7 +195,10 @@ class bpftime_hash_map {
 		}
 	}
 
-	size_t find_slot(const void *key) const noexcept
+	// value_out, when set, receives the value read before the slot state is
+	// rechecked, so a concurrent delete and slot reuse restarts the walk.
+	size_t find_slot(const void *key,
+			 void *value_out = nullptr) const noexcept
 	{
 		if (_max_element_count == 0)
 			return END_IDX;
@@ -199,6 +220,10 @@ class bpftime_hash_map {
 				}
 				const bool eq = bytes_equal_atomic(
 					get_key(idx), key, _key_size);
+				if (eq && value_out != nullptr)
+					bytes_read_atomic(value_out,
+							  get_value(idx),
+							  _value_size);
 				const uint32_t nxt = __atomic_load_n(
 					&slot(idx)->next_idx, __ATOMIC_ACQUIRE);
 				std::atomic_thread_fence(
@@ -249,6 +274,11 @@ class bpftime_hash_map {
 			return nullptr;
 		const size_t idx = find_slot(key);
 		return idx < _max_element_count ? get_value(idx) : nullptr;
+	}
+	bool elem_lookup_copy(const void *key, void *value_out) const noexcept
+	{
+		return key != nullptr &&
+		       find_slot(key, value_out) < _max_element_count;
 	}
 
 	long upsert(const void *key, const void *value, uint64_t flags,

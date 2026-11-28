@@ -32,6 +32,10 @@ Newest first. Read before starting a change. A pull request that reverses an ent
   > 借槽：不用额外列，去借别的 CPU 空着的槽，也不丢。但数据会记到别的 CPU 名下，而且会把那个 CPU 自己的线程挤走，你之前否掉了。我觉得没问题
   >
   > 就是之前的版本, 我们是直接回到之前的 commit 还是?
+- **2026-11-27: `HASH_OF_MAPS` stores its inner map ids in `bpftime_hash_map`** (supersedes `HASH_OF_MAPS` in the L2 `bpf_map_handler::map_lock` line of the lock inventory below). `hash_map_of_maps_impl` moves from `var_size_hash_map_impl` (a Boost `unordered_map` under `map_lock`) to the preallocated `bpftime_hash_map` that `HASH` uses, and sets `should_lock = false`: helper lookups take no lock, and the syscall-only updates and deletes take the recover-and-continue write stripes (#1020). The syscall lookup of both map-in-map types no longer takes `map_lock` either: array slots are never freed, and the hash variant copies the 4-byte inner id while `bpftime_hash_map::find_slot` still checks the slot generation, so a concurrent delete and slot reuse restarts the walk instead of returning another key's id. `bpftime_hash_map` writes and reads an aligned 4-byte value with one access, so a lock-free lookup never reads a half-written inner id.
+  > HASH_OF_MAPS 建在 var_hash_map 上 value 只是 4 字节的 map id，改建在 bpftime_hash_map 上 小 这个先改动
+  >
+  > HASH_OF_MAPS 那个也去做, 做完去 review 一下别的部分
 
 - **2026-11-27: `LPM_TRIE` lookups take no lock; writes take one recover-and-continue lock over a preallocated node pool** (supersedes `LPM_TRIE` in the L2 `bpf_map_handler::map_lock` line of the lock inventory below; replaces the 64 prefix shards of #1021). `lpm_trie_map_impl` keeps `should_lock = false`. At creation it allocates `2 * max_entries` fixed nodes (at most `max_entries` leaves and `max_entries - 1` intermediate nodes) linked by `uint32_t` indices; no Boost allocator runs after creation. Writes take one `robust_shm_recovering_mutex` (L1): `try_lock` on helper paths, which skips and counts on contention, and a blocking lock on syscall paths. As in kernel `lpm_trie.c`, an insert builds its nodes completely and links them with one store, and a delete unlinks with one store, so a writer that dies at any step leaves the tree intact; it leaks at most the two nodes it held and may leave the entry count one high. Freed nodes enter a FIFO ring and are recycled only after every node freed before them, so a value pointer returned by a lookup stays readable until the ring cycles. A lookup records the ring's free position before its walk and retries if allocation passed that position by the end, since only then can a node freed during the walk have been rewritten; after 8 attempts it returns NULL and counts in `shm_trylock_skips`. This is the before-and-after version check of point 3 below, using the ring positions as the version: they never stay odd after a writer dies, so no repair step is needed. An update of an existing key still writes the value in place.
   > LPM_TRIE 怎么做
@@ -55,6 +59,24 @@ Newest first. Read before starting a change. A pull request that reverses an ent
   > 你只做 hash 改动, 不需要构建测试, 直接改 pR 就好
   >
   > upsert/erase 两处改用新函数。和 master 相比，生产代码 +50/-10。为啥还是这么多?
+
+- **2026-11-27: generic remote control-plane bridge (`bpftime-remote-host`, `BPFTIME_REMOTE_HOST`), macOS ARM64 preload agent, and zero-fork Linux VM tooling** (#1005, #1006, #1008, #1010, #1013). Unmodified Linux eBPF control-plane tools (`bpftrace`, `bcc`, `libbpf`, `opentelemetry-ebpf-profiler`) trace remote Linux or macOS processes through an OS-neutral client-server control-plane bridge while keeping the data plane (`libbpftime-agent.{so,dylib}`, Frida inline hooks, JIT, maps, ring buffers) in local shared memory on the target host:
+  1. **Generic remote protocol (`BPFTIME_REMOTE_HOST`, `BPFTIME_REMOTE_TOKEN`, `BPFTIME_ENABLE_REMOTE_BRIDGE`)**: `libbpftime-syscall-server.so` forwards control operations (`hello`, `proc_check`, `proc_maps`, `fetch_elf`, map/prog/perf_event/link ops, `spawn_cmd`/`resume_cmd`, and bounded `subscribe_events` streaming) over length-prefixed frames to `bpftime-remote-host` (built on both Linux and macOS; Linux serves real `/proc` and target ELF bytes, macOS synthesizes `/proc/<pid>/maps` and 64-bit stub ELFs with `.symtab`/`.note.stapsdt`/ARM64 `.eh_frame`). `bpftime-remote-host` binds `127.0.0.1` by default and requires constant-time 256-bit `BPFTIME_REMOTE_TOKEN` verification on every connection before accepting any operation. When `BPFTIME_REMOTE_HOST` is unset, `libbpftime-syscall-server.so` incurs zero runtime overhead.
+  2. **macOS ARM64 preload constructor & optional `BPFTIME_ENABLE_AGENT_IPC_SERVER`**: `libbpftime-agent.dylib` initializes synchronously once from a `dyld` constructor (returning immediately with zero syscalls/files when SHM is absent, zero FIFO/startup waits, reusing the opt-in `BPFTIME_ENABLE_AGENT_IPC` socket at `$TMPDIR/bpftime-agent-<pid>.sock`). On Apple Silicon macOS, `tools/macos_vz_vm/` (`bpftime-vz` + `bpftime-macos`) runs the stock ARM64 Linux control plane inside a rootless `Virtualization.framework` VM on top of `BPFTIME_REMOTE_HOST`.
+  3. **Delivery split**: shipped as separate minimal single-purpose pull requests tagged with `otel`, `linux`, and `macos` GitHub labels, alongside updating `example/otel-ebpf-profiler` to run in rootless userspace mode on Linux and macOS.
+  > 如何真实的把 bpftrace 和 bcc 以及别的 ebpf 工具, 在 macos 上面用 bpftime 跑起来? 不是替代, 确保真实弄好并且能 work?
+  >
+  > 控制面跑虚拟机里面是部署更方便?
+  >
+  > 最好能不用 fork, 但也要真实能追踪 macos 上面的东西?
+  >
+  > bpftime 本身对 otel ebpf profiler 支持的 example 是不是也要修? 实际上已经基本支持了? 你看看? 是不是也可以测试一下? 在 mac 和 linux 上面?
+  >
+  > 分开去做; 开的 PR 都要注明是 otel / linux / macos, 的 tag; 尽可能减少不必要的改动
+  >
+  > 解释一下, 你这个做法本质上是把 bpftime 转化成了 remote 的?
+  >
+  > 那我们要改名, 确保这个 remote 机制是通用的 remote 机制? 也就是trace 别的机器也行?
 
 - **2026-11-27: remove `has_pending_uprobe` latch and defer `shm_lifecycle_lock` on `dlopen()`** (#970 follow-up; closes #1016). Delete the process-local `has_pending_uprobe` / `has_pending_uprobes()` latch introduced in #970 instead of adding a shared-memory generation counter (#1016): a boolean set only from startup `-ENOENT` misses uprobe links registered in SHM after target startup. On outermost successful non-`RTLD_NOLOAD` host `dlopen()`, the agent takes only non-blocking process-local `try_to_lock(detach_mutex)` + `try_to_lock(ctx_mutex)`, skips already-instantiated and unmapped DSOs (`is_module_mapped`) in memory (`0` syscalls, `0` heap allocations), and lazily acquires shared `shm_lifecycle_lock` (`LOCK_SH | LOCK_NB`) only when an uninstantiated mapped uprobe actually needs to be attached.
 
