@@ -103,22 +103,39 @@ $L__BB2_2:                              //   Parent Loop BB2_1 Depth=1
 	setp.eq.s32 	%p5, %r11, 1;
 	@%p5 bra 	$L__BB2_2;
 // %bb.3:                               //   in Loop: Header=BB2_1 Depth=1
-	st.u32 	[%rd1+12], %r5;
-	st.u64 	[%rd1+16], %rd6;
 	// begin inline asm
-	.reg .pred p0;                   
-	membar.sys;                      
-	st.global.u32 [%rd1], 1;           
-	spin_wait:                       
-	membar.sys;                      
-	ld.global.u32 %r12, [%rd10];          
-	setp.eq.u32 p0, %r12, 0;           
-	@p0 bra spin_wait;               
-	st.global.u32 [%rd10], 0;           
-	membar.sys;                      
+	{ .reg .pred p0, p1, p_cont, p_poison, p_lookup;
+	  .reg .b32 t, occ;
+	  .reg .b64 fallback;
+	  setp.eq.u32 p_lookup, %r5, 1;
+	  selp.b64 fallback, 0, -1, p_lookup;
+	  ld.global.u32 occ, [%rd1+8];
+	  setp.ne.u32 p_poison, occ, 0;
+	  @p_poison mov.b64 %rd13, fallback;
+	  @p_poison bra spin_done;
+	  st.volatile.u32 [%rd1+12], %r5;
+	  st.volatile.u64 [%rd1+16], %rd6;
+	  membar.sys;
+	  st.global.u32 [%rd1], 1;
+	  mov.u32 t, 0;
+	  spin_wait:
+	  membar.sys;
+	  ld.volatile.global.u32 %r12, [%rd10];
+	  setp.eq.u32 p0, %r12, 0;
+	  add.u32 t, t, 1;
+	  setp.lt.u32 p1, t, 1000000;
+	  and.pred p_cont, p0, p1;
+	  @p_cont bra spin_wait;
+	  membar.sys;
+	  @!p0 ld.global.u64 %rd13, [%rd1+2097184];
+	  @!p0 st.global.u32 [%rd10], 0;
+	  @p0 mov.b64 %rd13, fallback;
+	  @p0 st.global.u32 [%rd1+8], 1;
+	  @p0 st.global.u32 [%rd1], 0;
+	  membar.sys;
+	  spin_done: }
 	
 	// end inline asm
-	ld.u64 	%rd13, [%rd1+2097184];
 	atom.global.exch.b32 	%r13, [%rd8], 0;
 	bra.uni 	$L__BB2_4;
 $L__BB2_5:
@@ -511,22 +528,36 @@ $L__BB5_22:                             //   Parent Loop BB5_21 Depth=1
 	setp.eq.s32 	%p17, %r59, 1;
 	@%p17 bra 	$L__BB5_22;
 // %bb.23:                              //   in Loop: Header=BB5_21 Depth=1
-	st.u32 	[%rd102+12], %r61;
-	st.u64 	[%rd102+16], %rd31;
 	// begin inline asm
-	.reg .pred p0;                   
-	membar.sys;                      
-	st.global.u32 [%rd102], 1;           
-	spin_wait:                       
-	membar.sys;                      
-	ld.global.u32 %r60, [%rd103];          
-	setp.eq.u32 p0, %r60, 0;           
-	@p0 bra spin_wait;               
-	st.global.u32 [%rd103], 0;           
-	membar.sys;                      
+	{ .reg .pred p0, p1, p_cont, p_poison;
+	  .reg .b32 t, occ;
+	  ld.global.u32 occ, [%rd102+8];
+	  setp.ne.u32 p_poison, occ, 0;
+	  @p_poison mov.b64 %rd111, 0;
+	  @p_poison bra spin_done;
+	  st.volatile.u32 [%rd102+12], %r61;
+	  st.volatile.u64 [%rd102+16], %rd31;
+	  membar.sys;
+	  st.global.u32 [%rd102], 1;
+	  mov.u32 t, 0;
+	  spin_wait:
+	  membar.sys;
+	  ld.volatile.global.u32 %r60, [%rd103];
+	  setp.eq.u32 p0, %r60, 0;
+	  add.u32 t, t, 1;
+	  setp.lt.u32 p1, t, 1000000;
+	  and.pred p_cont, p0, p1;
+	  @p_cont bra spin_wait;
+	  membar.sys;
+	  @!p0 ld.global.u64 %rd111, [%rd102+2097184];
+	  @!p0 st.global.u32 [%rd103], 0;
+	  @p0 mov.b64 %rd111, 0;
+	  @p0 st.global.u32 [%rd102+8], 1;
+	  @p0 st.global.u32 [%rd102], 0;
+	  membar.sys;
+	  spin_done: }
 	
 	// end inline asm
-	ld.u64 	%rd111, [%rd102+2097184];
 	atom.global.exch.b32 	%r62, [%rd101], 0;
 	bra.uni 	$L__BB5_24;
                                         // -- End function
@@ -1047,22 +1078,36 @@ $L__BB6_56:                             //   Parent Loop BB6_55 Depth=1
 	setp.eq.s32 	%p42, %r104, 1;
 	@%p42 bra 	$L__BB6_56;
 // %bb.57:                              //   in Loop: Header=BB6_55 Depth=1
-	st.u32 	[%rd193+12], %r106;
-	st.u64 	[%rd193+16], %rd92;
 	// begin inline asm
-	.reg .pred p0;                   
-	membar.sys;                      
-	st.global.u32 [%rd193], 1;           
-	spin_wait:                       
-	membar.sys;                      
-	ld.global.u32 %r105, [%rd194];          
-	setp.eq.u32 p0, %r105, 0;           
-	@p0 bra spin_wait;               
-	st.global.u32 [%rd194], 0;           
-	membar.sys;                      
+	{ .reg .pred p0, p1, p_cont, p_poison;
+	  .reg .b32 t, occ;
+	  ld.global.u32 occ, [%rd193+8];
+	  setp.ne.u32 p_poison, occ, 0;
+	  @p_poison mov.b64 %rd214, -1;
+	  @p_poison bra spin_done;
+	  st.volatile.u32 [%rd193+12], %r106;
+	  st.volatile.u64 [%rd193+16], %rd92;
+	  membar.sys;
+	  st.global.u32 [%rd193], 1;
+	  mov.u32 t, 0;
+	  spin_wait:
+	  membar.sys;
+	  ld.volatile.global.u32 %r105, [%rd194];
+	  setp.eq.u32 p0, %r105, 0;
+	  add.u32 t, t, 1;
+	  setp.lt.u32 p1, t, 1000000;
+	  and.pred p_cont, p0, p1;
+	  @p_cont bra spin_wait;
+	  membar.sys;
+	  @!p0 ld.global.u64 %rd214, [%rd193+2097184];
+	  @!p0 st.global.u32 [%rd194], 0;
+	  @p0 mov.b64 %rd214, -1;
+	  @p0 st.global.u32 [%rd193+8], 1;
+	  @p0 st.global.u32 [%rd193], 0;
+	  membar.sys;
+	  spin_done: }
 	
 	// end inline asm
-	ld.u64 	%rd214, [%rd193+2097184];
 	atom.global.exch.b32 	%r107, [%rd192], 0;
 	bra.uni 	$L__BB6_58;
 $L__BB6_59:
@@ -1175,22 +1220,36 @@ $L__BB7_9:                              //   Parent Loop BB7_8 Depth=1
 	setp.eq.s32 	%p10, %r19, 1;
 	@%p10 bra 	$L__BB7_9;
 // %bb.10:                              //   in Loop: Header=BB7_8 Depth=1
-	st.u32 	[%rd30+12], %r21;
-	st.u64 	[%rd30+16], %rd18;
 	// begin inline asm
-	.reg .pred p0;                   
-	membar.sys;                      
-	st.global.u32 [%rd30], 1;           
-	spin_wait:                       
-	membar.sys;                      
-	ld.global.u32 %r20, [%rd31];          
-	setp.eq.u32 p0, %r20, 0;           
-	@p0 bra spin_wait;               
-	st.global.u32 [%rd31], 0;           
-	membar.sys;                      
+	{ .reg .pred p0, p1, p_cont, p_poison;
+	  .reg .b32 t, occ;
+	  ld.global.u32 occ, [%rd30+8];
+	  setp.ne.u32 p_poison, occ, 0;
+	  @p_poison mov.b64 %rd39, -1;
+	  @p_poison bra spin_done;
+	  st.volatile.u32 [%rd30+12], %r21;
+	  st.volatile.u64 [%rd30+16], %rd18;
+	  membar.sys;
+	  st.global.u32 [%rd30], 1;
+	  mov.u32 t, 0;
+	  spin_wait:
+	  membar.sys;
+	  ld.volatile.global.u32 %r20, [%rd31];
+	  setp.eq.u32 p0, %r20, 0;
+	  add.u32 t, t, 1;
+	  setp.lt.u32 p1, t, 1000000;
+	  and.pred p_cont, p0, p1;
+	  @p_cont bra spin_wait;
+	  membar.sys;
+	  @!p0 ld.global.u64 %rd39, [%rd30+2097184];
+	  @!p0 st.global.u32 [%rd31], 0;
+	  @p0 mov.b64 %rd39, -1;
+	  @p0 st.global.u32 [%rd30+8], 1;
+	  @p0 st.global.u32 [%rd30], 0;
+	  membar.sys;
+	  spin_done: }
 	
 	// end inline asm
-	ld.u64 	%rd39, [%rd30+2097184];
 	atom.global.exch.b32 	%r22, [%rd29], 0;
 	bra.uni 	$L__BB7_11;
 $L__BB7_12:
@@ -1272,23 +1331,37 @@ $L__BB8_5:                              //   Parent Loop BB8_4 Depth=1
 	setp.eq.s32 	%p7, %r10, 1;
 	@%p7 bra 	$L__BB8_5;
 // %bb.6:                               //   in Loop: Header=BB8_4 Depth=1
-	st.u32 	[%rd1+12], %r12;
 	mov.u64 	%rd22, 0;
-	st.u64 	[%rd1+16], %rd22;
 	// begin inline asm
-	.reg .pred p0;                   
-	membar.sys;                      
-	st.global.u32 [%rd1], 1;           
-	spin_wait:                       
-	membar.sys;                      
-	ld.global.u32 %r11, [%rd21];          
-	setp.eq.u32 p0, %r11, 0;           
-	@p0 bra spin_wait;               
-	st.global.u32 [%rd21], 0;           
-	membar.sys;                      
+	{ .reg .pred p0, p1, p_cont, p_poison;
+	  .reg .b32 t, occ;
+	  ld.global.u32 occ, [%rd1+8];
+	  setp.ne.u32 p_poison, occ, 0;
+	  @p_poison mov.b64 %rd27, -1;
+	  @p_poison bra spin_done;
+	  st.volatile.u32 [%rd1+12], %r12;
+	  st.volatile.u64 [%rd1+16], %rd22;
+	  membar.sys;
+	  st.global.u32 [%rd1], 1;
+	  mov.u32 t, 0;
+	  spin_wait:
+	  membar.sys;
+	  ld.volatile.global.u32 %r11, [%rd21];
+	  setp.eq.u32 p0, %r11, 0;
+	  add.u32 t, t, 1;
+	  setp.lt.u32 p1, t, 1000000;
+	  and.pred p_cont, p0, p1;
+	  @p_cont bra spin_wait;
+	  membar.sys;
+	  @!p0 ld.global.u64 %rd27, [%rd1+2097184];
+	  @!p0 st.global.u32 [%rd21], 0;
+	  @p0 mov.b64 %rd27, -1;
+	  @p0 st.global.u32 [%rd1+8], 1;
+	  @p0 st.global.u32 [%rd1], 0;
+	  membar.sys;
+	  spin_done: }
 	
 	// end inline asm
-	ld.u64 	%rd27, [%rd1+2097184];
 	atom.global.exch.b32 	%r13, [%rd19], 0;
 	bra.uni 	$L__BB8_7;
 $L__BB8_8:
@@ -1346,22 +1419,36 @@ $L__BB9_2:                              //   Parent Loop BB9_1 Depth=1
 	setp.eq.s32 	%p5, %r10, 1;
 	@%p5 bra 	$L__BB9_2;
 // %bb.3:                               //   in Loop: Header=BB9_1 Depth=1
-	st.u32 	[%rd8+12], %r12;
-	st.u64 	[%rd8+16], %rd6;
 	// begin inline asm
-	.reg .pred p0;                   
-	membar.sys;                      
-	st.global.u32 [%rd8], 1;           
-	spin_wait:                       
-	membar.sys;                      
-	ld.global.u32 %r11, [%rd9];          
-	setp.eq.u32 p0, %r11, 0;           
-	@p0 bra spin_wait;               
-	st.global.u32 [%rd9], 0;           
-	membar.sys;                      
+	{ .reg .pred p0, p1, p_cont, p_poison;
+	  .reg .b32 t, occ;
+	  ld.global.u32 occ, [%rd8+8];
+	  setp.ne.u32 p_poison, occ, 0;
+	  @p_poison mov.b64 %rd13, -1;
+	  @p_poison bra spin_done;
+	  st.volatile.u32 [%rd8+12], %r12;
+	  st.volatile.u64 [%rd8+16], %rd6;
+	  membar.sys;
+	  st.global.u32 [%rd8], 1;
+	  mov.u32 t, 0;
+	  spin_wait:
+	  membar.sys;
+	  ld.volatile.global.u32 %r11, [%rd9];
+	  setp.eq.u32 p0, %r11, 0;
+	  add.u32 t, t, 1;
+	  setp.lt.u32 p1, t, 1000000;
+	  and.pred p_cont, p0, p1;
+	  @p_cont bra spin_wait;
+	  membar.sys;
+	  @!p0 ld.global.u64 %rd13, [%rd8+2097184];
+	  @!p0 st.global.u32 [%rd9], 0;
+	  @p0 mov.b64 %rd13, -1;
+	  @p0 st.global.u32 [%rd8+8], 1;
+	  @p0 st.global.u32 [%rd8], 0;
+	  membar.sys;
+	  spin_done: }
 	
 	// end inline asm
-	ld.u64 	%rd13, [%rd8+2097184];
 	atom.global.exch.b32 	%r13, [%rd7], 0;
 	bra.uni 	$L__BB9_4;
 $L__BB9_5:
@@ -1607,23 +1694,37 @@ $L__BB11_5:                             //   Parent Loop BB11_4 Depth=1
 	setp.eq.s32 	%p7, %r10, 1;
 	@%p7 bra 	$L__BB11_5;
 // %bb.6:                               //   in Loop: Header=BB11_4 Depth=1
-	st.u32 	[%rd19+12], %r12;
 	mov.u64 	%rd21, 0;
-	st.u64 	[%rd19+16], %rd21;
 	// begin inline asm
-	.reg .pred p0;                   
-	membar.sys;                      
-	st.global.u32 [%rd19], 1;           
-	spin_wait:                       
-	membar.sys;                      
-	ld.global.u32 %r11, [%rd20];          
-	setp.eq.u32 p0, %r11, 0;           
-	@p0 bra spin_wait;               
-	st.global.u32 [%rd20], 0;           
-	membar.sys;                      
+	{ .reg .pred p0, p1, p_cont, p_poison;
+	  .reg .b32 t, occ;
+	  ld.global.u32 occ, [%rd19+8];
+	  setp.ne.u32 p_poison, occ, 0;
+	  @p_poison mov.b64 %rd27, -1;
+	  @p_poison bra spin_done;
+	  st.volatile.u32 [%rd19+12], %r12;
+	  st.volatile.u64 [%rd19+16], %rd21;
+	  membar.sys;
+	  st.global.u32 [%rd19], 1;
+	  mov.u32 t, 0;
+	  spin_wait:
+	  membar.sys;
+	  ld.volatile.global.u32 %r11, [%rd20];
+	  setp.eq.u32 p0, %r11, 0;
+	  add.u32 t, t, 1;
+	  setp.lt.u32 p1, t, 1000000;
+	  and.pred p_cont, p0, p1;
+	  @p_cont bra spin_wait;
+	  membar.sys;
+	  @!p0 ld.global.u64 %rd27, [%rd19+2097184];
+	  @!p0 st.global.u32 [%rd20], 0;
+	  @p0 mov.b64 %rd27, -1;
+	  @p0 st.global.u32 [%rd19+8], 1;
+	  @p0 st.global.u32 [%rd19], 0;
+	  membar.sys;
+	  spin_done: }
 	
 	// end inline asm
-	ld.u64 	%rd27, [%rd19+2097184];
 	atom.global.exch.b32 	%r13, [%rd18], 0;
 	bra.uni 	$L__BB11_7;
 $L__BB11_8:

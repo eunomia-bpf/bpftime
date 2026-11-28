@@ -18,7 +18,7 @@
 /* clang++-17 -S ./default_trampoline.cu -Wall --cuda-gpu-arch=sm_60 -O2
  * -L/usr/local/cuda/lib64/ -lcudart*/
 // The old 1<<30 value makes the shared segment too large for Boost IPC.
-static constexpr int GPU_HELPER_MAX_BUF = 1 << 24;
+static constexpr int GPU_HELPER_MAX_BUF = 1 << 20;
 
 enum class HelperOperation {
 	MAP_LOOKUP = 1,
@@ -73,11 +73,11 @@ union HelperCallResponse {
  * - paramA: 设备端写入的参数，让主机端使用
  */
 struct CommSharedMem {
-	int flag1;
-	int flag2;
+	volatile int flag1;
+	volatile int flag2;
 	int occupy_flag;
-	int request_id;
-	long map_id;
+	volatile int request_id;
+	volatile long map_id;
 	HelperCallRequest req;
 	HelperCallResponse resp;
 	uint64_t time_sum[8];
@@ -142,26 +142,57 @@ extern "C" __device__ HelperCallResponse make_helper_call(long map_id,
 		if (lane_is_active && lane_id == active_lane) {
 			spin_lock(&__bpftime_comm_lock);
 
-			int val = 42;
-			g_data->request_id = req_id;
-			g_data->map_id = map_id;
+			const unsigned long long timeout_resp =
+				(req_id == (int)HelperOperation::MAP_LOOKUP) ?
+					0ULL :
+					~0ULL;
+			unsigned long long raw_resp = timeout_resp;
 
-			asm volatile(".reg .pred p0;                   \n\t"
-				     "membar.sys;                      \n\t"
-				     "st.global.u32 [%1], 1;           \n\t"
-				     "spin_wait:                       \n\t"
-				     "membar.sys;                      \n\t"
-				     "ld.global.u32 %0, [%2];          \n\t"
-				     "setp.eq.u32 p0, %0, 0;           \n\t"
-				     "@p0 bra spin_wait;               \n\t"
-				     "st.global.u32 [%2], 0;           \n\t"
-				     "membar.sys;                      \n\t"
-				     :
-				     : "r"(val), "l"(&g_data->flag1),
-				       "l"(&g_data->flag2)
+			// Bound the host-response poll to 1,000,000 iterations so an
+			// unanswered request (exited host, rejected map_id, GPU reset)
+			// returns a local fallback (nullptr for lookup, -1 for integer
+			// helpers) and latches occupy_flag instead of hanging the SM or
+			// letting a later call consume a delayed in-flight host reply.
+			asm volatile("{ .reg .pred p0, p1, p_cont, p_poison; \n\t"
+				     "  .reg .b32 t, f2, occ;                \n\t"
+				     "  ld.global.u32 occ, [%3];             \n\t"
+				     "  setp.ne.u32 p_poison, occ, 0;        \n\t"
+				     "  @p_poison mov.b64 %0, %5;            \n\t"
+				     "  @p_poison bra spin_done;             \n\t"
+				     "  st.volatile.u32 [%6], %8;             \n\t"
+				     "  st.volatile.u64 [%7], %9;             \n\t"
+				     "  membar.sys;                          \n\t"
+				     "  st.global.u32 [%1], 1;               \n\t"
+				     "  mov.u32 t, 0;                        \n\t"
+				     "  spin_wait:                           \n\t"
+				     "  membar.sys;                          \n\t"
+				     "  ld.volatile.global.u32 f2, [%2];     \n\t"
+				     "  setp.eq.u32 p0, f2, 0;               \n\t"
+				     "  add.u32 t, t, 1;                     \n\t"
+				     "  setp.lt.u32 p1, t, 1000000;          \n\t"
+				     "  and.pred p_cont, p0, p1;             \n\t"
+				     "  @p_cont bra spin_wait;               \n\t"
+				     "  membar.sys;                          \n\t"
+				     "  @!p0 ld.global.u64 %0, [%4];         \n\t"
+				     "  @!p0 st.global.u32 [%2], 0;          \n\t"
+				     "  @p0 mov.b64 %0, %5;                  \n\t"
+				     "  @p0 st.global.u32 [%3], 1;           \n\t"
+				     "  @p0 st.global.u32 [%1], 0;           \n\t"
+				     "  membar.sys;                          \n\t"
+				     "  spin_done: }                         \n\t"
+				     : "=&l"(raw_resp)
+				     : "l"(&g_data->flag1),
+				       "l"(&g_data->flag2),
+				       "l"(&g_data->occupy_flag),
+				       "l"(&g_data->resp),
+				       "l"(timeout_resp),
+				       "l"(&g_data->request_id),
+				       "l"(&g_data->map_id),
+				       "r"(req_id),
+				       "l"(map_id)
 				     : "memory");
 
-			my_resp = g_data->resp;
+			__builtin_memcpy(&my_resp, &raw_resp, sizeof(my_resp));
 
 			spin_unlock(&__bpftime_comm_lock);
 		}
