@@ -7,7 +7,7 @@
 using namespace bpftime;
 using namespace bpftime::attach::trap;
 
-extern "C" uint64_t bpftime_set_retval(uint64_t retval);
+extern "C" uint64_t bpftime_set_retval(uint64_t retval) noexcept;
 
 extern "C" TRAP_TEST_TARGET uint64_t
 __trap_func_to_filter(uint64_t a, uint64_t b)

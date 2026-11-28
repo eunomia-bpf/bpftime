@@ -4,6 +4,7 @@
 #include <map>
 #include <cinttypes>
 #include <vector>
+#include "base_attach_impl.hpp"
 #include "bpftime_prog.hpp"
 
 #ifdef ENABLE_BPFTIME_VERIFIER
@@ -15,7 +16,7 @@ namespace bpftime
 struct bpftime_helper_info {
 	unsigned int index;
 	std::string name;
-	void *fn;
+	bpftime_helper_fn fn;
 };
 
 // Checks the concrete implementation as well as the BPF helper number.

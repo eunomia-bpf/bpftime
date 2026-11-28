@@ -64,10 +64,12 @@ TEST_CASE("map helpers report the kernel negative errno", "[map_helpers]")
 					       BPF_ANY, 0) == 0);
 
 	// BPF_NOEXIST on an existing key: -EEXIST, the value a program tests
-	// for to fall back to an update.
+	// for to fall back to an update; host errno stays untouched.
+	errno = EDEADLK;
 	REQUIRE(as_signed(bpftime_map_update_elem_helper(
 			lru_hash_fd, key_arg, value_arg, BPF_NOEXIST, 0)) ==
 		-EEXIST);
+	REQUIRE(errno == EDEADLK);
 
 	// BPF_EXIST on an absent key: -ENOENT.
 	uint32_t absent_key = 8;

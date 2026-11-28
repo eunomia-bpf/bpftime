@@ -197,8 +197,20 @@ with_robust_shm_lock(bool should_lock, bool blocking, robust_shm_mutex &lock,
 		     Fn &&fn, const char *label = "bpf_map_handler")
 {
 	using Ret = std::invoke_result_t<Fn>;
+	auto invoke_guarded = [&]() noexcept -> Ret {
+		const int saved_errno = errno;
+		try {
+			return fn();
+		} catch (...) {
+			errno = blocking ? ENOMEM : saved_errno;
+			if constexpr (std::is_pointer_v<Ret>)
+				return Ret(nullptr);
+			else
+				return Ret(blocking ? -1 : -ENOMEM);
+		}
+	};
 	if (!should_lock)
-		return fn();
+		return invoke_guarded();
 	if (blocking) {
 		robust_shm_lock_guard g(lock, label);
 		if (!g.owns_lock()) {
@@ -206,7 +218,7 @@ with_robust_shm_lock(bool should_lock, bool blocking, robust_shm_mutex &lock,
 				return Ret(nullptr);
 			return Ret(-1);
 		}
-		return fn();
+		return invoke_guarded();
 	}
 	robust_shm_trylock_guard g(lock);
 	if (!g.owns_lock()) {
@@ -214,7 +226,7 @@ with_robust_shm_lock(bool should_lock, bool blocking, robust_shm_mutex &lock,
 			return Ret(nullptr);
 		return Ret(-EBUSY);
 	}
-	return fn();
+	return invoke_guarded();
 }
 
 } // namespace bpftime

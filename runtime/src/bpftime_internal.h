@@ -37,11 +37,11 @@ struct bpftime_ufunc_ctx {
 // find the ufunc id from the function name
 // not used directly
 extern "C" uint64_t __ebpf_call_ufunc_dispatcher(uint64_t id,
-						 uint64_t arg_list);
+						 uint64_t arg_list) noexcept;
 
 // find the ufunc id from the function name
 // not used directly
-extern "C" int64_t __ebpf_call_find_ufunc_id(const char *func_name);
+extern "C" int64_t __ebpf_call_find_ufunc_id(const char *func_name) noexcept;
 
 extern "C" uint64_t map_ptr_by_fd(uint32_t fd);
 

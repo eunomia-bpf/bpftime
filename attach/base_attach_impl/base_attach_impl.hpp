@@ -9,8 +9,36 @@
 #include <optional>
 #include "attach_private_data.hpp"
 #include <stdexcept>
+#include <type_traits>
 namespace bpftime
 {
+// Compile-time noexcept gate for BPF helpers invoked across uBPF/LLVM JIT
+// frames (which lack DWARF .eh_frame unwind info).
+class bpftime_helper_fn {
+	void *raw = nullptr;
+
+    public:
+	constexpr bpftime_helper_fn() noexcept = default;
+	template <typename R, typename... Args>
+	constexpr bpftime_helper_fn(R (*f)(Args...) noexcept) noexcept
+		: raw(reinterpret_cast<void *>(f)) {}
+	template <typename R, typename... Args>
+	constexpr bpftime_helper_fn(R (*f)(Args..., ...) noexcept) noexcept
+		: raw(reinterpret_cast<void *>(f)) {}
+	template <typename R, typename... Args>
+	bpftime_helper_fn(R (*)(Args...)) = delete;
+	template <typename R, typename... Args>
+	bpftime_helper_fn(R (*)(Args..., ...)) = delete;
+	template <typename T>
+		requires std::is_pointer_v<std::remove_cvref_t<T>> &&
+			 (!std::is_function_v<
+				 std::remove_pointer_t<std::remove_cvref_t<T>>>)
+	bpftime_helper_fn(T) = delete;
+	constexpr operator void *() const noexcept { return raw; }
+	constexpr bool
+	operator==(const bpftime_helper_fn &) const noexcept = default;
+};
+
 namespace attach
 {
 using override_return_set_callback = std::function<void(uint64_t, uint64_t)>;
@@ -60,7 +88,7 @@ class attach_callback_scope {
 struct signal_callback_context {
 	uintptr_t function_ip = 0;
 	std::optional<uint64_t> cookie;
-	void (*override_return)(uint64_t, uint64_t) = nullptr;
+	void (*override_return)(uint64_t, uint64_t) noexcept = nullptr;
 };
 #if defined(__linux__)
 __attribute__((tls_model("initial-exec")))
@@ -98,8 +126,8 @@ using ebpf_run_callback = std::function<int(void *memory, size_t memory_size,
 					    uint64_t *return_value)>;
 
 // A callback to register bpf helpers
-using ebpf_helper_register_callback =
-	std::function<int(unsigned index, const char *name, void *func)>;
+using ebpf_helper_register_callback = std::function<int(
+	unsigned index, const char *name, bpftime_helper_fn func)>;
 // The base of all attach implementations
 class base_attach_impl {
     public:
@@ -155,7 +183,7 @@ class base_attach_impl {
 extern "C" {
 
 // Set the return value of the current context
-inline uint64_t bpftime_set_retval(uint64_t value)
+inline uint64_t bpftime_set_retval(uint64_t value) noexcept
 {
 	using namespace bpftime::attach;
 	if (auto *ctx = current_signal_callback) {
@@ -164,19 +192,19 @@ inline uint64_t bpftime_set_retval(uint64_t value)
 		ctx->override_return(0, value);
 		return 0;
 	}
-	if (curr_thread_override_return_callback.has_value()) {
-		curr_thread_override_return_callback.value()(0, value);
+	if (curr_thread_override_return_callback.has_value() &&
+	    *curr_thread_override_return_callback) {
+		(*curr_thread_override_return_callback)(0, value);
 	} else {
 		spdlog::error(
 			"Called bpftime_set_retval, but no retval callback was set");
-		throw std::invalid_argument(
-			"Called bpftime_set_retval, but no retval callback was set");
+		return (uint64_t)-EINVAL;
 	}
 	return 0;
 }
 
 // Override the return value of the current context
-inline uint64_t bpftime_override_return(uint64_t ctx, uint64_t value)
+inline uint64_t bpftime_override_return(uint64_t ctx, uint64_t value) noexcept
 {
 	using namespace bpftime::attach;
 	if (auto *signal_ctx = current_signal_callback) {
@@ -185,15 +213,15 @@ inline uint64_t bpftime_override_return(uint64_t ctx, uint64_t value)
 		signal_ctx->override_return(ctx, value);
 		return 0;
 	}
-	if (curr_thread_override_return_callback.has_value()) {
+	if (curr_thread_override_return_callback.has_value() &&
+	    *curr_thread_override_return_callback) {
 		spdlog::debug("Overriding return value for ctx {:x} with {}",
 			      ctx, value);
-		curr_thread_override_return_callback.value()(ctx, value);
+		(*curr_thread_override_return_callback)(ctx, value);
 	} else {
 		spdlog::error(
 			"Called bpftime_override_return, but no retval callback was set");
-		throw std::invalid_argument(
-			"Called bpftime_override_return, but no retval callback was set");
+		return (uint64_t)-EINVAL;
 	}
 	return 0;
 }

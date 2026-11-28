@@ -65,6 +65,19 @@ Newest first. Read before starting a change. A pull request that reverses an ent
   >
   > 修了吗? 代码是不是要显著减少? 这个 descision 也需要写进去避免再次弄乱
 
+- **2026-11-27: compile-time `noexcept` helper registration gate (`bpftime_helper_fn`), `-Werror=terminate` / `-Werror=exceptions` compiler flags, and minimal SHM allocation exception boundaries** (#1003). uBPF and LLVM JIT machine-code frames carry no DWARF `.eh_frame` unwind tables, so any C++ exception escaping a BPF helper terminates the host process (`std::terminate()`). Global `-fno-exceptions` is not enabled on `runtime/` because `boost::interprocess::managed_shared_memory` (`BOOST_NO_EXCEPTIONS`) turns `bad_alloc` into `[[noreturn]] boost::throw_exception`, aborting the host instead of returning `-ENOMEM`. Instead: (1) all BPF helper registrations (`bpftime_helper_info::fn` and `ebpf_helper_register_callback`) use `bpftime::bpftime_helper_fn` (`attach/base_attach_impl/base_attach_impl.hpp`), requiring `noexcept` on every helper and deleting non-`noexcept` pointers and raw `void *` casts at compile time; (2) `cmake/CompilerWarnings.cmake` enables `-Werror=terminate` (GCC) and `-Werror=exceptions` (Clang) so throwing inside a `noexcept` function is a compile error; (3) runtime `throw` statements on execution paths (`bpftime_set_retval`, `bpftime_override_return`, weak `get_global_attach_ctx`, and `bpftime_prog::bpftime_prog_exec` CUDA check) are replaced with error returns, and `try/catch` is placed strictly at actual throwing boundaries (`with_robust_shm_lock`, `stack_trace_map_impl::fill_stack_trace`, `bpftime_perf_event_output`, and external `ufunc` calls).
+  > BPF Helper 抛异常穿越 JIT 栈帧必死（高危）：uBPF / LLVM JIT 生成的机器码帧没有 DWARF .eh_frame 展开表。一旦 helper 内抛异常（例如 stack_trace_map.cpp:131,136、lru_var_hash_map、lpm_trie_map 或 perf_event_handler.cpp:625 在 SHM 满时抛 boost::interprocess::bad_alloc），C++ unwinder 无法跨过 JIT 帧，即使外层 Frida 回调写了 try/catch 也会在展开期直接调 std::terminate()（SIGABRT）杀死宿主训练进程。必须在所有可分配 SHM 的 helper 入口（bpftime_get_stackid、bpftime_perf_event_output、map_handler 容器写入口）就地 try/catch 转为 -ENOMEM 返回码。 这个是不是要通过 noexecpt 之类的类型来搞定? 没搞这样的标记传递? 是不是得搞, 让 agent 无法增加?
+  >
+  > 你看看是不是有 PR 了
+  >
+  > 没有的可以去做
+  >
+  > 有没有过度设计? 能不能小一点
+  >
+  > 能不能尽可能减少 try { ... } catch?
+  >
+  > 是不是都要有 noexcept 的flag? 尽可能减少代码更改和减少 try cacth 和 throw
+
 - **2026-11-27: non-blocking `dlopen()` retry and `L3` lock callsites for unmapped uprobes** (#970). When a Frida uprobe target DSO is not mapped at startup (`-ENOENT`), `bpf_attach_ctx` sets an atomic `has_pending_uprobes` flag and retries pending uprobe links on outermost successful non-`RTLD_NOLOAD` host `dlopen()` calls in the initialized PID, clearing `has_pending_uprobes` once no unmapped uprobe links remain so steady-state `dlopen()` returns before taking any lock or opening any lock file. While `has_pending_uprobes` is set, the `dlopen()` path uses three non-blocking `L3` lock callsites: (1) `detach_mutex` (`std::try_to_lock`) to avoid racing session teardown; (2) shared `shm_lifecycle_lock` (`LOCK_SH | LOCK_NB`) so `dlopen()` never scans SHM across concurrent `syscall-server` segment recreation or final unlink; and (3) `ctx_mutex` (`std::try_to_lock`) to serialize `bpf_attach_ctx` state without blocking the host loader.
   > 测试过了 pytorch 的 cache allocatpr 能 work? 去测一下, 可以的话就这样 pr
   >

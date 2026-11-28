@@ -326,7 +326,8 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 		}
 	} exec_ctx_guard(memory, memory_size);
 	if (is_cuda()) {
-		throw std::runtime_error("Unable to execute CUDA program");
+		SPDLOG_ERROR("Unable to execute CUDA program");
+		return -EINVAL;
 	}
 	uint64_t val = 0;
 	int res = 0;

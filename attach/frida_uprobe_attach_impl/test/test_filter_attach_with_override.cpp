@@ -9,7 +9,7 @@
 using namespace bpftime::attach;
 using namespace bpftime;
 
-extern "C" uint64_t bpftime_set_retval(uint64_t retval);
+extern "C" uint64_t bpftime_set_retval(uint64_t retval) noexcept;
 extern "C" __attribute__((__noinline__)) uint64_t
 __bpftime_func_to_filter(uint64_t a, uint64_t b)
 { // Forbid inline

@@ -80,13 +80,14 @@ function(set_project_warnings project_name)
       -Wduplicated-branches # warn if if / else branches have duplicated code
       -Wlogical-op   # warn about logical operations being used where bitwise were
                      # probably wanted
+      $<$<COMPILE_LANGUAGE:CXX>:-Werror=terminate>
       # -Wuseless-cast # warn if you perform a cast to the same type
   )
 
   if(MSVC)
     set(PROJECT_WARNINGS ${MSVC_WARNINGS})
   elseif(CMAKE_C_COMPILER_ID MATCHES ".*Clang")
-    set(PROJECT_WARNINGS ${CLANG_WARNINGS})
+    set(PROJECT_WARNINGS ${CLANG_WARNINGS} $<$<COMPILE_LANGUAGE:CXX>:-Werror=exceptions>)
   elseif(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     set(PROJECT_WARNINGS ${GCC_WARNINGS})
   else()

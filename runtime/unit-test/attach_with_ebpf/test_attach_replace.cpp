@@ -15,7 +15,7 @@
 #include <bpftime_object.hpp>
 #include <bpftime_helper_group.hpp>
 #include <frida_uprobe.hpp>
-extern "C" uint64_t bpftime_set_retval(uint64_t value);
+extern "C" uint64_t bpftime_set_retval(uint64_t value) noexcept;
 
 using namespace bpftime;
 

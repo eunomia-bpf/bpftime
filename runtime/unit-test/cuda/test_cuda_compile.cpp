@@ -65,7 +65,7 @@ static const struct ebpf_inst test_prog[] = {
 };
 
 static uint64_t placeholder_helper(uint64_t, uint64_t, uint64_t, uint64_t,
-				   uint64_t)
+				   uint64_t) noexcept
 {
 	return 0;
 }
@@ -77,7 +77,7 @@ TEST_CASE("Test cuda compile")
 	prog.bpftime_prog_register_raw_helper(
 		bpftime_helper_info{ .index = 1,
 				     .name = "bpf_map_lookup",
-				     .fn = (void *)&placeholder_helper });
+				     .fn = &placeholder_helper });
 	prog.bpftime_prog_load(true);
 }
 

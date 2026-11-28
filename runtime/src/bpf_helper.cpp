@@ -67,10 +67,9 @@ using namespace std;
 bpftime::bpf_attach_ctx &get_global_attach_ctx();
 __attribute__((weak)) bpftime::bpf_attach_ctx &get_global_attach_ctx()
 {
-	SPDLOG_WARN(
-		"Calling mocked get_global_attach_ctx, this is not expected");
-	throw std::runtime_error(
-		"Calling mocked get_global_attach_ctx, this is not expected");
+	static bpftime::bpf_attach_ctx *const empty =
+		new bpftime::bpf_attach_ctx();
+	return *empty;
 }
 
 #if __linux__ && defined(ENABLE_PROBE_READ_CHECK)
@@ -160,10 +159,10 @@ static const int probe_access_atfork_status = pthread_atfork(
 	});
 #endif
 
-uint64_t bpftime_override_return(uint64_t ctx, uint64_t value);
-uint64_t bpftime_set_retval(uint64_t retval);
+uint64_t bpftime_override_return(uint64_t ctx, uint64_t value) noexcept;
+uint64_t bpftime_set_retval(uint64_t retval) noexcept;
 
-uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
+uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...) noexcept
 {
 	const char *fmt_str = (const char *)fmt;
 	va_list args;
@@ -176,12 +175,12 @@ uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
 	return 0;
 }
 
-uint64_t bpftime_seq_write(uint64_t, uint64_t, uint64_t)
+uint64_t bpftime_seq_write(uint64_t, uint64_t, uint64_t) noexcept
 {
 	return -EOPNOTSUPP;
 }
 
-long bpftime_strncmp(const char *s1, uint64_t s1_sz, const char *s2)
+long bpftime_strncmp(const char *s1, uint64_t s1_sz, const char *s2) noexcept
 {
 	return strncmp(s1, s2, s1_sz);
 }
@@ -267,7 +266,7 @@ static bool probe_read_memory(void *dst, const void *src, size_t size)
 #endif
 
 int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
-			   uint64_t)
+			   uint64_t) noexcept
 {
 	if (unlikely(size < 0)) {
 		SPDLOG_ERROR("Invalid size: {}", size);
@@ -310,7 +309,7 @@ static bool probe_write_memory(void *dst, const void *src, size_t size)
 #endif
 
 int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
-				 uint64_t, uint64_t)
+				 uint64_t, uint64_t) noexcept
 {
 	if (unlikely(len < 0)) {
 		SPDLOG_ERROR("Invalid len: {}", len);
@@ -378,7 +377,7 @@ static uint64_t bpftime_prng_seed_userspace() noexcept
 	return z != 0 ? z : 0x9E3779B97F4A7C15ULL;
 }
 
-uint64_t bpftime_get_prandom_u32()
+uint64_t bpftime_get_prandom_u32() noexcept
 {
 	uint64_t s = bpftime_prng_state;
 	if (__builtin_expect(s == 0, 0))
@@ -391,7 +390,7 @@ uint64_t bpftime_get_prandom_u32()
 }
 
 uint64_t bpftime_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
-				     uint64_t)
+				     uint64_t) noexcept
 {
 	timespec spec;
 #ifdef __APPLE__
@@ -403,7 +402,7 @@ uint64_t bpftime_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 }
 
 uint64_t bpftime_ktime_get_boot_ns(uint64_t, uint64_t, uint64_t, uint64_t,
-				   uint64_t)
+				   uint64_t) noexcept
 {
 	timespec spec{};
 #ifdef CLOCK_BOOTTIME
@@ -477,7 +476,7 @@ static const int bpftime_identity_atfork_status = pthread_atfork(
 	nullptr, nullptr, bpftime_refresh_cached_identity_in_child);
 
 uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
-				      uint64_t)
+				      uint64_t) noexcept
 {
 	// If registering the fork handler failed, the cache is still the
 	// parent's after a fork, so read the identity directly. The probe
@@ -630,7 +629,7 @@ long bpftime_get_current_task_tpbase_offset() noexcept
 #endif
 
 uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t, uint64_t,
-				  uint64_t)
+				  uint64_t) noexcept
 {
 #if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))
 	// Keep the per-thread task storage on the heap through a pthread key
@@ -683,14 +682,15 @@ uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t, uint64_t,
 }
 
 uint64_t bpf_get_current_uid_gid(uint64_t, uint64_t, uint64_t, uint64_t,
-				 uint64_t)
+				 uint64_t) noexcept
 {
 	// Credentials can change after startup, so query them on every call.
 	return (static_cast<uint64_t>(getgid()) << 32) |
 	       static_cast<uint32_t>(getuid());
 }
 
-uint64_t bpftime_ktime_get_ns(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+uint64_t bpftime_ktime_get_ns(uint64_t, uint64_t, uint64_t, uint64_t,
+			      uint64_t) noexcept
 {
 	auto now = std::chrono::steady_clock::now();
 	auto ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(now);
@@ -784,7 +784,7 @@ const int current_comm_atfork_status =
 #endif
 
 uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
-				  uint64_t, uint64_t)
+				  uint64_t, uint64_t) noexcept
 {
 #if __linux__
 	// If the fork handler could not be registered, a forked child might keep
@@ -837,52 +837,75 @@ static uint64_t kernel_map_helper_result(long result)
 	return (uint64_t)-(errno != 0 ? errno : EINVAL);
 }
 
-uint64_t bpftime_map_lookup_elem_helper(uint64_t map, uint64_t key, uint64_t,
-					uint64_t, uint64_t)
+// SHM allocation exceptions inside map backends are caught centrally in
+// with_robust_shm_lock (runtime/include/robust_shm_mutex.hpp).
+extern "C++" {
+template <typename Fn> static uint64_t run_map_helper(Fn &&fn) noexcept
 {
-	return (uint64_t)bpftime::shm_holder.global_shared_memory
-		.bpf_map_lookup_elem((int)map, (void *)key, false);
+	const int saved_errno = errno;
+	errno = 0;
+	const uint64_t res = kernel_map_helper_result(fn());
+	return errno = saved_errno, res;
+}
+}
+
+uint64_t bpftime_map_lookup_elem_helper(uint64_t map, uint64_t key, uint64_t,
+					uint64_t, uint64_t) noexcept
+{
+	const int saved_errno = errno;
+	const void *val =
+		bpftime::shm_holder.global_shared_memory.bpf_map_lookup_elem(
+			(int)map, (void *)key, false);
+	return errno = saved_errno, (uint64_t)val;
 }
 
 uint64_t bpftime_map_update_elem_helper(uint64_t map, uint64_t key,
 					uint64_t value, uint64_t flags,
-					uint64_t)
+					uint64_t) noexcept
 {
-	return kernel_map_helper_result(
-		bpftime::shm_holder.global_shared_memory.bpf_map_update_elem(
-			(int)map, (void *)key, (void *)value, flags, false));
+	return run_map_helper([&] {
+		return bpftime::shm_holder.global_shared_memory
+			.bpf_map_update_elem((int)map, (void *)key,
+					     (void *)value, flags, false);
+	});
 }
 
 uint64_t bpftime_map_delete_elem_helper(uint64_t map, uint64_t key, uint64_t,
-					uint64_t, uint64_t)
+					uint64_t, uint64_t) noexcept
 {
-	return kernel_map_helper_result(
-		bpftime::shm_holder.global_shared_memory.bpf_delete_elem(
-			(int)map, (void *)key, false));
+	return run_map_helper([&] {
+		return bpftime::shm_holder.global_shared_memory.bpf_delete_elem(
+			(int)map, (void *)key, false);
+	});
 }
 
 uint64_t bpftime_map_push_elem_helper(uint64_t map, uint64_t value,
-				      uint64_t flags, uint64_t, uint64_t)
+				      uint64_t flags, uint64_t,
+				      uint64_t) noexcept
 {
-	return kernel_map_helper_result(
-		bpftime::shm_holder.global_shared_memory.bpf_map_push_elem(
-			(int)map, (void *)value, flags, false));
+	return run_map_helper([&] {
+		return bpftime::shm_holder.global_shared_memory
+			.bpf_map_push_elem((int)map, (void *)value, flags,
+					   false);
+	});
 }
 
 uint64_t bpftime_map_pop_elem_helper(uint64_t map, uint64_t value, uint64_t,
-				     uint64_t, uint64_t)
+				     uint64_t, uint64_t) noexcept
 {
-	return kernel_map_helper_result(
-		bpftime::shm_holder.global_shared_memory.bpf_map_pop_elem(
-			(int)map, (void *)value, false));
+	return run_map_helper([&] {
+		return bpftime::shm_holder.global_shared_memory
+			.bpf_map_pop_elem((int)map, (void *)value, false);
+	});
 }
 
 uint64_t bpftime_map_peek_elem_helper(uint64_t map, uint64_t value, uint64_t,
-				      uint64_t, uint64_t)
+				      uint64_t, uint64_t) noexcept
 {
-	return kernel_map_helper_result(
-		bpftime::shm_holder.global_shared_memory.bpf_map_peek_elem(
-			(int)map, (void *)value, false));
+	return run_map_helper([&] {
+		return bpftime::shm_holder.global_shared_memory
+			.bpf_map_peek_elem((int)map, (void *)value, false);
+	});
 }
 
 #ifdef ENABLE_PROBE_READ_CHECK
@@ -910,7 +933,7 @@ static void clear_probe_memory(void *dst, size_t size)
 #endif
 
 int64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr, uint64_t,
-			   uint64_t)
+			   uint64_t) noexcept
 {
 	if (bufsz == 0)
 		return 0;
@@ -963,7 +986,7 @@ int64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr, uint64_t,
 }
 
 uint64_t bpf_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
-				 uint64_t)
+				 uint64_t) noexcept
 {
 	struct timespec ts;
 #if __APPLE__
@@ -975,7 +998,7 @@ uint64_t bpf_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 }
 
 uint64_t bpf_ringbuf_output(uint64_t rb, uint64_t data, uint64_t size,
-			    uint64_t flags, uint64_t)
+			    uint64_t flags, uint64_t) noexcept
 {
 	int fd = (int)rb;
 	if (flags & ~(BPF_RB_NO_WAKEUP | BPF_RB_FORCE_WAKEUP))
@@ -991,7 +1014,7 @@ uint64_t bpf_ringbuf_output(uint64_t rb, uint64_t data, uint64_t size,
 }
 
 uint64_t bpf_ringbuf_reserve(uint64_t rb, uint64_t size, uint64_t flags,
-			     uint64_t, uint64_t)
+			     uint64_t, uint64_t) noexcept
 {
 	int fd = (int)rb;
 	if (flags != 0) {
@@ -1002,7 +1025,7 @@ uint64_t bpf_ringbuf_reserve(uint64_t rb, uint64_t size, uint64_t flags,
 }
 
 uint64_t bpf_ringbuf_submit(uint64_t data, uint64_t flags, uint64_t, uint64_t,
-			    uint64_t)
+			    uint64_t) noexcept
 {
 	int32_t *ptr = (int32_t *)(uintptr_t)data;
 	int fd = ptr[-1];
@@ -1016,7 +1039,7 @@ uint64_t bpf_ringbuf_submit(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 }
 
 uint64_t bpf_ringbuf_discard(uint64_t data, uint64_t flags, uint64_t, uint64_t,
-			     uint64_t)
+			     uint64_t) noexcept
 {
 	int32_t *ptr = (int32_t *)(uintptr_t)data;
 	int fd = ptr[-1];
@@ -1030,8 +1053,10 @@ uint64_t bpf_ringbuf_discard(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 }
 
 uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
-			       uint64_t data, uint64_t size)
+			       uint64_t data, uint64_t size) noexcept
 {
+	(void)ctx;
+	(void)flags;
 	int32_t current_cpu = my_sched_getcpu();
 	if (unlikely(current_cpu == -1)) {
 		SPDLOG_ERROR(
@@ -1068,9 +1093,14 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 		}
 		int32_t perf_handler_fd =
 			__atomic_load_n(val_ptr, __ATOMIC_ACQUIRE);
-		return (uint64_t)bpftime_perf_event_output(
-			perf_handler_fd, (const void *)(uintptr_t)data,
-			(size_t)size);
+		const int saved_errno = errno;
+		try {
+			return (uint64_t)bpftime_perf_event_output(
+				perf_handler_fd, (const void *)(uintptr_t)data,
+				(size_t)size);
+		} catch (...) {
+			return errno = saved_errno, (uint64_t)-ENOMEM;
+		}
 	}
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 	else if (map_ty == bpftime::bpf_map_type::
@@ -1143,7 +1173,8 @@ static void bpftime_prepare_tail_call_context(char (&context)[64],
 	}
 }
 
-uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
+uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array,
+			   uint64_t index) noexcept
 {
 	int fd = (int)prog_array;
 	if (!bpftime_is_prog_array(fd)) {
@@ -1181,12 +1212,9 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 			}
 		} guard(tail_call_depth);
 
-		bpftime::bpftime_prog *prog = nullptr;
-		try {
-			prog = get_global_attach_ctx().find_instantiated_prog(
+		bpftime::bpftime_prog *prog =
+			get_global_attach_ctx().find_instantiated_prog(
 				to_call_fd);
-		} catch (const std::exception &) {
-		}
 		std::optional<bpftime::bpftime_prog> fallback;
 		if (prog == nullptr) {
 			const auto &handler = std::get<bpftime::bpf_prog_handler>(
@@ -1242,8 +1270,9 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 }
 
 uint64_t bpftime_get_attach_cookie(uint64_t ctx, uint64_t, uint64_t, uint64_t,
-				   uint64_t)
+				   uint64_t) noexcept
 {
+	(void)ctx;
 	if (auto *signal_ctx = bpftime::attach::current_signal_callback)
 		return signal_ctx->cookie.value_or(0);
 	uint64_t cookie;
@@ -1256,14 +1285,15 @@ uint64_t bpftime_get_attach_cookie(uint64_t ctx, uint64_t, uint64_t, uint64_t,
 	}
 }
 
-uint64_t bpftime_get_func_ip(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+uint64_t bpftime_get_func_ip(uint64_t, uint64_t, uint64_t, uint64_t,
+			     uint64_t) noexcept
 {
 	if (auto *ctx = bpftime::attach::current_signal_callback)
 		return ctx->function_ip;
 	return bpftime::attach::current_thread_attach_func_ip;
 }
 
-uint64_t bpftime_get_smp_processor_id()
+uint64_t bpftime_get_smp_processor_id() noexcept
 {
 	int cpu = my_sched_getcpu();
 	if (cpu == -1) {
@@ -1275,7 +1305,7 @@ uint64_t bpftime_get_smp_processor_id()
 
 // From https://github.com/microsoft/ebpf-for-windows
 int64_t bpftime_csum_diff(const void *from, int from_size, const void *to,
-			  int to_size, int seed)
+			  int to_size, int seed) noexcept
 {
 	int csum_diff = -EINVAL;
 
@@ -1309,7 +1339,7 @@ Exit:
 
 #define ETH_HLEN 14 /* Total octets in header.	 */
 
-long bpftime_xdp_adjust_head(struct xdp_md_userspace *xdp, int offset)
+long bpftime_xdp_adjust_head(struct xdp_md_userspace *xdp, int offset) noexcept
 {
 	// We don't use xdp meta data
 	uint64_t data = xdp->data + offset;
@@ -1334,7 +1364,8 @@ long bpftime_xdp_adjust_head(struct xdp_md_userspace *xdp, int offset)
 	return 0;
 }
 
-long bpftime_xdp_adjust_tail(struct xdp_md_userspace *xdp_md, int delta)
+long bpftime_xdp_adjust_tail(struct xdp_md_userspace *xdp_md,
+			     int delta) noexcept
 {
 	// We don't use xdp meta data
 	uint64_t data = xdp_md->data_end + delta;
@@ -1347,7 +1378,7 @@ long bpftime_xdp_adjust_tail(struct xdp_md_userspace *xdp_md, int delta)
 }
 
 long bpftime_xdp_load_bytes(struct xdp_md_userspace *xdp_md, __u32 offset,
-			    void *buf, __u32 len)
+			    void *buf, __u32 len) noexcept
 {
 	// We don't support fragmented packets
 	uint64_t data = xdp_md->data + offset;
@@ -1360,8 +1391,9 @@ long bpftime_xdp_load_bytes(struct xdp_md_userspace *xdp_md, __u32 offset,
 using namespace bpftime;
 
 int64_t bpftime_get_stackid(uint64_t ctx_raw, uint64_t map_raw, uint64_t flags,
-			    uint64_t, uint64_t)
+			    uint64_t, uint64_t) noexcept
 {
+	(void)ctx_raw;
 	if (!(flags & BPF_F_USER_STACK)) {
 		SPDLOG_ERROR(
 			"bpftime_get_stackid only supports collect user stack!");
@@ -1397,27 +1429,32 @@ int64_t bpftime_get_stackid(uint64_t ctx_raw, uint64_t map_raw, uint64_t flags,
 		frame_count -= frames_to_skip;
 	}
 	SPDLOG_DEBUG("After skipping, collected {} frames", frame_count);
+	const int saved_errno = errno;
 	int real_map_fd = (int)map_raw;
+	if (!shm_holder.global_shared_memory.is_stack_trace_map_fd(real_map_fd))
+		return errno = saved_errno, -EINVAL;
 	auto &map_handler = std::get<bpf_map_handler>(
 		shm_holder.global_shared_memory.get_handler(real_map_fd));
 
 	robust_shm_trylock_guard guard(map_handler.get_map_lock());
 	if (!guard.owns_lock())
-		return -EBUSY;
-	auto impl = *shm_holder.global_shared_memory.try_get_stack_trace_impl(
+		return errno = saved_errno, -EBUSY;
+	auto impl = shm_holder.global_shared_memory.try_get_stack_trace_impl(
 		real_map_fd);
-	int ret = impl->fill_stack_trace(frames, frame_count,
-					 flags & BPF_F_REUSE_STACKID,
-					 flags & BPF_F_FAST_STACK_CMP);
+	if (!impl.has_value() || *impl == nullptr)
+		return errno = saved_errno, -EINVAL;
+	int ret = (*impl)->fill_stack_trace(frames, frame_count,
+					    flags & BPF_F_REUSE_STACKID,
+					    flags & BPF_F_FAST_STACK_CMP);
 
 	SPDLOG_DEBUG("Got stackid {}", ret);
 	// Keep negative errno values (e.g. -EEXIST on a collision) intact;
 	// valid stack ids are non-negative and unchanged by the conversion.
-	return ret;
+	return errno = saved_errno, ret;
 }
 
 int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
-			  uint64_t flags, uint64_t)
+			  uint64_t flags, uint64_t) noexcept
 {
 	if (!(flags & BPF_F_USER_STACK)) {
 		SPDLOG_DEBUG(
@@ -1781,191 +1818,191 @@ bpftime_helper_group::get_kernel_utils_helper_group()
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_probe_read,
 			    .name = "bpf_probe_read",
-			    .fn = (void *)bpftime_probe_read,
+			    .fn = bpftime_probe_read,
 		    } },
 		  { BPF_FUNC_get_smp_processor_id,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_get_smp_processor_id,
 			    .name = "bpf_get_smp_processor_id",
-			    .fn = (void *)bpftime_get_smp_processor_id,
+			    .fn = bpftime_get_smp_processor_id,
 		    } },
 		  { BPF_FUNC_csum_diff,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_csum_diff,
 			    .name = "bpf_csum_diff",
-			    .fn = (void *)bpftime_csum_diff,
+			    .fn = bpftime_csum_diff,
 		    } },
 		  { BPF_FUNC_xdp_adjust_head,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_xdp_adjust_head,
 			    .name = "bpf_xdp_adjust_head",
-			    .fn = (void *)bpftime_xdp_adjust_head,
+			    .fn = bpftime_xdp_adjust_head,
 		    } },
 		  { BPF_FUNC_xdp_adjust_tail,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_xdp_adjust_tail,
 			    .name = "bpf_xdp_adjust_tail",
-			    .fn = (void *)bpftime_xdp_adjust_tail,
+			    .fn = bpftime_xdp_adjust_tail,
 		    } },
 		  { BPF_FUNC_probe_read_kernel,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_probe_read_kernel,
 			    .name = "bpf_probe_read_kernel",
-			    .fn = (void *)bpftime_probe_read,
+			    .fn = bpftime_probe_read,
 		    } },
 		  { BPF_FUNC_probe_read_user,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_probe_read_user,
 			    .name = "bpf_probe_read_user",
-			    .fn = (void *)bpftime_probe_read,
+			    .fn = bpftime_probe_read,
 		    } },
 		  { BPF_FUNC_ktime_get_ns,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_ktime_get_ns,
 			    .name = "bpf_ktime_get_ns",
-			    .fn = (void *)bpftime_ktime_get_ns,
+			    .fn = bpftime_ktime_get_ns,
 		    } },
 		  { BPF_FUNC_ktime_get_boot_ns,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_ktime_get_boot_ns,
 			    .name = "bpf_ktime_get_boot_ns",
-			    .fn = (void *)bpftime_ktime_get_boot_ns,
+			    .fn = bpftime_ktime_get_boot_ns,
 		    } },
 		  { BPF_FUNC_seq_write,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_seq_write,
 			    .name = "bpf_seq_write",
-			    .fn = (void *)bpftime_seq_write,
+			    .fn = bpftime_seq_write,
 		    } },
 		  { BPF_FUNC_trace_printk,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_trace_printk,
 			    .name = "bpf_trace_printk",
-			    .fn = (void *)bpftime_trace_printk,
+			    .fn = bpftime_trace_printk,
 		    } },
 		  { BPF_FUNC_get_prandom_u32,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_get_prandom_u32,
 			    .name = "bpf_get_prandom_u32",
-			    .fn = (void *)bpftime_get_prandom_u32,
+			    .fn = bpftime_get_prandom_u32,
 		    } },
 		  { BPF_FUNC_get_current_pid_tgid,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_get_current_pid_tgid,
 			    .name = "bpf_get_current_pid_tgid",
-			    .fn = (void *)bpftime_get_current_pid_tgid,
+			    .fn = bpftime_get_current_pid_tgid,
 		    } },
 		  { BPF_FUNC_get_current_uid_gid,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_get_current_uid_gid,
 			    .name = "bpf_get_current_uid_gid",
-			    .fn = (void *)bpf_get_current_uid_gid } },
+			    .fn = bpf_get_current_uid_gid } },
 		  { BPF_FUNC_get_current_task,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_get_current_task,
 			    .name = "bpf_get_current_task",
-			    .fn = (void *)bpftime_get_current_task } },
+			    .fn = bpftime_get_current_task } },
 		  { BPF_FUNC_get_current_task_btf,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_get_current_task_btf,
 			    .name = "bpf_get_current_task_btf",
-			    .fn = (void *)bpftime_get_current_task } },
+			    .fn = bpftime_get_current_task } },
 		  { BPF_FUNC_get_current_comm,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_get_current_comm,
 			    .name = "bpf_get_current_comm",
-			    .fn = (void *)bpftime_get_current_comm,
+			    .fn = bpftime_get_current_comm,
 		    } },
 		  { BPF_FUNC_override_return,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_override_return,
 			    .name = "bpf_override_return",
-			    .fn = (void *)bpftime_override_return,
+			    .fn = bpftime_override_return,
 		    } },
 		  { BPF_FUNC_strncmp,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_strncmp,
 			    .name = "bpf_strncmp",
-			    .fn = (void *)bpftime_strncmp,
+			    .fn = bpftime_strncmp,
 		    } },
 		  { BPF_FUNC_probe_write_user,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_probe_write_user,
 			    .name = "bpf_probe_write_user",
-			    .fn = (void *)bpftime_probe_write_user,
+			    .fn = bpftime_probe_write_user,
 		    } },
 		  { BPF_FUNC_set_retval,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_set_retval,
 			    .name = "bpf_set_retval",
-			    .fn = (void *)bpftime_set_retval,
+			    .fn = bpftime_set_retval,
 		    } },
 		  { BPF_FUNC_probe_read_user_str,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_probe_read_user_str,
 			    .name = "bpf_probe_read_str",
-			    .fn = (void *)bpf_probe_read_str,
+			    .fn = bpf_probe_read_str,
 		    } },
 		  { BPF_FUNC_probe_read_str,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_probe_read_str,
 			    .name = "bpf_probe_str",
-			    .fn = (void *)bpf_probe_read_str,
+			    .fn = bpf_probe_read_str,
 		    } },
 		  { BPF_FUNC_get_stack,
 		    bpftime_helper_info{ .index = BPF_FUNC_get_stack,
 					 .name = "bpf_get_stack",
-					 .fn = (void *)bpftime_get_stack } },
+					 .fn = bpftime_get_stack } },
 		  { BPF_FUNC_get_stackid,
 		    bpftime_helper_info{ .index = BPF_FUNC_get_stackid,
 					 .name = "bpf_get_stackid",
-					 .fn = (void *)bpftime_get_stackid } },
+					 .fn = bpftime_get_stackid } },
 
 		  { BPF_FUNC_ktime_get_coarse_ns,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_ktime_get_coarse_ns,
 			    .name = "bpf_ktime_get_coarse_ns",
-			    .fn = (void *)bpf_ktime_get_coarse_ns } },
+			    .fn = bpf_ktime_get_coarse_ns } },
 
 		  { BPF_FUNC_ringbuf_reserve,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_ringbuf_reserve,
 			    .name = "bpf_ringbuf_reserve",
-			    .fn = (void *)bpf_ringbuf_reserve,
+			    .fn = bpf_ringbuf_reserve,
 		    } },
 		  { BPF_FUNC_ringbuf_submit,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_ringbuf_submit,
 			    .name = "bpf_ringbuf_submit",
-			    .fn = (void *)bpf_ringbuf_submit,
+			    .fn = bpf_ringbuf_submit,
 		    } },
 		  { BPF_FUNC_ringbuf_discard,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_ringbuf_discard,
 			    .name = "bpf_ringbuf_discard",
-			    .fn = (void *)bpf_ringbuf_discard,
+			    .fn = bpf_ringbuf_discard,
 		    } },
 		  { BPF_FUNC_perf_event_output,
 		    bpftime_helper_info{ .index = BPF_FUNC_perf_event_output,
 					 .name = "bpf_perf_event_output",
-					 .fn = (void *)bpf_perf_event_output } },
+					 .fn = bpf_perf_event_output } },
 		  { BPF_FUNC_ringbuf_output,
 		    bpftime_helper_info{ .index = BPF_FUNC_ringbuf_output,
 					 .name = "bpf_ringbuf_output",
-					 .fn = (void *)bpf_ringbuf_output } },
+					 .fn = bpf_ringbuf_output } },
 		  { BPF_FUNC_tail_call,
 		    bpftime_helper_info{ .index = BPF_FUNC_tail_call,
 					 .name = "bpf_tail_call",
-					 .fn = (void *)bpftime_tail_call } },
+					 .fn = bpftime_tail_call } },
 		  { BPF_FUNC_get_attach_cookie,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_get_attach_cookie,
 			    .name = "bpf_get_attach_cookie",
-			    .fn = (void *)bpftime_get_attach_cookie } },
+			    .fn = bpftime_get_attach_cookie } },
 		  { BPF_FUNC_get_func_ip,
 		    bpftime_helper_info{ .index = BPF_FUNC_get_func_ip,
 					 .name = "bpf_get_func_ip",
-					 .fn = (void *)bpftime_get_func_ip } } }
+					 .fn = bpftime_get_func_ip } } }
 
 	};
 
@@ -1978,37 +2015,37 @@ const bpftime_helper_group &bpftime_helper_group::get_shm_maps_helper_group()
 		  bpftime_helper_info{
 			  .index = BPF_FUNC_map_lookup_elem,
 			  .name = "bpf_map_lookup_elem",
-			  .fn = (void *)bpftime_map_lookup_elem_helper,
+			  .fn = bpftime_map_lookup_elem_helper,
 		  } },
 		{ BPF_FUNC_map_update_elem,
 		  bpftime_helper_info{
 			  .index = BPF_FUNC_map_update_elem,
 			  .name = "bpf_map_update_elem",
-			  .fn = (void *)bpftime_map_update_elem_helper,
+			  .fn = bpftime_map_update_elem_helper,
 		  } },
 		{ BPF_FUNC_map_delete_elem,
 		  bpftime_helper_info{
 			  .index = BPF_FUNC_map_delete_elem,
 			  .name = "bpf_map_delete_elem",
-			  .fn = (void *)bpftime_map_delete_elem_helper,
+			  .fn = bpftime_map_delete_elem_helper,
 		  } },
 		{ BPF_FUNC_map_push_elem,
 		  bpftime_helper_info{
 			  .index = BPF_FUNC_map_push_elem,
 			  .name = "bpf_map_push_elem",
-			  .fn = (void *)bpftime_map_push_elem_helper,
+			  .fn = bpftime_map_push_elem_helper,
 		  } },
 		{ BPF_FUNC_map_pop_elem,
 		  bpftime_helper_info{
 			  .index = BPF_FUNC_map_pop_elem,
 			  .name = "bpf_map_pop_elem",
-			  .fn = (void *)bpftime_map_pop_elem_helper,
+			  .fn = bpftime_map_pop_elem_helper,
 		  } },
 		{ BPF_FUNC_map_peek_elem,
 		  bpftime_helper_info{
 			  .index = BPF_FUNC_map_peek_elem,
 			  .name = "bpf_map_peek_elem",
-			  .fn = (void *)bpftime_map_peek_elem_helper,
+			  .fn = bpftime_map_peek_elem_helper,
 		  } },
 	} };
 

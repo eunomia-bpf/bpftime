@@ -83,28 +83,28 @@ static int io_uring_wait_and_seen(struct io_uring *ring,
 
 static struct io_uring ring;
 
-uint64_t io_uring_init_global(void)
+uint64_t io_uring_init_global(void) noexcept
 {
 	return io_uring_init(&ring);
 }
 
-uint64_t bpftime_io_uring_submit_write(int fd, char *buf, size_t size)
+uint64_t bpftime_io_uring_submit_write(int fd, char *buf, size_t size) noexcept
 {
 	return submit_io_uring_write(&ring, fd, buf, size);
 }
 
-uint64_t bpftime_io_uring_submit_fsync(int fd)
+uint64_t bpftime_io_uring_submit_fsync(int fd) noexcept
 {
 	return submit_io_uring_fsync(&ring, fd);
 }
 
-uint64_t bpftime_io_uring_wait_and_seen(void)
+uint64_t bpftime_io_uring_wait_and_seen(void) noexcept
 {
 	struct io_uring_cqe *cqe = nullptr;
 	return io_uring_wait_and_seen(&ring, cqe);
 }
 
-uint64_t bpftime_io_uring_submit(void)
+uint64_t bpftime_io_uring_submit(void) noexcept
 {
 	return io_uring_submit(&ring);
 }
@@ -116,44 +116,44 @@ const bpftime_helper_group &get_extension_helper_group()
 		  bpftime_helper_info{
 			  .index = UFUNC_HELPER_ID_FIND_ID,
 			  .name = "__ebpf_call_find_ufunc_id",
-			  .fn = (void *)__ebpf_call_find_ufunc_id,
+			  .fn = __ebpf_call_find_ufunc_id,
 		  } },
 		{ UFUNC_HELPER_ID_DISPATCHER,
 		  bpftime_helper_info{
 			  .index = UFUNC_HELPER_ID_DISPATCHER,
 			  .name = "__ebpf_call_ufunc_dispatcher",
-			  .fn = (void *)__ebpf_call_ufunc_dispatcher,
+			  .fn = __ebpf_call_ufunc_dispatcher,
 		  } },
 #if defined (BPFTIME_ENABLE_IOURING_EXT) && __linux__
 	{ EXTENDED_UFUNC_IOURING_INIT,
 	  bpftime_helper_info{
 		  .index = EXTENDED_UFUNC_IOURING_INIT,
 		  .name = "io_uring_init",
-		  .fn = (void *)io_uring_init_global,
+		  .fn = io_uring_init_global,
 	  } },
 	{ EXTENDED_UFUNC_IOURING_SUBMIT_WRITE,
 	  bpftime_helper_info{
 		  .index = EXTENDED_UFUNC_IOURING_SUBMIT_WRITE,
 		  .name = "io_uring_submit_write",
-		  .fn = (void *)bpftime_io_uring_submit_write,
+		  .fn = bpftime_io_uring_submit_write,
 	  } },
 	{ EXTENDED_UFUNC_IOURING_SUBMIT_FSYNC,
 	  bpftime_helper_info{
 		  .index = EXTENDED_UFUNC_IOURING_SUBMIT_FSYNC,
 		  .name = "io_uring_submit_fsync",
-		  .fn = (void *)bpftime_io_uring_submit_fsync,
+		  .fn = bpftime_io_uring_submit_fsync,
 	  } },
 	{ EXTENDED_UFUNC_IOURING_WAIT_AND_SEEN,
 	  bpftime_helper_info{
 		  .index = EXTENDED_UFUNC_IOURING_WAIT_AND_SEEN,
 		  .name = "io_uring_wait_and_seen",
-		  .fn = (void *)bpftime_io_uring_wait_and_seen,
+		  .fn = bpftime_io_uring_wait_and_seen,
 	  } },
 	{ EXTENDED_UFUNC_IOURING_SUBMIT,
 	  bpftime_helper_info{
 		  .index = EXTENDED_UFUNC_IOURING_SUBMIT,
 		  .name = "io_uring_submit",
-		  .fn = (void *)bpftime_io_uring_submit,
+		  .fn = bpftime_io_uring_submit,
 	  } },
 #endif
 	} };
