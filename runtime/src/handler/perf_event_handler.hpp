@@ -88,6 +88,10 @@ struct software_perf_event_buffer {
 	size_t mmap_size() const;
 	bool has_data() const;
 	bool copy_next_record_to(software_perf_event_buffer &dst);
+	// Pop one perf record into a process-local heap buffer, advancing the
+	// consumer tail. Used by host-side collectors that cannot map the SHM
+	// ring directly (e.g. the cross-machine bpftime-remote-host daemon).
+	bool drain_next_to_heap(std::vector<uint8_t> &out);
 
     private:
 	bool append_record(const void *record, size_t record_size);
@@ -143,6 +147,8 @@ struct software_perf_event_data {
 	int output_data(const void *buf, size_t size);
 	size_t mmap_size() const;
 	bool has_data();
+	// Drain producer shards first, then pop one record into a heap buffer.
+	bool drain_next_to_heap(std::vector<uint8_t> &out);
 
     private:
 	software_perf_event_shard *get_current_thread_shard();

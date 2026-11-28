@@ -1,5 +1,6 @@
 #pragma once
 #ifdef __linux__
+#include <cstddef>
 #include <cerrno>
 #include <cstring>
 #include <string>
