@@ -128,9 +128,9 @@ visit_map_impl(bpf_map_type type, GetPtr &&get_ptr, Fn &&fn,
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY:
 		return fn(static_cast<perf_event_array_kernel_user_impl *>(
 			get_ptr()));
+#endif
 	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY:
 		return fn(static_cast<prog_array_map_impl *>(get_ptr()));
-#endif
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_GPU_HASH_MAP:
 		return fn(static_cast<nv_gpu_shared_hash_map_impl *>(get_ptr()));
@@ -582,6 +582,9 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		init_refcnt();
 		return 0;
 	}
+#endif
+	// PROG_ARRAY and STACK_TRACE have pure-userspace implementations and are
+	// available on every platform; only the kernel-user maps above need libbpf.
 	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY: {
 		map_impl_ptr = shm_construct<prog_array_map_impl>(
 			memory, boost::interprocess::anonymous_instance, memory,
@@ -596,7 +599,6 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		init_refcnt();
 		return 0;
 	}
-#endif
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
 		// inner fd is stored as a uint32; reject mismatched value_size so
 		// the syscall memcpy path can never over-read/truncate (M13 follow-up).

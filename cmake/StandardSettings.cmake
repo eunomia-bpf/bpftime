@@ -110,3 +110,9 @@ option(BPFTIME_BUILD_WITH_LIBBPF "Whether to build with libbpf and other linux h
 option(ENABLE_PROBE_READ_CHECK "Whether to enable probe read check" ON)
 # whether to enable probe write check
 option(ENABLE_PROBE_WRITE_CHECK "Whether to enable probe write check" ON)
+
+# The injected agent's optional per-process control socket. Compiled in by
+# default but, on the Linux LD_PRELOAD path, still dormant until the runtime
+# BPFTIME_ENABLE_AGENT_IPC opt-in is set (DECISIONS #951: a background thread
+# exists only behind a compile-time flag).
+option(BPFTIME_ENABLE_AGENT_IPC_SERVER "Build the agent's per-process AF_UNIX control socket worker" ON)

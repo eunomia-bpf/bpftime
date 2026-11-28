@@ -42,12 +42,12 @@ namespace bpftime
 
 int load_prog_and_helpers(bpftime_prog *prog, const runtime_config &config)
 {
-#if defined(__linux__)
+	// The kernel-utils helpers are pure-userspace implementations that build
+	// and run on both Linux and Darwin, so registration is not Linux-only.
 	if (config.enable_kernel_helper_group) {
 		bpftime_helper_group::get_kernel_utils_helper_group()
 			.add_helper_group_to_prog(prog);
 	}
-#endif
 	if (config.enable_ufunc_helper_group) {
 		bpftime_helper_group::get_ufunc_helper_group()
 			.add_helper_group_to_prog(prog);

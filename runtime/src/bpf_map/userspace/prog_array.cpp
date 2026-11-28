@@ -114,8 +114,6 @@ prog_array_map_impl::prog_array_map_impl(
 	}
 }
 
-#if __linux__
-
 void *prog_array_map_impl::elem_lookup(const void *key)
 {
 	int32_t k = *(int32_t *)key;
@@ -137,6 +135,7 @@ void *prog_array_map_impl::elem_lookup(const void *key)
 		current_thread_lookup_val = fd;
 		return &current_thread_lookup_val;
 	}
+#if __linux__
 	int fd = my_bpf_prog_get_fd_by_id(value);
 	if (fd < 0) {
 		SPDLOG_ERROR("Unable to retrieve prog fd of id {}", value);
@@ -146,6 +145,12 @@ void *prog_array_map_impl::elem_lookup(const void *key)
 	SPDLOG_DEBUG("prog array: fd of prog id {} is {}", value, fd);
 	current_thread_lookup_val = fd;
 	return &current_thread_lookup_val;
+#else
+	// Darwin has no kernel bpf syscall; only encoded userspace prog fds
+	// are valid entries here.
+	errno = ENOENT;
+	return nullptr;
+#endif
 }
 
 long prog_array_map_impl::elem_update(const void *key, const void *value,
@@ -163,6 +168,7 @@ long prog_array_map_impl::elem_update(const void *key, const void *value,
 			     k, v);
 		return 0;
 	}
+#if __linux__
 	struct bpf_prog_info info = {};
 	uint32_t len = sizeof(info);
 	int err = my_bpf_obj_get_info_by_fd(v, &info, &len);
@@ -176,9 +182,16 @@ long prog_array_map_impl::elem_update(const void *key, const void *value,
 	SPDLOG_DEBUG("prog array: update slot {} to prog fd {}, id {}", k, v,
 		     info.id);
 	return 0;
-}
-
+#else
+	// There are no kernel bpf program fds on Darwin, so a non-userspace fd
+	// cannot be stored in a prog array.
+	SPDLOG_ERROR(
+		"prog array: only userspace bpftime prog fds are supported on this platform");
+	(void)flags;
+	errno = EBADF;
+	return -1;
 #endif
+}
 
 long prog_array_map_impl::elem_delete(const void *key)
 {
