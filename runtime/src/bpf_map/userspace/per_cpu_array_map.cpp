@@ -20,14 +20,14 @@ per_cpu_array_map_impl::per_cpu_array_map_impl(
 	: data(memory.get_segment_manager()), ncpu(ncpu),
 	  value_size(value_size), max_ent(max_entries)
 {
-	data.resize(size_t(max_entries) * ncpu * value_size);
+	data.resize(size_t(max_entries) * ncpu * stride());
 }
 
 per_cpu_array_map_impl::per_cpu_array_map_impl(
 	boost::interprocess::managed_shared_memory &memory, uint32_t value_size,
 	uint32_t max_entries)
 	: per_cpu_array_map_impl(memory, value_size, max_entries,
-				 sysconf(_SC_NPROCESSORS_ONLN))
+				 bpftime_possible_cpus())
 {
 }
 
@@ -140,7 +140,7 @@ long per_cpu_array_map_impl::elem_update_userspace(const void *key,
 		return -1;
 	}
 	std::copy((uint8_t *)value,
-		  (uint8_t *)value + size_t(ncpu) * value_size,
+		  (uint8_t *)value + size_t(ncpu) * stride(),
 		  data_at(key_val, 0));
 	return 0;
 }

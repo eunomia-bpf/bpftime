@@ -184,7 +184,7 @@ static void test_hashmap_percpu(std::string memory_name = SHM_NAME,
 	int expected_key_mask = 0;
 	int i;
 	per_cpu_hash_map_impl map(mem, sizeof(key),
-				  sizeof(bpf_percpu(value, 0)), 2);
+				  sizeof(bpf_percpu(value, 0)), 2, nr_cpus);
 
 	for (i = 0; i < (int)nr_cpus; i++)
 		bpf_percpu(value, i) = i + 100;
@@ -436,7 +436,8 @@ static void test_arraymap_percpu(std::string memory_name = SHM_NAME,
 	unsigned int nr_cpus = sysconf(_SC_NPROCESSORS_ONLN);
 	BPF_DECLARE_PERCPU(long, values);
 	int key, next_key, i;
-	per_cpu_array_map_impl map(mem, sizeof(bpf_percpu(values, 0)), 2);
+	per_cpu_array_map_impl map(mem, sizeof(bpf_percpu(values, 0)), 2,
+				   nr_cpus);
 	const auto lookup_helper = [&](const void *key, void *value) -> long {
 		auto returned_value = map.elem_lookup_userspace(key);
 		if (!returned_value)
@@ -502,7 +503,8 @@ TEST_CASE("test_arraymap_percpu_many_keys (kernel)", "[kernel]")
 	unsigned int nr_keys = 2000;
 	int key, i;
 
-	per_cpu_array_map_impl map(mem, sizeof(bpf_percpu(values, 0)), nr_keys);
+	per_cpu_array_map_impl map(mem, sizeof(bpf_percpu(values, 0)), nr_keys,
+				   nr_cpus);
 
 	for (i = 0; i < (int)nr_cpus; i++)
 		bpf_percpu(values, i) = i + 10;

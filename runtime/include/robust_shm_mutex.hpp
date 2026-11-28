@@ -150,6 +150,28 @@ inline uint64_t get_shm_trylock_skip_count() noexcept
 	return shm_trylock_skips.load(std::memory_order_relaxed);
 }
 
+inline int try_lease_shm_slot(robust_shm_recovering_mutex *slots, int count,
+			      int preferred) noexcept
+{
+	if (!slots || count <= 0)
+		return -1;
+	const int start = preferred >= 0 ? (preferred % count) : 0;
+	for (int i = 0; i < count; ++i) {
+		const int idx = (start + i) % count;
+		if (slots[idx].try_lock())
+			return idx;
+	}
+	shm_trylock_skips.fetch_add(1, std::memory_order_relaxed);
+	return -1;
+}
+
+inline void release_shm_slot(robust_shm_recovering_mutex *slots, int count,
+			     int slot) noexcept
+{
+	if (slots && slot >= 0 && slot < count)
+		slots[slot].unlock();
+}
+
 class robust_shm_lock_guard {
 	robust_shm_mutex *mutex;
 

@@ -167,10 +167,15 @@ uint32_t bpf_map_handler::get_value_size() const
 uint32_t bpf_map_handler::get_userspace_value_size() const
 {
 	auto result = value_size;
-	if ((type == bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY) ||
-	    (type == bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH)) {
-		result *= sysconf(_SC_NPROCESSORS_ONLN);
-	}
+	// The bpf syscall layout: each CPU's value rounded up to 8 bytes.
+	if (type == bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY)
+		result = ((value_size + 7U) & ~7U) *
+			 static_cast<per_cpu_array_map_impl *>(map_impl_ptr.get())
+				 ->getncpu();
+	if (type == bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH)
+		result = ((value_size + 7U) & ~7U) *
+			 static_cast<per_cpu_hash_map_impl *>(map_impl_ptr.get())
+				 ->getncpu();
 	if (type == bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP ||
 	    type == bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP) {
 		result *= this->attr.gpu_thread_count;

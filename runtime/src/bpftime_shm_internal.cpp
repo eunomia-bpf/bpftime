@@ -902,6 +902,15 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		epoch_state = seg_mgr->find_no_lock<bpftime_global_epoch_state>(
 					     "bpftime_global_epoch_state")
 				      .first;
+		vcpu_locks = seg_mgr->find_no_lock<bpftime_vcpu_locks>(
+					    "bpftime_vcpu_locks")
+				     .first;
+		if (vcpu_locks == nullptr) {
+			SPDLOG_WARN(
+				"vCPU slots missing from shared memory; the segment "
+				"likely uses an older layout, so BPF programs see "
+				"the real CPU");
+		}
 		SPDLOG_DEBUG("done: bpftime_shm for client setup");
 	} else if (type == shm_open_type::SHM_CREATE_OR_OPEN ||
 		   type == shm_open_type::SHM_CREATE_ONLY) {
@@ -935,6 +944,8 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		epoch_state =
 			shm_find_or_construct<bpftime_global_epoch_state>(
 				segment, "bpftime_global_epoch_state");
+		vcpu_locks = shm_find_or_construct<bpftime_vcpu_locks>(
+			segment, "bpftime_vcpu_locks");
 		SPDLOG_DEBUG("done: bpftime_shm for open_or_create setup");
 	} else if (type == shm_open_type::SHM_REMOVE_AND_CREATE) {
 		SPDLOG_DEBUG(
@@ -968,6 +979,8 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 				bpftime::DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME);
 		epoch_state = shm_construct<bpftime_global_epoch_state>(
 			segment, "bpftime_global_epoch_state");
+		vcpu_locks = shm_construct<bpftime_vcpu_locks>(
+			segment, "bpftime_vcpu_locks");
 		SPDLOG_DEBUG("done: bpftime_shm for server setup.");
 	} else if (type == shm_open_type::SHM_NO_CREATE) {
 		// not create any shm
@@ -1319,6 +1332,8 @@ bool bpftime_shm::register_cuda_host_memory()
 #endif
 bpftime::bpftime_shm::~bpftime_shm()
 {
+	// The segment goes away with this object; leases must not touch it.
+	vcpu_locks = nullptr;
 	if (open_type == shm_open_type::SHM_NO_CREATE) {
 		return; // Nothing to do
 	}

@@ -10,6 +10,7 @@
 #include "bpf_map/userspace/stack_trace_map.hpp"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include "robust_shm_mutex.hpp"
+#include "platform_utils.hpp"
 #include <atomic>
 #include <cerrno>
 #include <cstddef>
@@ -58,6 +59,14 @@ static constexpr std::uint64_t BPFTIME_EPOCH_SEQ_MISSING = UINT64_MAX - 1;
 // - even : stable; session_id = epoch_seq / 2
 struct bpftime_global_epoch_state {
 	std::uint64_t epoch_seq = 0;
+};
+
+static constexpr int BPFTIME_MAX_CPU_COUNT = 1024;
+
+struct bpftime_vcpu_locks {
+	// One slot per possible CPU.
+	uint32_t ncpu = bpftime_possible_cpus();
+	robust_shm_recovering_mutex locks[BPFTIME_MAX_CPU_COUNT];
 };
 
 // Fixed-capacity, lock-free PID table stored directly in shared memory.
@@ -184,6 +193,7 @@ class bpftime_shm {
 	alive_syscall_server_pid_set *alive_syscall_server_pids = nullptr;
 
 	bpftime_global_epoch_state *epoch_state = nullptr;
+	bpftime_vcpu_locks *vcpu_locks = nullptr;
 
 	// local agent config can be used for test or local process
 	std::optional<struct runtime_config> local_runtime_config;
@@ -262,6 +272,22 @@ class bpftime_shm {
 	// Returns 0 if the epoch object isn't available.
 	// Returns UINT64_MAX if the epoch couldn't be stabilized within max_tries.
 	std::uint64_t read_stable_epoch_seq(int max_tries = 200) const;
+	bool has_vcpu_locks() const noexcept { return vcpu_locks != nullptr; }
+	// The CPU's own slot first; if a preempted holder still has it, the
+	// next free slot after it, which belongs to another CPU.
+	int try_lease_vcpu(int cpu) noexcept
+	{
+		return vcpu_locks ? try_lease_shm_slot(vcpu_locks->locks,
+						      (int)vcpu_locks->ncpu, cpu) :
+				    -1;
+	}
+	void release_vcpu(int vcpu) noexcept
+	{
+		if (vcpu_locks)
+			release_shm_slot(vcpu_locks->locks,
+					 static_cast<int>(vcpu_locks->ncpu),
+					 vcpu);
+	}
 
 	const handler_variant &get_handler(int fd) const;
 	bool is_epoll_fd(int fd) const;

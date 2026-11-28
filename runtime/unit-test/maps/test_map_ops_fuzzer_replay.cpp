@@ -7,6 +7,7 @@
  * runtime/fuzz, so the harness is built and exercised by every unit-test
  * run even without a libFuzzer toolchain.
  */
+#include "platform_utils.hpp"
 #include "catch2/catch_test_macros.hpp"
 #include <cstddef>
 #include <cstdint>
@@ -64,7 +65,8 @@ struct input_builder {
 		const bool percpu = shape == shape_percpu_hash ||
 				    shape == shape_percpu_array;
 		value_buf_size =
-			percpu ? value_size * sysconf(_SC_NPROCESSORS_ONLN) :
+			percpu ? ((value_size + 7) & ~size_t(7)) *
+					 bpftime_possible_cpus() :
 				 value_size;
 		if (shape == shape_array || shape == shape_percpu_array)
 			key_size = sizeof(uint32_t);

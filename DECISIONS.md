@@ -2,6 +2,36 @@
 
 Newest first. Read before starting a change. A pull request that reverses an entry is a design problem until a maintainer decides again. Every entry quotes the maintainer verbatim; changing a decision means adding a new entry.
 
+- **2026-11-27: one shared-memory slot per CPU, leased lazily across the outermost `bpftime_prog_exec`, borrowing the next free slot when a preempted holder has it** (#1028; supersedes the 2026-11-27 `#1001` lock-free `PERCPU_ARRAY` entry below and registers `bpftime_vcpu_locks` in L1 of `robust_shm_mutex.hpp`).
+  - **Problem.** Userspace cannot disable kernel preemption like `preempt_disable()`. An unguarded per-CPU slot lets a timer-preempted thread and the incoming thread on the same core clobber multi-tail-call `PERCPU_ARRAY` scratch state, such as 16 KB stack-unwinder records.
+  - **Slots.** Instead of unconditional entry locks (`#730`/`#937`) or a global lock, `bpftime_shm` holds one `robust_shm_recovering_mutex` slot per possible CPU (`bpftime_vcpu_locks`).
+  - **Lease.** `bpftime_prog_exec` still takes zero locks and makes zero `sched_getcpu()` calls on entry.
+    - On the first `my_sched_getcpu()` inside an outermost exec (`PERCPU_ARRAY`, `PERCPU_HASH`, `bpf_get_smp_processor_id()`), the thread `try_lock`s its own CPU's slot.
+    - If a preempted holder still has it, the thread borrows the next free slot after it, which belongs to another CPU.
+    - It keeps the slot across all nested tail calls until `bpftime_leave_bpf_exec()`.
+    - Only with every slot busy do that exec's per-CPU accesses fail, counted in `shm_trylock_skips`.
+  - **Borrowing.** A borrowed slot's values are counted under the other CPU, and that CPU's own thread may then borrow the next slot. Sums over CPUs stay exact, and the slot stays exclusive, so no scratch is shared.
+  - **Layout.** Per-CPU maps keep one column per possible CPU, each CPU's value rounded up to 8 bytes as in the bpf syscall layout. Tools read the real CPU lists.
+  - **CPU ids.** Every CPU id a BPF program reads is its leased slot: per-CPU map columns, `bpf_get_smp_processor_id()` and the `BPF_F_CURRENT_CPU` perf ring. Perf output without a lease uses the real CPU.
+  - **No slots.** Without slots (no global shm, or a segment from an older version), programs see the real CPU.
+  - **Replaces.** This replaces the extra-slot design that an earlier revision of #1028 tried: `ceil(possible CPUs * BPFTIME_VCPU_RATIO) + 1` slots, with the `possible` and `online` lists mocked to match.
+  > 这直接说明上游 PerCPURecord 从设计第一天起就要求整条多级尾调用回溯期间独占槽位、绝不允许并发覆盖；内核靠「preempt_disable + bpf_prog_active + 双表隔离中断」保证了这一点，而用户态一旦完全去掉槽位互斥，普通时钟中断抢占就会直接打破这个前提。那么用户态应该怎么做? 直接全局锁还是?
+  >
+  > 或者全局概念上说, 是不是我们有一个虚拟的 cpu, 数量和真实 cpu 相同(避免动态分配), 但是实际上会在每个入口 assign 到活跃的 cpu 上面? 能 match 的就 match, 那么和进程关系是什么? 具体是什么形态?
+  >
+  > 是通用的机制, 不是 adhoc 的吗? 以后别的 per cpu map 也是复用? 对于所有的都生效, [profiler] 能不能尽可能不要改?
+  >
+  > 该修掉的都修, 并且要测试, 尽可能最小修改, 生产代码增加不超过 50-100? 或者尽可能不要增加?
+  >
+  > 用真实 libbpf 工具端到端测一下 possible 文件, 也要用真实的 otel profiler 跑一下试试; 另外, 确保记录一下, 所有读取 cpu id 的都应该走这个 vcpu 吧?
+  >
+  > 是不是假如我们还是回到原先的, 没有多的槽位, 通过退避 + lock 的方式代码改动最小? 我们为啥不 spin lock 之类的? 说说? 很多问题都是改动 vcpu 引起的?
+  >
+  > 每个 CPU 一个槽位，不是拿不到可以试试下一个槽位吗
+  >
+  > 借槽：不用额外列，去借别的 CPU 空着的槽，也不丢。但数据会记到别的 CPU 名下，而且会把那个 CPU 自己的线程挤走，你之前否掉了。我觉得没问题
+  >
+  > 就是之前的版本, 我们是直接回到之前的 commit 还是?
 - **2026-11-27: `HASH_OF_MAPS` stores its inner map ids in `bpftime_hash_map`** (supersedes `HASH_OF_MAPS` in the L2 `bpf_map_handler::map_lock` line of the lock inventory below). `hash_map_of_maps_impl` moves from `var_size_hash_map_impl` (a Boost `unordered_map` under `map_lock`) to the preallocated `bpftime_hash_map` that `HASH` uses, and sets `should_lock = false`: helper lookups take no lock, and the syscall-only updates and deletes take the recover-and-continue write stripes (#1020). The syscall lookup of both map-in-map types no longer takes `map_lock` either: array slots are never freed, and the hash variant copies the 4-byte inner id while `bpftime_hash_map::find_slot` still checks the slot generation, so a concurrent delete and slot reuse restarts the walk instead of returning another key's id. `bpftime_hash_map` writes and reads an aligned 4-byte value with one access, so a lock-free lookup never reads a half-written inner id.
   > HASH_OF_MAPS 建在 var_hash_map 上 value 只是 4 字节的 map id，改建在 bpftime_hash_map 上 小 这个先改动
   >

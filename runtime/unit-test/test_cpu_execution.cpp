@@ -2,7 +2,9 @@
 #include "bpftime_helper_group.hpp"
 #include "bpftime_prog.hpp"
 #include "bpftime_shm.hpp"
+#include "bpftime_shm_internal.hpp"
 #include "platform_utils.hpp"
+#include <algorithm>
 #include <atomic>
 #include <barrier>
 #include <boost/interprocess/managed_shared_memory.hpp>
@@ -10,12 +12,15 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cerrno>
 #include <chrono>
+#include <csignal>
 #include <ebpf_inst.h>
 #include <iterator>
 #include <sched.h>
 #include <string>
+#include <sys/wait.h>
 #include <thread>
 #include <unistd.h>
+#include <vector>
 
 using namespace bpftime;
 
@@ -212,6 +217,31 @@ TEST_CASE("Map-free local programs run without shared memory",
 	REQUIRE(result == 42);
 }
 
+TEST_CASE("Without vCPU slots BPF programs see the real CPU",
+	  "[percpu][execution]")
+{
+	// A destroyed segment leaves no slots behind, like a process that never
+	// created one or a segment from an older version.
+	const std::string shm_name =
+		"bpftime_no_vcpu_test_" + std::to_string(getpid());
+	REQUIRE(setenv("BPFTIME_GLOBAL_SHM_NAME", shm_name.c_str(), 1) == 0);
+	boost::interprocess::shared_memory_object::remove(shm_name.c_str());
+	bpftime_initialize_global_shm(shm_open_type::SHM_CREATE_ONLY);
+	REQUIRE(shm_holder.global_shared_memory.has_vcpu_locks());
+	bpftime_destroy_global_shm();
+	boost::interprocess::shared_memory_object::remove(shm_name.c_str());
+	unsetenv("BPFTIME_GLOBAL_SHM_NAME");
+	REQUIRE_FALSE(shm_holder.global_shared_memory.has_vcpu_locks());
+	REQUIRE(bpftime_enter_bpf_exec());
+	const int cpu = my_sched_getcpu();
+	const int real = bpftime_get_current_cpu();
+	const int perf = bpftime_get_perf_output_cpu();
+	bpftime_leave_bpf_exec();
+	CHECK(cpu >= 0);
+	CHECK(cpu == real);
+	CHECK(perf == cpu);
+}
+
 TEST_CASE("PERCPU_ARRAY helper paths reject out-of-range CPU index safely",
 	  "[percpu][execution]")
 {
@@ -238,3 +268,196 @@ TEST_CASE("PERCPU_ARRAY helper paths reject out-of-range CPU index safely",
 	REQUIRE(map.elem_update(&key, &val, 0) == -1);
 	REQUIRE(errno == EINVAL);
 }
+
+namespace
+{
+per_cpu_array_map_impl *g_scratch_map = nullptr;
+std::atomic<uint64_t> g_scratch_corruptions{ 0 };
+std::atomic<uint64_t> g_scratch_completed{ 0 };
+
+uint64_t percpu_scratch_helper(uint64_t token, uint64_t, uint64_t, uint64_t,
+			       uint64_t)
+{
+	uint32_t key = 0;
+	auto *words =
+		static_cast<uint64_t *>(g_scratch_map->elem_lookup(&key));
+	if (!words)
+		return 0;
+	for (int w = 0; w < 64; ++w)
+		words[w] = token ^ static_cast<uint64_t>(w);
+	std::this_thread::sleep_for(std::chrono::microseconds(200));
+	for (int w = 0; w < 64; ++w) {
+		if (words[w] != (token ^ static_cast<uint64_t>(w))) {
+			g_scratch_corruptions.fetch_add(
+				1, std::memory_order_relaxed);
+			break;
+		}
+	}
+	g_scratch_completed.fetch_add(1, std::memory_order_relaxed);
+	return 0;
+}
+} // namespace
+
+TEST_CASE("Preempted threads on one physical CPU get distinct slots without scratch corruption",
+	  "[percpu][execution]")
+{
+	const int ncpu = std::max<int>(1, sysconf(_SC_NPROCESSORS_ONLN));
+	const int workers = std::min<int>(4, ncpu);
+	const std::string shm_name =
+		"bpftime_vcpu_scratch_" + std::to_string(getpid());
+	const std::string map_shm_name = shm_name + "_map";
+	REQUIRE(setenv("BPFTIME_GLOBAL_SHM_NAME", shm_name.c_str(), 1) == 0);
+	// All workers share one CPU, so all but one borrow other CPUs' slots.
+	boost::interprocess::shared_memory_object::remove(shm_name.c_str());
+	boost::interprocess::shared_memory_object::remove(map_shm_name.c_str());
+	bpftime_initialize_global_shm(shm_open_type::SHM_CREATE_ONLY);
+	struct cleanup {
+		const std::string &name;
+		const std::string &map_name;
+		~cleanup()
+		{
+			g_scratch_map = nullptr;
+			bpftime_destroy_global_shm();
+			boost::interprocess::shared_memory_object::remove(
+				map_name.c_str());
+			boost::interprocess::shared_memory_object::remove(
+				name.c_str());
+			unsetenv("BPFTIME_GLOBAL_SHM_NAME");
+		}
+	} cleanup{ shm_name, map_shm_name };
+
+	boost::interprocess::managed_shared_memory map_mem(
+		boost::interprocess::create_only, map_shm_name.c_str(),
+		2 << 20);
+	per_cpu_array_map_impl map(map_mem, 64 * sizeof(uint64_t), 1,
+				   bpftime_possible_cpus());
+	g_scratch_map = &map;
+	g_scratch_corruptions = 0;
+	g_scratch_completed = 0;
+
+	const ebpf_inst insns[] = {
+		{ EBPF_OP_LDXW, 1, 1, 0, 0 },
+		{ EBPF_OP_CALL, 0, 0, 0, 502 },
+		{ EBPF_OP_EXIT, 0, 0, 0, 0 },
+	};
+	bpftime_prog prog(insns, std::size(insns), "vcpu_scratch_isolation");
+	bpftime_helper_info helper{
+		502, "percpu_scratch_helper",
+		reinterpret_cast<void *>(percpu_scratch_helper)
+	};
+	REQUIRE(prog.bpftime_prog_register_raw_helper(std::move(helper)) == 0);
+	REQUIRE(prog.bpftime_prog_load(true) == 0);
+
+#ifdef __linux__
+	cpu_set_t allowed;
+	CPU_ZERO(&allowed);
+	REQUIRE(sched_getaffinity(0, sizeof(allowed), &allowed) == 0);
+	int pinned_cpu = 0;
+	while (pinned_cpu < CPU_SETSIZE && !CPU_ISSET(pinned_cpu, &allowed))
+		++pinned_cpu;
+	REQUIRE(pinned_cpu < CPU_SETSIZE);
+#endif
+
+	std::barrier start(workers + 1);
+	std::vector<std::thread> threads;
+	for (int t = 0; t < workers; ++t) {
+		threads.emplace_back([&, t] {
+#ifdef __linux__
+			cpu_set_t affinity;
+			CPU_ZERO(&affinity);
+			CPU_SET(pinned_cpu, &affinity);
+			(void)sched_setaffinity(0, sizeof(affinity), &affinity);
+#endif
+			start.arrive_and_wait();
+			for (int iter = 0; iter < 16; ++iter) {
+				uint32_t ctx = static_cast<uint32_t>(
+					0x10000U + t * 256 + iter);
+				uint64_t ret = 0;
+				REQUIRE(prog.bpftime_prog_exec(
+						&ctx, sizeof(ctx), &ret) == 0);
+			}
+		});
+	}
+	start.arrive_and_wait();
+	for (auto &th : threads)
+		th.join();
+
+	REQUIRE(g_scratch_corruptions.load() == 0);
+	REQUIRE(g_scratch_completed.load() ==
+		static_cast<uint64_t>(workers * 16));
+}
+
+#ifdef __linux__
+TEST_CASE("vCPU slot recovers after holder process dies mid-BPF execution",
+	  "[percpu][execution]")
+{
+	const std::string shm_name =
+		"bpftime_vcpu_dead_owner_" + std::to_string(getpid());
+	REQUIRE(setenv("BPFTIME_GLOBAL_SHM_NAME", shm_name.c_str(), 1) == 0);
+	boost::interprocess::shared_memory_object::remove(shm_name.c_str());
+	bpftime_initialize_global_shm(shm_open_type::SHM_CREATE_ONLY);
+	struct cleanup {
+		const std::string &name;
+		~cleanup()
+		{
+			bpftime_destroy_global_shm();
+			boost::interprocess::shared_memory_object::remove(
+				name.c_str());
+			unsetenv("BPFTIME_GLOBAL_SHM_NAME");
+		}
+	} cleanup{ shm_name };
+
+	auto &shm = shm_holder.global_shared_memory;
+	pid_t pid = fork();
+	REQUIRE(pid >= 0);
+	if (pid == 0) {
+		// Die while holding CPU 0's slot.
+		if (shm.try_lease_vcpu(0) != 0)
+			_exit(2);
+		raise(SIGKILL);
+		_exit(0);
+	}
+	int status = 0;
+	REQUIRE(waitpid(pid, &status, 0) == pid);
+	REQUIRE(WIFSIGNALED(status));
+
+	const int slots = bpftime_possible_cpus();
+	// CPU 0's slot recovers from the dead holder; while it is held, CPU 0
+	// borrows the next slots in order, and with every slot held gets none.
+	std::vector<int> leased{ shm.try_lease_vcpu(0) };
+	REQUIRE(leased[0] == 0);
+	for (int i = 1; i < slots; ++i) {
+		leased.push_back(shm.try_lease_vcpu(0));
+		REQUIRE(leased.back() == i);
+	}
+	uint64_t skips_before = get_shm_trylock_skip_count();
+	REQUIRE(shm.try_lease_vcpu(0) == -1);
+	REQUIRE(get_shm_trylock_skip_count() == skips_before + 1);
+	for (int s : leased)
+		shm.release_vcpu(s);
+
+	cpu_set_t saved, one;
+	REQUIRE(sched_getaffinity(0, sizeof(saved), &saved) == 0);
+	const int cpu = sched_getcpu();
+	CPU_ZERO(&one);
+	CPU_SET(cpu, &one);
+	REQUIRE(sched_setaffinity(0, sizeof(one), &one) == 0);
+	// On its own slot, the CPU id a program sees is its real CPU, for perf
+	// output as well, even before anything leases a slot.
+	REQUIRE(bpftime_enter_bpf_exec());
+	REQUIRE(bpftime_get_perf_output_cpu() == cpu);
+	REQUIRE(my_sched_getcpu() == cpu);
+	bpftime_leave_bpf_exec();
+	// With its own slot taken it borrows the next one, and every CPU id it
+	// sees (per-CPU maps, bpf_get_smp_processor_id, perf output) is that slot.
+	REQUIRE(shm.try_lease_vcpu(cpu) == cpu);
+	REQUIRE(bpftime_enter_bpf_exec());
+	const int vcpu = my_sched_getcpu();
+	REQUIRE(vcpu == (slots > 1 ? (cpu + 1) % slots : -1));
+	REQUIRE(bpftime_get_perf_output_cpu() == (vcpu >= 0 ? vcpu : cpu));
+	REQUIRE(bpftime_get_current_cpu() == cpu);
+	bpftime_leave_bpf_exec();
+	shm.release_vcpu(cpu);
+	REQUIRE(sched_setaffinity(0, sizeof(saved), &saved) == 0);
+}
+#endif

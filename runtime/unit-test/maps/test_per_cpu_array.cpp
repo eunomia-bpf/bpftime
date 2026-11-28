@@ -2,6 +2,7 @@
 #include <boost/interprocess/creation_tags.hpp>
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <bpf_map/userspace/per_cpu_array_map.hpp>
+#include <bpf_map/userspace/per_cpu_hash_map.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <sched.h>
@@ -23,7 +24,7 @@ TEST_CASE("Test basic operations of array map")
 
 	SECTION("Test writing from helpers, and read from userspace")
 	{
-		per_cpu_array_map_impl map(mem, 8, 10);
+		per_cpu_array_map_impl map(mem, 8, 10, ncpu);
 		for (uint32_t j = 0; j < ncpu; j++) {
 			ensure_on_certain_cpu<void>(j, [&]() {
 				for (uint32_t i = 0; i < 10; i++) {
@@ -46,7 +47,7 @@ TEST_CASE("Test basic operations of array map")
 
 	SECTION("Test writing from userspace, and reading & updating from helpers")
 	{
-		per_cpu_array_map_impl map(mem, 8, 1);
+		per_cpu_array_map_impl map(mem, 8, 1, ncpu);
 		std::vector<uint64_t> buf(ncpu);
 		for (uint32_t j = 0; j < ncpu; j++) {
 			buf[j] = j;
@@ -77,4 +78,21 @@ TEST_CASE("Test basic operations of array map")
 			});
 		}
 	}
+}
+
+TEST_CASE("Per-CPU maps keep each CPU's value 8-byte aligned, as the bpf syscall does")
+{
+	shm_remove remover("_PER_CPU_STRIDE_SHM");
+	managed_shared_memory mem(create_only, "_PER_CPU_STRIDE_SHM", 1 << 20);
+	// Three CPUs of a 4-byte value, each padded to 8 bytes.
+	const uint32_t in[6] = { 10, 0, 11, 0, 12, 0 };
+	uint32_t zero = 0;
+	per_cpu_array_map_impl array(mem, 4, 1, 3);
+	REQUIRE(array.elem_update_userspace(&zero, in, 0) == 0);
+	auto *a = static_cast<const uint32_t *>(array.elem_lookup_userspace(&zero));
+	REQUIRE((a != nullptr && a[0] == 10 && a[2] == 11 && a[4] == 12));
+	per_cpu_hash_map_impl hash(mem, 4, 4, 1, 3);
+	REQUIRE(hash.elem_update_userspace(&zero, in, 0) == 0);
+	auto *h = static_cast<const uint32_t *>(hash.elem_lookup_userspace(&zero));
+	REQUIRE((h != nullptr && h[0] == 10 && h[2] == 11 && h[4] == 12));
 }
