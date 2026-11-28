@@ -313,4 +313,54 @@ TEST_CASE(
 	REQUIRE(WIFEXITED(status));
 	REQUIRE(WEXITSTATUS(status) == 0);
 }
+TEST_CASE("Preloaded agent dlopen finds a bare name through the caller's RUNPATH",
+	  "[agent][dlopen]")
+{
+	shm_fixture shm;
+	const auto late_sym = dso_symbol_offset(
+		BPFTIME_AGENT_DLOPEN_TARGET_LIB, "bpftime_dlopen_target_func");
+	REQUIRE(create_array_map(MAP_B_FD, "dlopen_map_b") >= 0);
+	REQUIRE(create_hit_prog(PROG_B_FD, MAP_B_FD, "dlopen_prog_b") >= 0);
+	create_uprobe_link(PROG_B_FD, late_sym.path.c_str(), late_sym.offset);
+
+	int ctrl_pipe[2];
+	int out_pipe[2];
+	REQUIRE(pipe(ctrl_pipe) == 0);
+	REQUIRE(pipe(out_pipe) == 0);
+	pid_t child = fork();
+	REQUIRE(child >= 0);
+	if (child == 0) {
+		close(ctrl_pipe[1]);
+		close(out_pipe[0]);
+		dup2(out_pipe[1], STDOUT_FILENO);
+		close(out_pipe[1]);
+		setenv("LD_PRELOAD", BPFTIME_AGENT_LIBRARY, 1);
+		unsetenv("LD_LIBRARY_PATH");
+		unsetenv("BPFTIME_ENABLE_AGENT_IPC");
+		unsetenv("BPFTIME_AGENT_DENY_PROCESS");
+		unsetenv("BPFTIME_AGENT_ALLOW_PROCESS");
+		std::string fd_arg = std::to_string(ctrl_pipe[0]);
+		execl(BPFTIME_AGENT_DLOPEN_HELPER,
+		      "bpftime-agent-dlopen-helper", late_sym.path.c_str(),
+		      fd_arg.c_str(), nullptr);
+		_exit(127);
+	}
+	close(ctrl_pipe[0]);
+	close(out_pipe[1]);
+	REQUIRE(read_line(out_pipe[0]) == "ready");
+	// The helper loads the library by name; only its RUNPATH ($ORIGIN)
+	// finds it, and the uprobe in it attaches on that dlopen.
+	REQUIRE(write(ctrl_pipe[1], "n", 1) == 1);
+	const std::string reply = read_line(out_pipe[0]);
+	if (reply == "done")
+		REQUIRE(write(ctrl_pipe[1], "q", 1) == 1);
+	int status = 0;
+	REQUIRE(waitpid(child, &status, 0) == child);
+	close(ctrl_pipe[1]);
+	close(out_pipe[0]);
+	CHECK(reply == "done");
+	REQUIRE(WIFEXITED(status));
+	CHECK(WEXITSTATUS(status) == 0);
+	CHECK(read_map_value(MAP_B_FD) == 1);
+}
 #endif

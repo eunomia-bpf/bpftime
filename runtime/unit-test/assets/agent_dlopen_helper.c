@@ -41,6 +41,15 @@ int main(int argc, char **argv)
 	target_fn_t fn = NULL;
 	char step = 0;
 	while (read(pipe_fd, &step, 1) == 1 && step != 'q') {
+		if (step == 'n') {
+			/* By bare name: found through this program's RUNPATH. */
+			void *handle = dlopen(strrchr(lib_path, '/') + 1,
+					      RTLD_NOW | RTLD_LOCAL);
+			if (!handle)
+				return 74;
+			fn = (target_fn_t)dlsym(handle,
+						"bpftime_dlopen_target_func");
+		}
 		if (step == 'l') {
 			errno = E2BIG;
 			void *handle = dlopen(lib_path, RTLD_NOW | RTLD_LOCAL);
