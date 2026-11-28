@@ -557,22 +557,23 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		map_impl_ptr = shm_construct<array_map_kernel_user_impl>(
-			memory, boost::interprocess::anonymous_instance, memory,
-			attr.kernel_bpf_map_id, value_size, max_entries);
+			memory, boost::interprocess::anonymous_instance,
+			shm_init_ctx(memory), attr.kernel_bpf_map_id,
+			value_size, max_entries);
 		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH: {
 		map_impl_ptr = shm_construct<hash_map_kernel_user_impl>(
-			memory, boost::interprocess::anonymous_instance, memory,
-			attr.kernel_bpf_map_id);
+			memory, boost::interprocess::anonymous_instance,
+			shm_init_ctx(memory), attr.kernel_bpf_map_id);
 		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERCPU_ARRAY: {
 		map_impl_ptr = shm_construct<percpu_array_map_kernel_user_impl>(
-			memory, boost::interprocess::anonymous_instance, memory,
-			attr.kernel_bpf_map_id);
+			memory, boost::interprocess::anonymous_instance,
+			shm_init_ctx(memory), attr.kernel_bpf_map_id);
 		init_refcnt();
 		return 0;
 	}
@@ -580,7 +581,8 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		map_impl_ptr =
 			shm_construct<perf_event_array_kernel_user_impl>(
 				memory, boost::interprocess::anonymous_instance,
-				memory, 4, 4, sysconf(_SC_NPROCESSORS_ONLN),
+				shm_init_ctx(memory), 4, 4,
+				sysconf(_SC_NPROCESSORS_ONLN),
 				attr.kernel_bpf_map_id);
 		init_refcnt();
 		return 0;
