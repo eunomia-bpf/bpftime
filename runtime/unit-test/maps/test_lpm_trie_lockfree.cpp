@@ -13,6 +13,7 @@
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <atomic>
 #include <cerrno>
+#include <csignal>
 #include <chrono>
 #include <cstring>
 #include <string>
@@ -167,6 +168,7 @@ TEST_CASE("LPM trie stays usable after a writer dies mid-update",
 	pid_t child = fork();
 	REQUIRE(child >= 0);
 	if (child == 0) {
+		std::signal(SIGSEGV, SIG_DFL);
 		void *p = mmap(nullptr, val_sz, PROT_READ | PROT_WRITE,
 			       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 		if (p == MAP_FAILED ||
