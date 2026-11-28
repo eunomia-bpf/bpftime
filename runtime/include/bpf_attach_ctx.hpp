@@ -11,6 +11,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <cstddef>
 #include <functional>
 #include <initializer_list>
 #include <map>
@@ -102,6 +103,24 @@ struct CommSharedMem {
 	HelperCallResponse resp;
 	uint64_t time_sum[8];
 };
+
+// The device-side twin of this struct lives in
+// attach/nv_attach_impl/trampoline/default_trampoline.cu, and the two must
+// describe the same bytes: the host allocates and zeroes this one, the device
+// reads and writes those bytes through the offsets it compiled from its own
+// copy. `trampoline_ptx.h` is generated from the device copy, so a change to
+// either size means regenerating it (make -C attach/nv_attach_impl/trampoline).
+// The shipped `trampoline_ptx.h` bakes in the offsets of the fields it touches:
+// `1048600` is `req.map_update.value` and `2097184` is `resp`. Pinning them
+// here turns a silent layout skew into a build error on the host, which is
+// where it can be fixed.
+static_assert(offsetof(CommSharedMem, req) +
+			      offsetof(HelperCallRequest, map_update) +
+			      GPU_HELPER_MAX_BUF ==
+		      1048600,
+	      "CommSharedMem/req layout changed: regenerate trampoline_ptx.h");
+static_assert(offsetof(CommSharedMem, resp) == 2097184,
+	      "CommSharedMem/resp offset changed: regenerate trampoline_ptx.h");
 struct CUDAContext {
 	// Indicate whether cuda watcher thread should stop
 	std::shared_ptr<std::atomic<bool>> cuda_watcher_should_stop =
