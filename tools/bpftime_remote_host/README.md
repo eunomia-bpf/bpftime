@@ -22,9 +22,12 @@ blob. Operations include `hello`, `proc_check`, `proc_maps`, `fetch_elf`
   `--allow-any` is passed.
 - A shared secret is mandatory on the **first frame of every connection**
   (`hello` for RPC sockets, `subscribe_events` for event sockets), verified
-  with a constant-time comparison. The token comes from `BPFTIME_REMOTE_TOKEN`
-  or `--token-file`; if neither is set, 32 random bytes (64 hex chars) are
-  generated into `$HOME/.bpftime/remote.token` with `0600` permissions.
+  with a constant-time comparison. The token is a 256-bit secret written as
+  64 hex characters, taken from `BPFTIME_REMOTE_TOKEN` or `--token-file`;
+  a shorter one is refused. If neither is set, 32 random bytes are generated
+  into `$HOME/.bpftime/remote.token`. An existing token file must be a
+  regular file owned by the user with no group or other permission bits, and
+  a new one is created with `0600` before the first byte is written.
 - Any frame on an unauthenticated socket is answered with
   `{"ok":false,"error":"unauthorized"}` and the connection is closed.
 

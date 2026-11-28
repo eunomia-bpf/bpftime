@@ -19,9 +19,10 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <cerrno>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <fstream>
 #include <string>
 #include <thread>
 
@@ -44,7 +45,8 @@ void handle_signal(int)
 	}
 }
 
-constexpr size_t kMinTokenLen = 16;
+// 256-bit token, written as lowercase hex by to_hex(): 64 characters.
+constexpr size_t kTokenHexLen = 64;
 
 // Length-folding constant-time comparison; never short-circuits on mismatch.
 bool constant_time_equals(const std::string &a, const std::string &b)
@@ -74,41 +76,104 @@ std::string default_token_path()
 	return std::string(home ? home : ".") + "/.bpftime/remote.token";
 }
 
+// A token file must be a regular file owned by this user with no group or
+// other permission bits, so the shared secret is never readable by anyone
+// else. Returns an empty string when the file does not exist yet.
+std::string read_token_file(const std::string &path)
+{
+	int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+	if (fd < 0) {
+		if (errno == ENOENT)
+			return {};
+		throw std::runtime_error("open token file " + path + ": " +
+					 strerror(errno));
+	}
+	struct stat st {};
+	if (fstat(fd, &st) != 0) {
+		int saved = errno;
+		close(fd);
+		throw std::runtime_error("stat token file " + path + ": " +
+					 strerror(saved));
+	}
+	char buf[kTokenHexLen + 2];
+	ssize_t got = read(fd, buf, sizeof(buf));
+	int saved = errno;
+	close(fd);
+	if (got < 0)
+		throw std::runtime_error("read token file " + path + ": " +
+					 strerror(saved));
+	if (!S_ISREG(st.st_mode))
+		throw std::runtime_error("token file " + path +
+					 " is not a regular file");
+	if (st.st_uid != geteuid())
+		throw std::runtime_error("token file " + path +
+					 " is not owned by the current user");
+	if ((st.st_mode & 0077) != 0)
+		throw std::runtime_error("token file " + path +
+					 " is group- or world-accessible; "
+					 "run chmod 600 on it");
+	std::string tok(buf, (size_t)got);
+	while (!tok.empty() && (tok.back() == '\n' || tok.back() == '\r'))
+		tok.pop_back();
+	if (tok.size() != kTokenHexLen)
+		throw std::runtime_error("token file " + path + " must hold " +
+					 std::to_string(kTokenHexLen) +
+					 " hex characters (256 bits)");
+	return tok;
+}
+
+// Create the token file with 0600 from the first byte written, instead of
+// writing it under the caller's umask and chmod-ing afterwards. Losing a race
+// with another daemon means reading back the file that daemon created.
+std::string write_token_file(const std::string &path,
+			     const std::string &token)
+{
+	mode_t old_mask = umask(077);
+	int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC |
+					 O_NOFOLLOW,
+		      0600);
+	umask(old_mask);
+	if (fd < 0) {
+		if (errno == EEXIST)
+			return read_token_file(path);
+		throw std::runtime_error("create token file " + path + ": " +
+					 strerror(errno));
+	}
+	size_t written = 0;
+	while (written < token.size()) {
+		ssize_t n = write(fd, token.data() + written,
+				  token.size() - written);
+		if (n <= 0) {
+			int saved = errno;
+			close(fd);
+			throw std::runtime_error("write token file " + path +
+						 ": " + strerror(saved));
+		}
+		written += (size_t)n;
+	}
+	close(fd);
+	return token;
+}
+
 // Resolve the mandatory token: BPFTIME_REMOTE_TOKEN wins; otherwise read (or
-// generate with 0600) the token file, defaulting to $HOME/.bpftime/remote.token.
+// generate) the token file, defaulting to $HOME/.bpftime/remote.token.
 std::string resolve_token(const std::string &token_file_arg)
 {
-	if (const char *env = getenv("BPFTIME_REMOTE_TOKEN");
-	    env && std::strlen(env) >= kMinTokenLen)
-		return env;
+	if (const char *env = getenv("BPFTIME_REMOTE_TOKEN"); env && *env) {
+		std::string from_env(env);
+		if (from_env.size() != kTokenHexLen)
+			throw std::runtime_error(
+				std::string("BPFTIME_REMOTE_TOKEN must hold ") +
+				std::to_string(kTokenHexLen) +
+				" hex characters (256 bits)");
+		return from_env;
+	}
 
 	std::string path = token_file_arg.empty() ? default_token_path() :
 						    token_file_arg;
-	std::ifstream in(path);
-	if (in) {
-		std::string tok((std::istreambuf_iterator<char>(in)),
-				std::istreambuf_iterator<char>());
-		while (!tok.empty() && (tok.back() == '\n' || tok.back() == '\r'))
-			tok.pop_back();
-		if (tok.size() >= kMinTokenLen)
-			return tok;
-	}
-
-	uint8_t raw[32];
-	int fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
-	if (fd < 0)
-		throw std::runtime_error("open /dev/urandom failed");
-	size_t got = 0;
-	while (got < sizeof(raw)) {
-		ssize_t r = read(fd, raw + got, sizeof(raw) - got);
-		if (r <= 0) {
-			close(fd);
-			throw std::runtime_error("read /dev/urandom failed");
-		}
-		got += (size_t)r;
-	}
-	close(fd);
-	std::string tok = to_hex(raw, sizeof(raw));
+	std::string tok = read_token_file(path);
+	if (!tok.empty())
+		return tok;
 
 	size_t slash = path.find_last_of('/');
 	if (slash != std::string::npos) {
@@ -116,15 +181,24 @@ std::string resolve_token(const std::string &token_file_arg)
 		// Best-effort: ignore EEXIST from a pre-existing directory.
 		mkdir(dir.c_str(), 0700);
 	}
-	{
-		std::ofstream out(path, std::ios::trunc);
-		if (!out)
-			throw std::runtime_error("cannot write token file " +
-						 path);
-		out << tok;
+
+	uint8_t raw[32];
+	int urandom = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+	if (urandom < 0)
+		throw std::runtime_error("open /dev/urandom failed");
+	size_t got = 0;
+	while (got < sizeof(raw)) {
+		ssize_t r = read(urandom, raw + got, sizeof(raw) - got);
+		if (r <= 0) {
+			close(urandom);
+			throw std::runtime_error("read /dev/urandom failed");
+		}
+		got += (size_t)r;
 	}
-	chmod(path.c_str(), 0600);
-	SPDLOG_INFO("generated new remote token at {} (0600)", path);
+	close(urandom);
+
+	tok = write_token_file(path, to_hex(raw, sizeof(raw)));
+	SPDLOG_INFO("remote token at {} (0600)", path);
 	return tok;
 }
 
