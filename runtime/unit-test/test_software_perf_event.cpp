@@ -191,8 +191,12 @@ TEST_CASE("Software perf event buffers shard concurrent producers by thread",
 			for (int sequence = 0; sequence < events_per_producer;
 			     sequence++) {
 				event_payload payload{ producer, sequence };
-				if (perf->output_data(&payload,
-						      sizeof(payload)) != 0) {
+				int rc = 0;
+				do {
+					rc = perf->output_data(
+						&payload, sizeof(payload));
+				} while (rc == -1 && errno == EBUSY);
+				if (rc != 0) {
 					output_failed.store(
 						true,
 						std::memory_order_release);
@@ -217,7 +221,9 @@ TEST_CASE("Software perf event buffers shard concurrent producers by thread",
 		for (int i = 0; i < 64; i++) {
 			REQUIRE(perf->has_data());
 		}
-		shards_reclaimed = perf->producer_shards.empty();
+		shards_reclaimed = true;
+		for (const auto &s : perf->producer_shards)
+			shards_reclaimed &= (s.pid == 0);
 		if (!shards_reclaimed) {
 			std::this_thread::sleep_for(
 				std::chrono::milliseconds(10));

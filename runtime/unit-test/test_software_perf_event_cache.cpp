@@ -10,6 +10,8 @@
 
 #include <atomic>
 #include <boost/interprocess/managed_shared_memory.hpp>
+#include <cerrno>
+#include <chrono>
 #include <string>
 #include <thread>
 #include <unistd.h>
@@ -108,9 +110,13 @@ TEST_CASE("Software perf shard cache stays independent across threads",
 		for (size_t round = 0; round < 2; ++round) {
 			for (size_t i = 0; i < cache_fixture::event_count;
 			     ++i) {
-				if (fixture.output(fixture.events[i], worker_id,
-						   static_cast<int>(round)) !=
-				    0) {
+				int rc = 0;
+				do {
+					rc = fixture.output(
+						fixture.events[i], worker_id,
+						static_cast<int>(round));
+				} while (rc == -1 && errno == EBUSY);
+				if (rc != 0) {
 					failed.store(true,
 						     std::memory_order_release);
 				}
@@ -201,6 +207,52 @@ TEST_CASE("Software perf shard resolves the child's tid after fork",
 	REQUIRE(WIFEXITED(status));
 	// 3 = output failed in the child; 4 = the child kept the parent's tid.
 	REQUIRE(WEXITSTATUS(status) == 0);
+}
+
+TEST_CASE("Software perf shard cold miss uses trylock and reuses nodes in place",
+	  "[perf_event][software_perf_event][cache]")
+{
+	cache_fixture fixture;
+	auto *event = fixture.events[0];
+
+	{
+		bpftime::robust_shm_lock_guard held(event->shard_lock, "hold");
+		REQUIRE(held.owns_lock());
+		const uint64_t skips_before =
+			bpftime::get_shm_trylock_skip_count();
+		int rc = 0, err = 0;
+		std::thread([&] {
+			errno = 0;
+			rc = fixture.output(event, 0, 7);
+			err = errno;
+		}).join();
+		REQUIRE(rc == -1);
+		REQUIRE(err == EBUSY);
+		REQUIRE(bpftime::get_shm_trylock_skip_count() > skips_before);
+	}
+
+	const bpftime::software_perf_event_shard *first_node = nullptr;
+	for (int wave = 0; wave < 3; ++wave) {
+		std::thread([&] {
+			REQUIRE(fixture.output(event, 0, 100 + wave) == 0);
+		}).join();
+		if (wave == 0)
+			first_node = &event->producer_shards.front();
+		bool reclaimed = false;
+		for (int round = 0; round < 32 && !reclaimed; ++round) {
+			for (int i = 0; i < 64; ++i)
+				(void)event->has_data();
+			reclaimed = true;
+			for (const auto &s : event->producer_shards)
+				reclaimed &= (s.pid == 0);
+			if (!reclaimed)
+				std::this_thread::sleep_for(
+					std::chrono::milliseconds(5));
+		}
+		REQUIRE(reclaimed);
+		REQUIRE(event->producer_shards.size() == 1);
+		REQUIRE(&event->producer_shards.front() == first_node);
+	}
 }
 
 #endif
