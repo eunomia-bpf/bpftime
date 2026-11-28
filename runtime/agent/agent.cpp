@@ -23,13 +23,16 @@
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
+#include <link.h>
 #include <limits>
 #include <memory>
 #include <mutex>
 #include <pthread.h>
 #include <random>
 #include <string_view>
+#include <string>
 #include <thread>
+#include <vector>
 #include <unistd.h>
 #if BPFTIME_HAVE_FRIDA_ATTACH
 #include <frida-gum.h>
@@ -956,10 +959,62 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 }
 
 #ifdef __linux__
+namespace
+{
+using dlopen_fn_t = void *(*)(const char *, int);
+
+// glibc looks a bare name up in the calling object's RUNPATH or RPATH, with
+// $ORIGIN expanded. Called from this wrapper it would use the agent's, so a
+// library that loads a sibling by name (a CUDA injection library loading its
+// CUPTI build, for one) would miss it. Search the caller's directories first;
+// ld.so.cache and the system directories stay with glibc.
+void *dlopen_as_caller(dlopen_fn_t real_dlopen, const char *filename,
+		       int flags, const void *caller) noexcept
+{
+	// The lookups below may set errno; the caller sees only dlopen()'s.
+	const int saved_errno = errno;
+	try {
+		Dl_info info;
+		struct link_map *map = nullptr;
+		Dl_serinfo size;
+		if (filename == nullptr || strchr(filename, '/') != nullptr ||
+		    (flags & RTLD_NOLOAD) != 0 ||
+		    dladdr1(caller, &info, reinterpret_cast<void **>(&map),
+			    RTLD_DL_LINKMAP) == 0 ||
+		    map == nullptr ||
+		    dlinfo(map, RTLD_DI_SERINFOSIZE, &size) != 0)
+			return real_dlopen(filename, flags);
+		// A library already loaded under this name comes back as is.
+		if (void *handle = real_dlopen(filename, flags | RTLD_NOLOAD))
+			return handle;
+		(void)dlerror();
+		std::vector<char> storage(size.dls_size);
+		auto *paths = reinterpret_cast<Dl_serinfo *>(storage.data());
+		if (dlinfo(map, RTLD_DI_SERINFOSIZE, paths) == 0 &&
+		    dlinfo(map, RTLD_DI_SERINFO, paths) == 0) {
+			for (unsigned i = 0; i < paths->dls_cnt; i++) {
+				if (paths->dls_serpath[i].dls_flags &
+				    LA_SER_DEFAULT)
+					continue;
+				std::string path = paths->dls_serpath[i].dls_name;
+				path.append("/").append(filename);
+				if (access(path.c_str(), F_OK) == 0) {
+					errno = saved_errno;
+					return real_dlopen(path.c_str(), flags);
+				}
+			}
+		}
+	} catch (...) {
+	}
+	errno = saved_errno;
+	return real_dlopen(filename, flags);
+}
+} // namespace
+
 extern "C" __attribute__((visibility("default"))) void *
 dlopen(const char *filename, int flags)
 {
-	using dlopen_fn_t = void *(*)(const char *, int);
+	const void *caller = __builtin_return_address(0);
 	static std::atomic<dlopen_fn_t> real_dlopen_cache{ nullptr };
 	dlopen_fn_t real_dlopen =
 		real_dlopen_cache.load(std::memory_order_acquire);
@@ -972,10 +1027,10 @@ dlopen(const char *filename, int flags)
 	}
 	const pid_t init_pid = agent_init_pid.load(std::memory_order_acquire);
 	if (init_pid == 0 || getpid() != init_pid)
-		return real_dlopen(filename, flags);
+		return dlopen_as_caller(real_dlopen, filename, flags, caller);
 	const int depth_before = agent_loader_reentry_depth;
 	agent_loader_scope loader_scope;
-	void *handle = real_dlopen(filename, flags);
+	void *handle = dlopen_as_caller(real_dlopen, filename, flags, caller);
 	const int saved_errno = errno;
 	if (handle && filename && !(flags & RTLD_NOLOAD) && depth_before == 0 &&
 	    getpid() == init_pid &&
