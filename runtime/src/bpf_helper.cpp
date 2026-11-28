@@ -42,7 +42,6 @@
 #include "spdlog/spdlog.h"
 #include <map>
 #include <stdio.h>
-#include <stdarg.h>
 #include <cstring>
 #include <cstdlib>
 #include <mutex>
@@ -163,16 +162,16 @@ static const int probe_access_atfork_status = pthread_atfork(
 uint64_t bpftime_override_return(uint64_t ctx, uint64_t value);
 uint64_t bpftime_set_retval(uint64_t retval);
 
-uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
+uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, uint64_t p1,
+			      uint64_t p2, uint64_t p3)
 {
+	(void)fmt_size;
 	const char *fmt_str = (const char *)fmt;
-	va_list args;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
-	va_start(args, fmt_size);
-	long ret = vprintf(fmt_str, args);
+	long ret = printf(fmt_str, p1, p2, p3);
 #pragma GCC diagnostic pop
-	va_end(args);
+	(void)ret;
 	return 0;
 }
 
