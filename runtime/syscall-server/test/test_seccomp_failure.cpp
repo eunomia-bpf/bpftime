@@ -33,6 +33,10 @@ std::atomic<bool> allow_install{ false };
 // Armed on the worker thread inside its RECV wrapper.
 thread_local bool fail_worker_next_alloc = false;
 std::atomic<int> worker_allocations_before_failure{ -1 };
+std::atomic<int> seam_tgkill_rc{ 0 };
+std::atomic<bool> seam_reject_continue{ false };
+std::atomic<bool> seam_close_request{ false };
+int emulated_count = 0;
 
 // Long enough to defeat std::string SSO, forcing a heap allocation in
 // rootless::resolve_map_files_path() when building the /proc/<pid>/maps path.
@@ -47,16 +51,16 @@ bool filter_captured = false;
 long
 dispatch_syscall(long, long, long, long, long, long, long) noexcept
 {
-	return -ENOSYS;
+	return 0;
 }
 
 namespace bpftime {
 namespace seccomp {
 int64_t
-raw_syscall(int64_t, int64_t, int64_t, int64_t, int64_t, int64_t,
+raw_syscall(int64_t nr, int64_t, int64_t, int64_t, int64_t, int64_t,
 	    int64_t)
 {
-	return -ENOSYS;
+	return nr == SYS_tgkill ? seam_tgkill_rc.load() : -ENOSYS;
 }
 } // namespace seccomp
 // Standalone seam: the notifier is compiled without syscall_server_utils.cpp
@@ -67,6 +71,12 @@ resolve_redirected_path(const std::filesystem::path &)
 	return std::nullopt;
 }
 } // namespace bpftime
+
+extern "C" bool bpftime_global_shm_is_initialized() { return true; }
+extern "C" int bpftime_is_ringbuf_map(int) { return 0; }
+extern "C" int bpftime_is_array_map(int) { return 0; }
+extern "C" int bpftime_is_software_perf_event(int) { return 0; }
+extern "C" int bpftime_is_exist_fake_fd(int) { return 0; }
 
 static bool
 alloc_should_throw()
@@ -116,7 +126,7 @@ operator delete[](void *memory) noexcept
 }
 
 extern "C" int
-__wrap_ioctl(int, unsigned long operation, ...)
+__wrap_ioctl(int fd, unsigned long operation, ...)
 {
 	va_list args;
 	va_start(args, operation);
@@ -126,6 +136,13 @@ __wrap_ioctl(int, unsigned long operation, ...)
 		static thread_local int receives = 0;
 		if (receives++ == 0) {
 			auto *request = static_cast<seccomp_notif *>(data);
+			if (fd == 43 && seam_close_request.load()) {
+				request->id = 456;
+				request->data.nr = __NR_close;
+				request->data.args[0] = 3;
+				return 0;
+			}
+			if (fd != 42) { errno = EBADF; return -1; }
 			request->id = 123;
 			request->data.nr = __NR_openat;
 			request->data.args[1] =
@@ -137,9 +154,16 @@ __wrap_ioctl(int, unsigned long operation, ...)
 		return -1;
 	}
 	auto *response = static_cast<seccomp_notif_resp *>(data);
+	if (seam_reject_continue.load() &&
+	    (response->flags & SECCOMP_USER_NOTIF_FLAG_CONTINUE) != 0) {
+		errno = EINVAL;
+		return -1;
+	}
 	std::lock_guard lock(response_mutex);
 	response_flags = response->flags;
 	response_id = response->id;
+	if (response->id == 456 && response->flags == 0 && response->error == 0)
+		emulated_count++;
 	fail_worker_next_alloc = false;
 	response_ready.notify_one();
 	return 0;
@@ -166,6 +190,27 @@ TEST_CASE("Seccomp emulation failure resumes the intercepted host syscall")
 		return response_flags == SECCOMP_USER_NOTIF_FLAG_CONTINUE &&
 		       response_id == 123;
 	}));
+}
+
+TEST_CASE("Kernel < 5.5 EINVAL on FLAG_CONTINUE falls back to emulation")
+{
+	{
+		std::lock_guard lock(response_mutex);
+		emulated_count = 0;
+	}
+	seam_reject_continue = true;
+	seam_close_request = true;
+	bpftime::seccomp::flag_continue_supported.store(true);
+	bpftime::seccomp::go_seccomp_listener.store(43);
+	bpftime::seccomp::start_go_seccomp_workers();
+	std::unique_lock lock(response_mutex);
+	REQUIRE(response_ready.wait_for(lock, std::chrono::seconds(3), [] {
+		return emulated_count == 8;
+	}));
+	CHECK(!bpftime::seccomp::flag_continue_supported.load());
+	seam_close_request = false;
+	seam_reject_continue = false;
+	bpftime::seccomp::flag_continue_supported.store(true);
 }
 
 extern "C" int
