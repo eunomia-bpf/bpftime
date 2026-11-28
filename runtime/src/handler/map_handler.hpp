@@ -41,6 +41,8 @@ class bpf_map_handler {
 	using general_map_impl_ptr = boost::interprocess::offset_ptr<void>;
 	using map_refcount_t = std::atomic_uint32_t;
 	using map_refcount_ptr = boost::interprocess::offset_ptr<map_refcount_t>;
+	using shared_map_lock_ptr =
+		boost::interprocess::offset_ptr<robust_shm_mutex>;
 	bpf_map_type type;
 	boost_shm_string name;
 	bpf_map_handler(int id, const char *name,
@@ -70,6 +72,7 @@ class bpf_map_handler {
 	bpf_map_handler(bpf_map_handler &&other) noexcept
 		: attr(other.attr), type(other.type),
 		  name(std::move(other.name)), id(other.id),
+		  map_lock_ptr(other.map_lock_ptr),
 		  map_impl_ptr(other.map_impl_ptr),
 		  map_refcnt_ptr(other.map_refcnt_ptr),
 		  max_entries(other.max_entries), flags(other.flags),
@@ -77,6 +80,7 @@ class bpf_map_handler {
 	{
 		other.map_impl_ptr = nullptr;
 		other.map_refcnt_ptr = nullptr;
+		other.map_lock_ptr = nullptr;
 	}
 	bpf_map_handler &operator=(const bpf_map_handler &) = delete;
 	bpf_map_handler &operator=(bpf_map_handler &&other) noexcept
@@ -89,12 +93,14 @@ class bpf_map_handler {
 		id = other.id;
 		map_impl_ptr = other.map_impl_ptr;
 		map_refcnt_ptr = other.map_refcnt_ptr;
+		map_lock_ptr = other.map_lock_ptr;
 		max_entries = other.max_entries;
 		flags = other.flags;
 		key_size = other.key_size;
 		value_size = other.value_size;
 		other.map_impl_ptr = nullptr;
 		other.map_refcnt_ptr = nullptr;
+		other.map_lock_ptr = nullptr;
 		return *this;
 	}
 	~bpf_map_handler()
@@ -205,7 +211,10 @@ class bpf_map_handler {
 	try_get_stack_trace_map_impl() const;
 	robust_shm_mutex &get_map_lock() const
 	{
-		return map_lock;
+		// Dup'd handlers share one SHM lock so descriptors referencing
+		// the same map impl serialize on the same mutex instance.
+		return map_lock_ptr.get() != nullptr ? *map_lock_ptr :
+						       fallback_map_lock;
 	}
 	bool has_map_impl() const
 	{
@@ -220,6 +229,7 @@ class bpf_map_handler {
 	{
 		map_impl_ptr = other.map_impl_ptr;
 		map_refcnt_ptr = other.map_refcnt_ptr;
+		map_lock_ptr = other.map_lock_ptr;
 	}
 	void inc_map_refcount() const
 	{
@@ -248,7 +258,10 @@ class bpf_map_handler {
 #endif
     private:
 	int id = 0;
-	mutable robust_shm_mutex map_lock;
+	mutable robust_shm_mutex fallback_map_lock;
+	// SHM lock shared with dup'd handlers; null before init/after free,
+	// when get_map_lock() falls back to the embedded member.
+	mutable shared_map_lock_ptr map_lock_ptr = nullptr;
 	// The underlying data structure of the map
 	mutable general_map_impl_ptr map_impl_ptr;
 	mutable map_refcount_ptr map_refcnt_ptr = nullptr;
