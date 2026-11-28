@@ -29,7 +29,9 @@
 #include <bpf_map/userspace/stack.hpp>
 #include <bpf_map/userspace/bloom_filter.hpp>
 #include "spdlog/spdlog.h"
+#include "linux/bpf.h"
 #include <cassert>
+#include <cerrno>
 #include <handler/map_handler.hpp>
 #include <bpf_map/userspace/array_map.hpp>
 #include <bpf_map/userspace/fix_hash_map.hpp>
@@ -56,6 +58,23 @@ namespace {
 #else
 #define BPFTIME_ALWAYS_INLINE
 #endif
+
+// Kernel bpf() ABI: BPF_F_RDONLY / BPF_F_WRONLY set the map fd's file mode
+// (FMODE_CAN_READ / FMODE_CAN_WRITE) and restrict fd-based syscall access only.
+// BPF-program helper calls pass from_syscall == false and are governed
+// separately by BPF_F_RDONLY_PROG / BPF_F_WRONLY_PROG (currently unrestricted).
+static inline bool syscall_denied_by_flags(const uint64_t &map_flags,
+					   bool from_syscall,
+					   uint64_t forbidden_flags) noexcept
+{
+	if (!from_syscall) [[likely]]
+		return false;
+	if (map_flags & forbidden_flags) [[unlikely]] {
+		errno = EPERM;
+		return true;
+	}
+	return false;
+}
 
 // Stable per-thread slot for the syscall map-in-map inner fd. The 4-byte value
 // is copied here while map_lock is held, so the caller's subsequent memcpy
@@ -207,6 +226,8 @@ bpf_map_handler::try_get_nv_gpu_ringbuf_map_impl() const
 const void *bpf_map_handler::map_lookup_elem(const void *key,
 					     bool from_syscall) const
 {
+	if (syscall_denied_by_flags(this->flags, from_syscall, BPF_F_WRONLY))
+		return nullptr;
 	shm_write_window_guard shm_window;
 	return visit_map_impl(
 		type, [&]() BPFTIME_ALWAYS_INLINE { return map_impl_ptr.get(); },
@@ -274,6 +295,8 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 long bpf_map_handler::map_update_elem(const void *key, const void *value,
 				      uint64_t flags, bool from_syscall) const
 {
+	if (syscall_denied_by_flags(this->flags, from_syscall, BPF_F_RDONLY))
+		return -1;
 	shm_write_window_guard shm_window;
 	return visit_map_impl(
 		type, [&]() BPFTIME_ALWAYS_INLINE { return map_impl_ptr.get(); },
@@ -330,6 +353,8 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 					  bool from_syscall) const
 {
+	if (syscall_denied_by_flags(this->flags, from_syscall, BPF_F_WRONLY))
+		return -1;
 	shm_write_window_guard shm_window;
 #if !__linux__ && defined(BPFTIME_BUILD_WITH_LIBBPF)
 	// This operation historically guarded the kernel-user and prog-array
@@ -384,6 +409,8 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 
 long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 {
+	if (syscall_denied_by_flags(this->flags, from_syscall, BPF_F_RDONLY))
+		return -1;
 	shm_write_window_guard shm_window;
 	return visit_map_impl(
 		type, [&]() BPFTIME_ALWAYS_INLINE { return map_impl_ptr.get(); },
@@ -989,6 +1016,8 @@ int bpftime_register_map_ops(int map_type, bpftime_map_ops *ops)
 long bpf_map_handler::map_push_elem(const void *value, uint64_t flags,
 				    bool from_syscall) const
 {
+	if (syscall_denied_by_flags(this->flags, from_syscall, BPF_F_RDONLY))
+		return -1;
 	shm_write_window_guard shm_window;
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
@@ -1021,6 +1050,9 @@ long bpf_map_handler::map_push_elem(const void *value, uint64_t flags,
 
 long bpf_map_handler::map_pop_elem(void *value, bool from_syscall) const
 {
+	if (syscall_denied_by_flags(this->flags, from_syscall,
+				    BPF_F_RDONLY | BPF_F_WRONLY))
+		return -1;
 	shm_write_window_guard shm_window;
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
@@ -1047,6 +1079,9 @@ long bpf_map_handler::map_pop_elem(void *value, bool from_syscall) const
 long bpf_map_handler::map_lookup_and_delete_elem(const void *key, void *value,
 						 bool from_syscall) const
 {
+	if (syscall_denied_by_flags(this->flags, from_syscall,
+				    BPF_F_RDONLY | BPF_F_WRONLY))
+		return -1;
 	shm_write_window_guard shm_window;
 	// The kernel dispatches by map type: queue/stack take the keyless pop
 	// path, the hash variants (HASH, PERCPU_HASH, LRU_HASH,
@@ -1116,6 +1151,8 @@ long bpf_map_handler::map_lookup_and_delete_elem(const void *key, void *value,
 
 long bpf_map_handler::map_peek_elem(void *value, bool from_syscall) const
 {
+	if (syscall_denied_by_flags(this->flags, from_syscall, BPF_F_WRONLY))
+		return -1;
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
 		auto impl =

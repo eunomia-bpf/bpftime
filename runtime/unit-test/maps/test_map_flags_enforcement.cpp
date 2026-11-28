@@ -18,8 +18,12 @@
 #include <bpf_map/userspace/lru_var_hash_map.hpp>
 #include "bpftime_shm.hpp"
 #include <cerrno>
+#include <cstring>
 #include <memory>
+#include <string>
+#include <unistd.h>
 #include <variant>
+#include <vector>
 
 using namespace boost::interprocess;
 using namespace bpftime;
@@ -382,3 +386,407 @@ TEST_CASE("map shim separates syscall and BPF-helper access origin",
 	bpftime_destroy_global_shm();
 }
 #endif
+
+TEST_CASE("bpf_map_handler enforces BPF_F_RDONLY/BPF_F_WRONLY across keyed map backends",
+	  "[map_flags]")
+{
+	const std::string shm_name =
+		"_MAP_HANDLER_KEYED_FLAGS_TEST_" + std::to_string(getpid());
+	::shm_remove remover(shm_name.c_str());
+	managed_shared_memory segment(create_only, shm_name.c_str(), 16 << 20);
+	auto *manager = segment.construct<handler_manager>(
+		"_keyed_flags_handler_manager")(segment, MIN_MAX_FD_COUNT);
+
+	int next_fd = 10;
+	auto make_map = [&](bpftime::bpf_map_type mtype, uint32_t ksz,
+			    uint32_t vsz, uint32_t max_ents,
+			    uint64_t mflags) -> const bpf_map_handler & {
+		const int fd = next_fd++;
+		REQUIRE(manager->set_handler(
+				fd,
+				bpf_map_handler(fd, (int)mtype, ksz, vsz,
+						max_ents, mflags, "flag_map",
+						segment),
+				segment) == fd);
+		return std::get<bpf_map_handler>((*manager)[fd]);
+	};
+
+	auto check_keyed_rw = [&](const bpf_map_handler &ro,
+				  const bpf_map_handler &wo, const void *key,
+				  void *next_key, const void *h_val,
+				  const void *s_val, size_t lad_sz,
+				  bool has_lad, bool allow_helper_write,
+				  bool allow_delete) {
+		std::vector<uint8_t> lad_buf(lad_sz ? lad_sz : 1, 0);
+
+		if (allow_helper_write) {
+			REQUIRE(ro.map_update_elem(key, h_val, BPF_ANY, false) ==
+				0);
+			REQUIRE(ro.map_lookup_elem(key, false) != nullptr);
+		}
+		errno = 0;
+		REQUIRE(ro.map_update_elem(key, s_val, BPF_ANY, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(ro.map_delete_elem(key, true) == -1);
+		REQUIRE(errno == EPERM);
+		if (has_lad) {
+			errno = 0;
+			REQUIRE(ro.map_lookup_and_delete_elem(
+					key, lad_buf.data(), true) == -1);
+			REQUIRE(errno == EPERM);
+		}
+		if (allow_helper_write) {
+			REQUIRE(ro.map_lookup_elem(key, true) != nullptr);
+			REQUIRE(ro.bpf_map_get_next_key(nullptr, next_key,
+							true) == 0);
+			if (has_lad)
+				REQUIRE(ro.map_lookup_and_delete_elem(
+						key, lad_buf.data(), false) ==
+					0);
+			else if (allow_delete)
+				REQUIRE(ro.map_delete_elem(key, false) == 0);
+		}
+
+		REQUIRE(wo.map_update_elem(key, s_val, BPF_ANY, true) == 0);
+		errno = 0;
+		REQUIRE(wo.map_lookup_elem(key, true) == nullptr);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(wo.bpf_map_get_next_key(nullptr, next_key, true) == -1);
+		REQUIRE(errno == EPERM);
+		if (has_lad) {
+			errno = 0;
+			REQUIRE(wo.map_lookup_and_delete_elem(
+					key, lad_buf.data(), true) == -1);
+			REQUIRE(errno == EPERM);
+		}
+		REQUIRE(wo.map_lookup_elem(key, false) != nullptr);
+		REQUIRE(wo.bpf_map_get_next_key(nullptr, next_key, false) == 0);
+		if (allow_delete)
+			REQUIRE(wo.map_delete_elem(key, true) == 0);
+	};
+
+	// Default fixed-size hash map
+	{
+		uint32_t k = 5, nk = 0;
+		uint64_t v = 0x11223344ULL;
+		const auto &ro = make_map(bpftime::bpf_map_type::BPF_MAP_TYPE_HASH,
+					  sizeof(k), sizeof(v), 16,
+					  BPF_F_RDONLY);
+		const auto &wo = make_map(bpftime::bpf_map_type::BPF_MAP_TYPE_HASH,
+					  sizeof(k), sizeof(v), 16,
+					  BPF_F_WRONLY);
+		check_keyed_rw(ro, wo, &k, &nk, &v, &v, sizeof(v), true, true,
+			       true);
+	}
+
+	// Array map
+	{
+		uint32_t k = 1, nk = 0;
+		uint64_t v = 0x55667788ULL;
+		const auto &ro = make_map(bpftime::bpf_map_type::BPF_MAP_TYPE_ARRAY,
+					  sizeof(k), sizeof(v), 4,
+					  BPF_F_RDONLY);
+		const auto &wo = make_map(bpftime::bpf_map_type::BPF_MAP_TYPE_ARRAY,
+					  sizeof(k), sizeof(v), 4,
+					  BPF_F_WRONLY);
+		check_keyed_rw(ro, wo, &k, &nk, &v, &v, 0, false, true, false);
+	}
+
+	// Per-CPU array and Per-CPU hash maps
+	for (auto mtype :
+	     { bpftime::bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY,
+	       bpftime::bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH }) {
+		uint32_t k = 2, nk = 0;
+		uint64_t hval = 0x99aabbccULL;
+		const auto &ro =
+			make_map(mtype, sizeof(k), sizeof(uint64_t), 8,
+				 BPF_F_RDONLY);
+		const auto &wo =
+			make_map(mtype, sizeof(k), sizeof(uint64_t), 8,
+				 BPF_F_WRONLY);
+		const size_t sys_sz = ro.get_userspace_value_size();
+		std::vector<uint8_t> sval(sys_sz, 0x2a);
+		const bool is_hash =
+			mtype == bpftime::bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH;
+		check_keyed_rw(ro, wo, &k, &nk, &hval, sval.data(), sys_sz,
+			       is_hash, true, is_hash);
+	}
+
+	// LPM trie
+	{
+		struct lpm_k {
+			uint32_t prefixlen;
+			uint32_t data;
+		};
+		lpm_k k{ 32, 0x0a000001U }, nk{ 0, 0 };
+		uint64_t v = 0xdeadbeefULL;
+		const auto &ro = make_map(
+			bpftime::bpf_map_type::BPF_MAP_TYPE_LPM_TRIE,
+			sizeof(lpm_k), sizeof(v), 8, BPF_F_RDONLY);
+		const auto &wo = make_map(
+			bpftime::bpf_map_type::BPF_MAP_TYPE_LPM_TRIE,
+			sizeof(lpm_k), sizeof(v), 8, BPF_F_WRONLY);
+		check_keyed_rw(ro, wo, &k, &nk, &v, &v, 0, false, true, true);
+	}
+
+	// Perf event array
+	{
+		uint32_t k = 0, nk = 0;
+		int32_t fd_val = 7;
+		const auto &ro = make_map(
+			bpftime::bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY,
+			sizeof(k), sizeof(fd_val), 4, BPF_F_RDONLY);
+		const auto &wo = make_map(
+			bpftime::bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY,
+			sizeof(k), sizeof(fd_val), 4, BPF_F_WRONLY);
+		check_keyed_rw(ro, wo, &k, &nk, &fd_val, &fd_val, 0, false, true,
+			       true);
+	}
+
+	// Stack trace map (entries populated via fill_stack_trace)
+	{
+		constexpr size_t val_sz = 4 * sizeof(uint64_t);
+		uint32_t nk = 0;
+		uint64_t dummy_buf[4] = {};
+		const auto &ro = make_map(
+			bpftime::bpf_map_type::BPF_MAP_TYPE_STACK_TRACE,
+			sizeof(uint32_t), val_sz, 8, BPF_F_RDONLY);
+		const auto &wo = make_map(
+			bpftime::bpf_map_type::BPF_MAP_TYPE_STACK_TRACE,
+			sizeof(uint32_t), val_sz, 8, BPF_F_WRONLY);
+
+		auto ro_impl = ro.try_get_stack_trace_map_impl();
+		auto wo_impl = wo.try_get_stack_trace_map_impl();
+		REQUIRE(ro_impl.has_value());
+		REQUIRE(wo_impl.has_value());
+		const int ro_id =
+			(*ro_impl)->fill_stack_trace({ 0x1000, 0x2000 }, true,
+						     true);
+		const int wo_id =
+			(*wo_impl)->fill_stack_trace({ 0x3000, 0x4000 }, true,
+						     true);
+		REQUIRE(ro_id >= 0);
+		REQUIRE(wo_id >= 0);
+		uint32_t ro_k = static_cast<uint32_t>(ro_id);
+		uint32_t wo_k = static_cast<uint32_t>(wo_id);
+
+		errno = 0;
+		REQUIRE(ro.map_update_elem(&ro_k, dummy_buf, 0, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(ro.map_delete_elem(&ro_k, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(ro.map_lookup_and_delete_elem(&ro_k, dummy_buf, true) ==
+			-1);
+		REQUIRE(errno == EPERM);
+		REQUIRE(ro.map_lookup_elem(&ro_k, true) != nullptr);
+
+		errno = 0;
+		REQUIRE(wo.map_lookup_elem(&wo_k, true) == nullptr);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(wo.bpf_map_get_next_key(nullptr, &nk, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(wo.map_lookup_and_delete_elem(&wo_k, dummy_buf, true) ==
+			-1);
+		REQUIRE(errno == EPERM);
+		REQUIRE(wo.map_lookup_elem(&wo_k, false) != nullptr);
+		REQUIRE(wo.map_lookup_and_delete_elem(&wo_k, dummy_buf,
+						      false) == 0);
+	}
+
+	// Map-in-map types (array of maps & hash of maps; update/delete are
+	// syscall-only by design)
+	for (auto mtype :
+	     { bpftime::bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS,
+	       bpftime::bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS }) {
+		uint32_t k = 0, nk = 0, inner_id = 17;
+		const auto &ro =
+			make_map(mtype, sizeof(k), sizeof(uint32_t), 4,
+				 BPF_F_RDONLY);
+		const auto &wo =
+			make_map(mtype, sizeof(k), sizeof(uint32_t), 4,
+				 BPF_F_WRONLY);
+		const bool is_hash =
+			mtype == bpftime::bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS;
+		check_keyed_rw(ro, wo, &k, &nk, &inner_id, &inner_id, 0, false,
+			       false, is_hash);
+		// Syscall reads remain allowed on RDONLY: HASH_OF_MAPS reports
+		// ENOENT while unpopulated ARRAY_OF_MAPS leaves errno == 0 for
+		// syscall_context to translate to ENOENT.
+		errno = 0;
+		REQUIRE(ro.map_lookup_elem(&k, true) == nullptr);
+		if (is_hash)
+			REQUIRE(errno == ENOENT);
+		else
+			REQUIRE(errno != EPERM);
+	}
+
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
+	// Prog array
+	{
+		uint32_t k = 0, nk = 0;
+		int32_t fake_prog_fd = 9999;
+		const auto &ro = make_map(
+			bpftime::bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY,
+			sizeof(k), sizeof(int32_t), 4, BPF_F_RDONLY);
+		const auto &wo = make_map(
+			bpftime::bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY,
+			sizeof(k), sizeof(int32_t), 4, BPF_F_WRONLY);
+
+		errno = 0;
+		REQUIRE(ro.map_update_elem(&k, &fake_prog_fd, 0, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(ro.map_delete_elem(&k, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(ro.map_lookup_elem(&k, true) == nullptr);
+		REQUIRE(errno == ENOENT);
+		REQUIRE(ro.bpf_map_get_next_key(nullptr, &nk, true) == 0);
+
+		errno = 0;
+		REQUIRE(wo.map_lookup_elem(&k, true) == nullptr);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(wo.bpf_map_get_next_key(nullptr, &nk, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(wo.map_lookup_elem(&k, false) == nullptr);
+		REQUIRE(errno == ENOENT);
+		REQUIRE(wo.bpf_map_get_next_key(nullptr, &nk, false) == 0);
+		REQUIRE(wo.map_delete_elem(&k, true) == 0);
+	}
+#endif
+
+	for (int fd = 10; fd < next_fd; ++fd)
+		manager->clear_id_at(fd, segment);
+	segment.destroy_ptr(manager);
+}
+
+TEST_CASE("bpf_map_handler enforces BPF_F_RDONLY/BPF_F_WRONLY on queue, stack, and bloom filter",
+	  "[map_flags]")
+{
+	const std::string shm_name =
+		"_MAP_HANDLER_KEYLESS_FLAGS_TEST_" + std::to_string(getpid());
+	::shm_remove remover(shm_name.c_str());
+	managed_shared_memory segment(create_only, shm_name.c_str(), 8 << 20);
+	auto *manager = segment.construct<handler_manager>(
+		"_keyless_flags_handler_manager")(segment, MIN_MAX_FD_COUNT);
+
+	int next_fd = 10;
+	auto make_map = [&](bpftime::bpf_map_type mtype, uint32_t vsz,
+			    uint32_t max_ents,
+			    uint64_t mflags) -> const bpf_map_handler & {
+		const int fd = next_fd++;
+		REQUIRE(manager->set_handler(
+				fd,
+				bpf_map_handler(fd, (int)mtype, 0, vsz, max_ents,
+						mflags, "keyless_flag_map",
+						segment),
+				segment) == fd);
+		return std::get<bpf_map_handler>((*manager)[fd]);
+	};
+
+	for (auto mtype : { bpftime::bpf_map_type::BPF_MAP_TYPE_QUEUE,
+			    bpftime::bpf_map_type::BPF_MAP_TYPE_STACK }) {
+		const auto &ro =
+			make_map(mtype, sizeof(uint64_t), 8, BPF_F_RDONLY);
+		const auto &wo =
+			make_map(mtype, sizeof(uint64_t), 8, BPF_F_WRONLY);
+		uint64_t val = 0xabcdef0123456789ULL, out = 0;
+
+		REQUIRE(ro.map_push_elem(&val, BPF_ANY, false) == 0);
+		errno = 0;
+		REQUIRE(ro.map_push_elem(&val, BPF_ANY, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(ro.map_update_elem(nullptr, &val, BPF_ANY, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(ro.map_delete_elem(nullptr, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(ro.map_pop_elem(&out, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(ro.map_lookup_and_delete_elem(nullptr, &out, true) ==
+			-1);
+		REQUIRE(errno == EPERM);
+
+		REQUIRE(ro.map_peek_elem(&out, true) == 0);
+		REQUIRE(out == val);
+		REQUIRE(ro.map_lookup_elem(nullptr, true) != nullptr);
+		REQUIRE(ro.map_pop_elem(&out, false) == 0);
+		REQUIRE(out == val);
+
+		REQUIRE(wo.map_push_elem(&val, BPF_ANY, true) == 0);
+		errno = 0;
+		REQUIRE(wo.map_peek_elem(&out, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(wo.map_lookup_elem(nullptr, true) == nullptr);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(wo.map_pop_elem(&out, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(wo.map_lookup_and_delete_elem(nullptr, &out, true) ==
+			-1);
+		REQUIRE(errno == EPERM);
+
+		out = 0;
+		REQUIRE(wo.map_peek_elem(&out, false) == 0);
+		REQUIRE(out == val);
+		out = 0;
+		REQUIRE(wo.map_pop_elem(&out, false) == 0);
+		REQUIRE(out == val);
+	}
+
+	// Bloom filter
+	{
+		const auto &ro = make_map(
+			bpftime::bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER,
+			sizeof(uint64_t), 16, BPF_F_RDONLY);
+		const auto &wo = make_map(
+			bpftime::bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER,
+			sizeof(uint64_t), 16, BPF_F_WRONLY);
+		uint64_t val = 0xfeedfacecafebeefULL;
+		uint64_t probe = val;
+
+		REQUIRE(ro.map_push_elem(&val, BPF_ANY, false) == 0);
+		errno = 0;
+		REQUIRE(ro.map_push_elem(&val, BPF_ANY, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(ro.map_update_elem(nullptr, &val, BPF_ANY, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(ro.map_delete_elem(nullptr, true) == -1);
+		REQUIRE(errno == EPERM);
+		REQUIRE(ro.map_peek_elem(&probe, true) == 0);
+		REQUIRE(ro.map_peek_elem(&probe, false) == 0);
+		// elem_lookup is unsupported on bloom filter, but allowed
+		// read on RDONLY must reach EOPNOTSUPP instead of EPERM.
+		errno = 0;
+		REQUIRE(ro.map_lookup_elem(nullptr, true) == nullptr);
+		REQUIRE(errno == EOPNOTSUPP);
+
+		REQUIRE(wo.map_push_elem(&val, BPF_ANY, true) == 0);
+		errno = 0;
+		REQUIRE(wo.map_peek_elem(&probe, true) == -1);
+		REQUIRE(errno == EPERM);
+		errno = 0;
+		REQUIRE(wo.map_lookup_elem(nullptr, true) == nullptr);
+		REQUIRE(errno == EPERM);
+		REQUIRE(wo.map_peek_elem(&probe, false) == 0);
+	}
+
+	for (int fd = 10; fd < next_fd; ++fd)
+		manager->clear_id_at(fd, segment);
+	segment.destroy_ptr(manager);
+}

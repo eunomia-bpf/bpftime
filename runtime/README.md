@@ -59,6 +59,13 @@ Key features:
 - Custom optimizations (fixed-size hash tables, per-CPU structures)
 - Extended operations (push/pop/peek for queues/stacks)
 
+#### Map Creation Flag Semantics
+`BPF_F_RDONLY` and `BPF_F_WRONLY` restrict **fd-based syscall** operations (`from_syscall == true`) uniformly across all map backends at the `bpf_map_handler` boundary, failing with `EPERM`:
+- `BPF_F_RDONLY` rejects `update`, `delete`, `push`, `pop`, and `lookup_and_delete`.
+- `BPF_F_WRONLY` rejects `lookup`, `get_next_key`, `peek`, `pop`, and `lookup_and_delete`.
+
+**BPF-program helper access (`from_syscall == false`) is unrestricted** by `BPF_F_RDONLY` / `BPF_F_WRONLY`. The separate program-side flags (`BPF_F_RDONLY_PROG` / `BPF_F_WRONLY_PROG`) are not currently enforced on the BPF-program helper path.
+
 #### Shared Maps (`shared/`)
 Bridge between kernel and userspace eBPF programs:
 - Array, hash, per-CPU array, perf event array

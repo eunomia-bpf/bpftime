@@ -213,4 +213,52 @@ TEST_CASE("a map stays reserved while a loaded program references it",
 	// Closing the last referencing program releases the map.
 	REQUIRE(field(result.fields, "reused_after_prog_close") == 1);
 }
+
+TEST_CASE("intercepted bpf() enforces BPF_F_RDONLY/WRONLY across map types",
+	  "[map_syscall]")
+{
+	const std::string shm_name = shm_name_for("map-flags-all");
+	remove(("/dev/shm/" + shm_name).c_str());
+	auto result = run_map_helper("map-flags-all", shm_name.c_str());
+	remove(("/dev/shm/" + shm_name).c_str());
+
+	REQUIRE(result.status == 0);
+	REQUIRE(field(result.fields, "hash_ro_update_ret") == -1);
+	REQUIRE(field(result.fields, "hash_ro_update_errno") == EPERM);
+	REQUIRE(field(result.fields, "hash_ro_delete_ret") == -1);
+	REQUIRE(field(result.fields, "hash_ro_delete_errno") == EPERM);
+	REQUIRE(field(result.fields, "hash_ro_lad_ret") == -1);
+	REQUIRE(field(result.fields, "hash_ro_lad_errno") == EPERM);
+	REQUIRE(field(result.fields, "hash_ro_lookup_ret") == -1);
+	REQUIRE(field(result.fields, "hash_ro_lookup_errno") == ENOENT);
+
+	REQUIRE(field(result.fields, "hash_wo_update_ret") == 0);
+	REQUIRE(field(result.fields, "hash_wo_lookup_ret") == -1);
+	REQUIRE(field(result.fields, "hash_wo_lookup_errno") == EPERM);
+	REQUIRE(field(result.fields, "hash_wo_next_ret") == -1);
+	REQUIRE(field(result.fields, "hash_wo_next_errno") == EPERM);
+	REQUIRE(field(result.fields, "hash_wo_lad_ret") == -1);
+	REQUIRE(field(result.fields, "hash_wo_lad_errno") == EPERM);
+	REQUIRE(field(result.fields, "hash_wo_exist_ret") == 0);
+
+	REQUIRE(field(result.fields, "arr_ro_update_ret") == -1);
+	REQUIRE(field(result.fields, "arr_ro_update_errno") == EPERM);
+	REQUIRE(field(result.fields, "arr_ro_lookup_ret") == 0);
+	REQUIRE(field(result.fields, "arr_wo_update_ret") == 0);
+	REQUIRE(field(result.fields, "arr_wo_lookup_ret") == -1);
+	REQUIRE(field(result.fields, "arr_wo_lookup_errno") == EPERM);
+
+	REQUIRE(field(result.fields, "q_ro_update_ret") == -1);
+	REQUIRE(field(result.fields, "q_ro_update_errno") == EPERM);
+	REQUIRE(field(result.fields, "q_ro_lad_ret") == -1);
+	REQUIRE(field(result.fields, "q_ro_lad_errno") == EPERM);
+	REQUIRE(field(result.fields, "q_wo_update_ret") == 0);
+	REQUIRE(field(result.fields, "q_wo_lookup_ret") == -1);
+	REQUIRE(field(result.fields, "q_wo_lookup_errno") == EPERM);
+	REQUIRE(field(result.fields, "q_wo_lad_ret") == -1);
+	REQUIRE(field(result.fields, "q_wo_lad_errno") == EPERM);
+
+	REQUIRE(field(result.fields, "mim_ro_update_ret") == -1);
+	REQUIRE(field(result.fields, "mim_ro_update_errno") == EPERM);
+}
 #endif
