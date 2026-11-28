@@ -16,6 +16,13 @@ extern "C" {
 extern uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...);
 }
 
+// Defined in bpf_helper.cpp with C linkage; no shared header exists for the
+// helper entry points, matching the local extern style in bpf_attach_ctx.cpp
+// and test_get_current_pid_tgid.cpp.
+extern "C" uint64_t
+	bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
+				     uint64_t);
+
 #define CUDART_SAFE_CALL(x, error)                                             \
 	do {                                                                   \
 		if (auto result = x; result != cudaSuccess) {                  \
@@ -243,16 +250,14 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 						   GET_CURRENT_PID_TGID) {
 					auto &resp = ctx->cuda_shared_mem->resp
 							     .get_tid_pgid;
-					static int tgid = getpid();
-					static thread_local int tid = -1;
-					if (tid == -1) {
-						tid = gettid();
-					}
+					uint64_t id =
+						bpftime_get_current_pid_tgid(
+							0, 0, 0, 0, 0);
 					SPDLOG_DEBUG(
 						"Called get_current_pid_tgid: pid={}, tgid={}",
-						tid, tgid);
-					resp.result =
-						(((uint64_t)tgid) << 32) | tid;
+						static_cast<uint32_t>(id),
+						static_cast<uint32_t>(id >> 32));
+					resp.result = id;
 				} else if (req_id ==
 					   (int)cuda::HelperOperation::PUTS) {
 					const auto &req =

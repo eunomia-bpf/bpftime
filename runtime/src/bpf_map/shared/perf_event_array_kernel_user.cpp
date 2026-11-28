@@ -35,31 +35,98 @@ static int create_transporter_prog(int user_ringbuf_fd, int kernel_perf_fd);
 #define BPF_MAP_TYPE_USER_RINGBUF 31
 #endif
 
-// kernel perf event array map id -> user_ring_buffer* for the current process
-using user_ringbuf_map =
-	std::map<int, std::unique_ptr<bpftime::user_ringbuffer_wrapper> >;
-user_ringbuf_map *user_rb_map = nullptr;
-static inline void ensure_user_rb_map_initialized()
+namespace
 {
-	if (!user_rb_map)
-		user_rb_map = new user_ringbuf_map;
+
+struct perf_daemon_local_entry {
+	int pfd;
+	int transporter_prog_fd;
+};
+
+struct perf_user_rb_local_entry {
+	user_ring_buffer *rb;
+	int user_rb_fd;
+};
+
+bpftime::shm_local_table<perf_daemon_local_entry> g_perf_daemon_local_table{};
+bpftime::shm_local_table<perf_user_rb_local_entry> g_perf_user_rb_local_table{};
+
+static_assert(
+	std::is_trivially_destructible_v<decltype(g_perf_daemon_local_table)>);
+static_assert(
+	std::is_trivially_destructible_v<decltype(g_perf_user_rb_local_table)>);
+
+void cleanup_perf_daemon_local(perf_daemon_local_entry &entry) noexcept
+{
+	if (entry.pfd >= 0) {
+		ioctl(entry.pfd, PERF_EVENT_IOC_DISABLE, 0);
+		close(entry.pfd);
+		entry.pfd = -1;
+	}
+	if (entry.transporter_prog_fd >= 0) {
+		close(entry.transporter_prog_fd);
+		entry.transporter_prog_fd = -1;
+	}
 }
+
+void cleanup_perf_user_rb_local(perf_user_rb_local_entry &entry) noexcept
+{
+	if (entry.rb != nullptr) {
+		user_ring_buffer__free(entry.rb);
+		entry.rb = nullptr;
+	}
+	if (entry.user_rb_fd >= 0) {
+		close(entry.user_rb_fd);
+		entry.user_rb_fd = -1;
+	}
+}
+
+perf_user_rb_local_entry *resolve_perf_user_rb_local(bpftime::shm_local_key key,
+						     int user_rb_id)
+{
+	if (user_rb_id <= 0)
+		return nullptr;
+	return g_perf_user_rb_local_table.get_or_init(
+		key,
+		[&](perf_user_rb_local_entry &out) -> bool {
+			LIBBPF_OPTS(user_ring_buffer_opts, opts);
+			int fd = bpf_map_get_fd_by_id(user_rb_id);
+			if (fd < 0) {
+				const int saved_errno = errno;
+				SPDLOG_ERROR(
+					"Failed to get user_rb_fd from user_rb_id {}, err={}",
+					user_rb_id, saved_errno);
+				errno = saved_errno;
+				return false;
+			}
+			user_ring_buffer *rb = user_ring_buffer__new(fd, &opts);
+			if (rb == nullptr) {
+				const int saved_errno = errno;
+				close(fd);
+				SPDLOG_ERROR(
+					"Failed to initialize user ringbuffer for id {}",
+					user_rb_id);
+				errno = saved_errno;
+				return false;
+			}
+			out.rb = rb;
+			out.user_rb_fd = fd;
+			return true;
+		},
+		cleanup_perf_user_rb_local);
+}
+
+} // namespace
+
 namespace bpftime
 {
-struct user_ringbuffer_wrapper {
-	user_ring_buffer *rb;
-	int user_rb_id;
-	int user_rb_fd;
-	user_ringbuffer_wrapper(int user_rb_id);
-	~user_ringbuffer_wrapper();
-	void *reserve(uint32_t size);
-	void submit(void *mem);
-};
 
 int perf_event_array_kernel_user_impl::get_user_ringbuf_fd()
 {
-	return ensure_current_map_user_ringbuf()->user_rb_fd;
+	auto *local = resolve_perf_user_rb_local(local_key_, user_rb_id);
+	return local != nullptr ? local->user_rb_fd : -1;
 }
+
 int perf_event_array_kernel_user_impl::output_data_into_kernel(const void *buf,
 							       size_t size)
 {
@@ -70,29 +137,28 @@ int perf_event_array_kernel_user_impl::output_data_into_kernel(const void *buf,
 		errno = E2BIG;
 		return -1;
 	}
-	SPDLOG_DEBUG("Received data output for kernel perf event array {}",
-		     kernel_perf_id);
-	auto user_rb = ensure_current_map_user_ringbuf();
-	SPDLOG_DEBUG("User ringbuf ensured: {:x}", (uintptr_t)user_rb);
-	void *mem = user_rb->reserve(size + 8);
+	auto *user_rb = resolve_perf_user_rb_local(local_key_, user_rb_id);
+	if (user_rb == nullptr || user_rb->rb == nullptr) {
+		errno = EINVAL;
+		return -1;
+	}
+	void *mem = user_ring_buffer__reserve(user_rb->rb,
+					      static_cast<uint32_t>(size + 8));
 	if (!mem) {
 		SPDLOG_ERROR("Failed to reserve for user ringbuf: {}", errno);
 		return errno;
 	}
 	*(uint64_t *)(mem) = (uint64_t)size;
 	memcpy((char *)mem + 8, buf, size);
-	user_rb->submit(mem);
-	SPDLOG_TRACE("Commited {} bytes of data into kernel: {:n}", size,
-		     spdlog::to_hex((uint8_t *)buf, (uint8_t *)buf + size));
+	user_ring_buffer__submit(user_rb->rb, mem);
 	return 0;
 }
-// Put the creation of user ringbuffer & transporter ebpf program in the
-// constructor of perf_event_array_kernel_user_impl Only one instance of map and
-// ebpf program is required, so just put them in the daemon
+
 perf_event_array_kernel_user_impl::perf_event_array_kernel_user_impl(
-	boost::interprocess::managed_shared_memory &memory, uint32_t key_size,
-	uint32_t value_size, uint32_t max_entries, int kernel_perf_id)
-	: max_ent(max_entries), kernel_perf_id(kernel_perf_id)
+	const shm_init_ctx &ctx, uint32_t key_size, uint32_t value_size,
+	uint32_t max_entries, int kernel_perf_id)
+	: max_ent(max_entries), kernel_perf_id(kernel_perf_id),
+	  seg_alloc_(ctx.allocator<char>())
 {
 	if (key_size != 4 || value_size != 4) {
 		SPDLOG_ERROR(
@@ -100,64 +166,85 @@ perf_event_array_kernel_user_impl::perf_event_array_kernel_user_impl(
 		throw std::runtime_error(
 			"Key size and value size of perf_event_array must be 4");
 	}
-	// Create corresponding user ringbuffer
 	LIBBPF_OPTS(bpf_map_create_opts, user_rb_opts);
 	std::string name = "ku_perf_id_" + std::to_string(kernel_perf_id);
-	int user_rb_fd = bpf_map_create(static_cast<enum bpf_map_type>(BPF_MAP_TYPE_USER_RINGBUF),
-					name.c_str(), 0, 0, 1024 * 1024,
-					&user_rb_opts);
+	int user_rb_fd = bpf_map_create(
+		static_cast<enum bpf_map_type>(BPF_MAP_TYPE_USER_RINGBUF),
+		name.c_str(), 0, 0, 1024 * 1024, &user_rb_opts);
 	if (user_rb_fd < 0) {
 		SPDLOG_ERROR(
 			"Failed to create user ringbuffer for shared perf event array id {}, err={}",
 			kernel_perf_id, errno);
 		return;
 	}
-	bpf_map_info map_info;
+	bpf_map_info map_info{};
 	uint32_t map_info_size = sizeof(map_info);
-	if (int err = bpf_obj_get_info_by_fd(user_rb_fd, &map_info,
-					     &map_info_size);
-	    err < 0) {
+	if (bpf_obj_get_info_by_fd(user_rb_fd, &map_info, &map_info_size) < 0) {
 		SPDLOG_ERROR("Failed to get map info for user rb fd {}",
 			     user_rb_fd);
+		close(user_rb_fd);
 		return;
 	}
 	user_rb_id = map_info.id;
-	SPDLOG_DEBUG(
-		"Initialized perf_event_array_kernel_user_impl, kernel perf id {}, user ringbuffer id {}, user ringbuffer map type {}",
-		kernel_perf_id, user_rb_id, (int)map_info.type);
-	int &pfd = this->pfd;
-	pfd = create_intervally_triggered_perf_event(10);
+	int pfd = create_intervally_triggered_perf_event(10);
 	int kernel_perf_fd = bpf_map_get_fd_by_id(kernel_perf_id);
-
-	int &bpf_fd = this->transporter_prog_fd;
-	bpf_fd = create_transporter_prog(user_rb_fd, kernel_perf_fd);
+	int bpf_fd = create_transporter_prog(user_rb_fd, kernel_perf_fd);
+	if (kernel_perf_fd >= 0)
+		close(kernel_perf_fd);
+	close(user_rb_fd);
 
 	if (bpf_fd < 0) {
-		SPDLOG_ERROR(
-			"Unable to create transporter kernel ebpf program for shared perf event");
+		if (pfd >= 0)
+			close(pfd);
 		throw std::runtime_error(
 			"Unable to create transporter kernel ebpf program for shared perf event");
 	}
-	int err;
-	err = ioctl(pfd, PERF_EVENT_IOC_SET_BPF, bpf_fd);
-	if (err < 0) {
-		SPDLOG_ERROR("Failed to run PERF_EVENT_IOC_SET_BPF: {}", err);
-		throw std::runtime_error(
-			"Failed to run PERF_EVENT_IOC_SET_BPF");
+	if (ioctl(pfd, PERF_EVENT_IOC_SET_BPF, bpf_fd) < 0) {
+		close(bpf_fd);
+		if (pfd >= 0)
+			close(pfd);
+		throw std::runtime_error("Failed to run PERF_EVENT_IOC_SET_BPF");
 	}
-	err = ioctl(pfd, PERF_EVENT_IOC_ENABLE, 0);
-	if (err < 0) {
-		SPDLOG_ERROR("Failed to run PERF_EVENT_IOC_ENABLE: {}", err);
+	if (ioctl(pfd, PERF_EVENT_IOC_ENABLE, 0) < 0) {
+		close(bpf_fd);
+		if (pfd >= 0)
+			close(pfd);
 		throw std::runtime_error("Failed to run PERF_EVENT_IOC_ENABLE");
 	}
-
-	SPDLOG_DEBUG("Attached transporter ebpf program");
+	try {
+		local_key_ = ctx.allocate_local_key();
+	} catch (...) {
+		(void)ioctl(pfd, PERF_EVENT_IOC_DISABLE, 0);
+		close(bpf_fd);
+		if (pfd >= 0)
+			close(pfd);
+		throw;
+	}
+	auto *daemon_entry = g_perf_daemon_local_table.get_or_init(
+		local_key_,
+		[&](perf_daemon_local_entry &out) -> bool {
+			out.pfd = pfd;
+			out.transporter_prog_fd = bpf_fd;
+			return true;
+		},
+		cleanup_perf_daemon_local);
+	if (daemon_entry == nullptr) {
+		(void)ioctl(pfd, PERF_EVENT_IOC_DISABLE, 0);
+		close(bpf_fd);
+		if (pfd >= 0)
+			close(pfd);
+		release_local_key(seg_alloc_.get_segment_manager(), local_key_);
+		throw std::runtime_error(
+			"Perf daemon local table slot unavailable");
+	}
 }
+
 perf_event_array_kernel_user_impl::~perf_event_array_kernel_user_impl()
 {
-	ioctl(pfd, PERF_EVENT_IOC_DISABLE, 0);
-	close(pfd);
-	close(transporter_prog_fd);
+	g_perf_user_rb_local_table.evict(local_key_,
+					 cleanup_perf_user_rb_local);
+	g_perf_daemon_local_table.evict(local_key_, cleanup_perf_daemon_local);
+	release_local_key(seg_alloc_.get_segment_manager(), local_key_);
 }
 
 void *perf_event_array_kernel_user_impl::elem_lookup(const void *key)
@@ -222,59 +309,6 @@ int perf_event_array_kernel_user_impl::map_get_next_key(const void *key,
 	}
 	*out = k + 1;
 	return 0;
-}
-user_ringbuffer_wrapper *
-perf_event_array_kernel_user_impl::ensure_current_map_user_ringbuf()
-{
-	ensure_user_rb_map_initialized();
-	user_ringbuffer_wrapper *result;
-	if (auto itr = user_rb_map->find(kernel_perf_id);
-	    itr != user_rb_map->end()) {
-		result = itr->second.get();
-	} else {
-		auto ptr =
-			std::make_unique<user_ringbuffer_wrapper>(user_rb_id);
-		auto raw_ptr = ptr.get();
-		user_rb_map->emplace(kernel_perf_id, std::move(ptr));
-		result = raw_ptr;
-	}
-	return result;
-}
-user_ringbuffer_wrapper::user_ringbuffer_wrapper(int user_rb_id)
-	: user_rb_id(user_rb_id)
-{
-	LIBBPF_OPTS(user_ring_buffer_opts, opts);
-	user_rb_fd = bpf_map_get_fd_by_id(user_rb_id);
-	SPDLOG_DEBUG("map id {} -> fd {}, user ring buffer", user_rb_id,
-		     user_rb_fd);
-	if (user_rb_fd < 0) {
-		SPDLOG_ERROR(
-			"Failed to get user_rb_fd from user_rb_id {}, err={}",
-			user_rb_id, errno);
-		throw std::runtime_error(
-			"Failed to get user_rb_fd from user_rb_id");
-	}
-
-	rb = user_ring_buffer__new(user_rb_fd, &opts);
-	if (!rb) {
-		throw std::runtime_error(
-			"Failed to initialize user ringbuffer! This SHOULD NOT Happen.");
-	}
-	SPDLOG_DEBUG("User ringbuffer wrapper created, fd={}, id={}",
-		     user_rb_fd, user_rb_id);
-}
-
-user_ringbuffer_wrapper::~user_ringbuffer_wrapper()
-{
-	user_ring_buffer__free(rb);
-}
-void *user_ringbuffer_wrapper::reserve(uint32_t size)
-{
-	return user_ring_buffer__reserve(rb, (uint32_t)size);
-}
-void user_ringbuffer_wrapper::submit(void *mem)
-{
-	user_ring_buffer__submit(rb, mem);
 }
 
 // The original program was like:
@@ -448,7 +482,12 @@ int create_intervally_triggered_perf_event(int duration_ms)
 	pe_attr.sample_type = PERF_SAMPLE_RAW;
 	pe_attr.freq = 0;
 
-	return syscall(__NR_perf_event_open, &pe_attr, 0, -1, -1, 0);
+#ifdef PERF_FLAG_FD_CLOEXEC
+	const unsigned long perf_flags = PERF_FLAG_FD_CLOEXEC;
+#else
+	const unsigned long perf_flags = 0;
+#endif
+	return syscall(__NR_perf_event_open, &pe_attr, 0, -1, -1, perf_flags);
 }
 } // namespace bpftime
 

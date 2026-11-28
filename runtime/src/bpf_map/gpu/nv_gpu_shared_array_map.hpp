@@ -2,6 +2,7 @@
 #define _NV_GPU_SHARED_ARRAY_MAP_HPP
 
 #include "bpf_map/map_common_def.hpp"
+#include "bpftime_shm_safe.hpp"
 #include "cuda.h"
 #include "handler/handler_manager.hpp"
 #include <cstdint>
@@ -9,27 +10,13 @@
 namespace bpftime
 {
 
-using pid_devptr_map_value_ty = std::pair<const int, CUdeviceptr>;
-using pid_devptr_map_allocator =
-	allocator<pid_devptr_map_value_ty,
-		  managed_shared_memory::segment_manager>;
-using pid_devptr_map =
-	boost::unordered_map<int, CUdeviceptr, int_hasher, std::equal_to<int>,
-			     pid_devptr_map_allocator>;
-
 class nv_gpu_shared_array_map_impl {
 	// Single-copy device buffer: char BUF[MAX_ENTRIES][VALUE_SIZE]
 	CUipcMemHandle gpu_mem_handle;
 	CUdeviceptr server_gpu_shared_mem;
-	CUcontext owner_cuda_context;
-	CUcontext agent_cuda_context;
-	// Synchronized memcpy implicitly synchronizes with the default stream.
-	// To avoid deadlocks between memcpy with the kernel launched by user,
-	// we need to use a separate stream for async memcpy at the agent side.
-	CUstream agent_stream;
-	pid_devptr_map agent_gpu_shared_mem;
 	uint64_t value_size;
 	uint64_t max_entries;
+	shm_local_key local_key_{};
 
 	// Host-side staging buffer for single entry
 	bytes_vec value_buffer;
@@ -37,9 +24,8 @@ class nv_gpu_shared_array_map_impl {
     public:
 	const static bool should_lock = true;
 
-	nv_gpu_shared_array_map_impl(
-		boost::interprocess::managed_shared_memory &memory,
-		uint64_t value_size, uint64_t max_entries);
+	nv_gpu_shared_array_map_impl(const shm_init_ctx &ctx,
+				     uint64_t value_size, uint64_t max_entries);
 
 	void *elem_lookup(const void *key);
 

@@ -6,10 +6,13 @@
 #ifndef _BPFTIME_SHM_SAFE_HPP
 #define _BPFTIME_SHM_SAFE_HPP
 
+#include <atomic>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <boost/interprocess/containers/vector.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
+#include <cerrno>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
@@ -30,8 +33,32 @@ namespace bpftime
 
 class shm_init_ctx;
 
+// Compact POD slot + generation handle stored inside SHM objects instead of
+// process-local OS file descriptors, mmap addresses, or driver handles.
+struct shm_local_key {
+	uint32_t slot = 0;
+	uint32_t gen = 0;
+};
+
+inline constexpr std::size_t DEFAULT_SHM_LOCAL_TABLE_CAPACITY = 8192;
+
+struct shm_noop_cleanup {
+	template <typename T>
+	constexpr void operator()(T &) const noexcept
+	{
+	}
+};
+
 namespace detail
 {
+
+extern std::atomic<uint32_t> g_shm_local_fork_epoch;
+
+struct shm_local_key_counter {
+	std::atomic<uint32_t> next_gen{ 1 };
+	std::atomic<uint64_t>
+		live_slots[DEFAULT_SHM_LOCAL_TABLE_CAPACITY / 64]{};
+};
 
 template <typename T> struct is_forbidden_shm_std_type : std::false_type {};
 
@@ -118,11 +145,6 @@ constexpr bool small_aggregate_shm_safe() noexcept
 	}
 }
 
-// Inspects small plain aggregates (up to 8 flattened fields) and rejects any
-// aggregate holding C++ reference members (!is_default_constructible_v).
-// Non-aggregate classes with private members cannot be reflected in C++20;
-// they are covered by the top-level polymorphism/pointer/STL checks and the
-// non-copyable shm_init_ctx constructor discipline.
 template <typename T> constexpr bool aggregate_shm_safe() noexcept
 {
 	if constexpr (!std::is_aggregate_v<T> || std::is_union_v<T> ||
@@ -180,9 +202,6 @@ template <typename T> struct is_shm_safe_impl {
 
 } // namespace detail
 
-// Compile-time gate for types placed inside managed_shared_memory:
-// rejects virtual tables (vptr), raw/member pointers, references, shm_init_ctx,
-// and process-local STL heap containers or std::mutex instances.
 template <typename T>
 concept shm_safe_type = detail::is_shm_safe_impl<T>::value;
 
@@ -201,8 +220,6 @@ T *shm_find_or_construct(Memory &memory, const char *name, Args &&...args)
 		std::forward<Args>(args)...);
 }
 
-// Non-copyable, non-storable construction context passed to SHM object
-// constructors instead of a process-local managed_shared_memory& (#959).
 class shm_init_ctx {
     public:
 	using segment_manager_t =
@@ -234,8 +251,212 @@ class shm_init_ctx {
 			sm_);
 	}
 
+	shm_local_key allocate_local_key() const
+	{
+		auto *ctr = shm_find_or_construct<detail::shm_local_key_counter>(
+			*sm_, "bpftime_shm_local_keys");
+		for (uint32_t w = 0;
+		     w < DEFAULT_SHM_LOCAL_TABLE_CAPACITY / 64; ++w) {
+			uint64_t cur = ctr->live_slots[w].load(
+				std::memory_order_relaxed);
+			while (~cur != 0ULL) {
+				const uint32_t bit = static_cast<uint32_t>(
+					__builtin_ctzll(~cur));
+				if (ctr->live_slots[w].compare_exchange_weak(
+					    cur, cur | (1ULL << bit),
+					    std::memory_order_acq_rel,
+					    std::memory_order_relaxed)) {
+					uint32_t gen =
+						ctr->next_gen.fetch_add(
+							1u,
+							std::memory_order_relaxed) &
+						0x3fffffffU;
+					return shm_local_key{
+						w * 64u + bit,
+						gen == 0u ? 1u : gen,
+					};
+				}
+			}
+		}
+		return shm_local_key{ 0u, 0u };
+	}
+
     private:
 	segment_manager_t *sm_;
+};
+
+inline void release_local_key(
+	boost::interprocess::managed_shared_memory::segment_manager *sm,
+	shm_local_key key) noexcept
+{
+	if (sm == nullptr || key.gen == 0 ||
+	    key.slot >= DEFAULT_SHM_LOCAL_TABLE_CAPACITY)
+		return;
+	try {
+		if (auto f = sm->find<detail::shm_local_key_counter>(
+			    "bpftime_shm_local_keys");
+		    f.first != nullptr) {
+			f.first->live_slots[key.slot >> 6].fetch_and(
+				~(1ULL << (key.slot & 63u)),
+				std::memory_order_release);
+		}
+	} catch (...) {
+	}
+}
+
+// Trivially destructible, O(1) direct-indexed .bss table for per-process OS
+// file descriptors and mmaps. Fast-path hits take a single array index load
+// and execute zero syscalls, zero locks, and zero heap allocations; fork()
+// epoch bumps are registered once at library load time.
+template <typename Payload,
+	  std::size_t Capacity = DEFAULT_SHM_LOCAL_TABLE_CAPACITY>
+class shm_local_table {
+	static_assert((Capacity & (Capacity - 1)) == 0,
+		      "Capacity must be a power of two");
+	static_assert(std::is_trivially_destructible_v<Payload>,
+		      "Payload must be trivially destructible for exit(0) safety");
+
+	static constexpr uint64_t STATE_IDLE = 0;
+	static constexpr uint64_t STATE_BUSY = 1;
+	static constexpr uint64_t STATE_READY = 2;
+	static constexpr uint64_t STATE_FAILED = 3;
+
+	struct slot {
+		std::atomic<uint64_t> tag{ 0 };
+		std::atomic<int> fail_errno{ 0 };
+		Payload payload{};
+	};
+	static_assert(std::is_trivially_destructible_v<slot>);
+
+	slot slots_[Capacity]{};
+
+	static uint64_t base_tag_for(uint32_t gen) noexcept
+	{
+		const uint32_t ep = detail::g_shm_local_fork_epoch.load(
+			std::memory_order_acquire);
+		return (static_cast<uint64_t>(ep) << 32) |
+		       (static_cast<uint64_t>(gen & 0x3fffffffU) << 2);
+	}
+
+    public:
+	constexpr shm_local_table() noexcept = default;
+
+	Payload *find(shm_local_key key) noexcept
+	{
+		if (key.gen == 0) [[unlikely]]
+			return nullptr;
+		const uint64_t base = base_tag_for(key.gen);
+		slot &s = slots_[key.slot & (Capacity - 1)];
+		if (s.tag.load(std::memory_order_acquire) ==
+		    (base | STATE_READY)) [[likely]]
+			return &s.payload;
+		return nullptr;
+	}
+
+	template <typename InitFn, typename CleanupFn = shm_noop_cleanup>
+	Payload *get_or_init(shm_local_key key, InitFn &&init_fn,
+			     CleanupFn &&on_stale_replace = {}) noexcept
+	{
+		if (key.gen == 0) [[unlikely]] {
+			errno = EINVAL;
+			return nullptr;
+		}
+		const uint64_t base = base_tag_for(key.gen);
+		slot &s = slots_[key.slot & (Capacity - 1)];
+		uint64_t t = s.tag.load(std::memory_order_acquire);
+		if (t == (base | STATE_READY)) [[likely]]
+			return &s.payload;
+		if (t == (base | STATE_FAILED)) {
+			const int err =
+				s.fail_errno.load(std::memory_order_relaxed);
+			if (err != 0)
+				errno = err;
+			return nullptr;
+		}
+		const uint32_t cur_ep = static_cast<uint32_t>(base >> 32);
+		const uint32_t slot_ep = static_cast<uint32_t>(t >> 32);
+		const uint64_t slot_st = t & 3ULL;
+		if (slot_ep == cur_ep && slot_st == STATE_BUSY) {
+			errno = EBUSY;
+			return nullptr;
+		}
+		const uint64_t prev_t = t;
+		if (!s.tag.compare_exchange_strong(
+			    t, base | STATE_BUSY, std::memory_order_acq_rel,
+			    std::memory_order_acquire)) {
+			if (t == (base | STATE_READY))
+				return &s.payload;
+			if (t == (base | STATE_FAILED)) {
+				const int err = s.fail_errno.load(
+					std::memory_order_relaxed);
+				if (err != 0)
+					errno = err;
+			} else {
+				errno = EBUSY;
+			}
+			return nullptr;
+		}
+		const int caller_errno = errno;
+		if ((prev_t & 3ULL) == STATE_READY &&
+		    static_cast<uint32_t>(prev_t >> 32) == cur_ep) {
+			try {
+				on_stale_replace(s.payload);
+			} catch (...) {
+			}
+		}
+		s.payload = Payload{};
+		Payload tmp{};
+		bool ok = false;
+		int saved_err = 0;
+		try {
+			errno = 0;
+			ok = init_fn(tmp);
+			saved_err = errno;
+		} catch (...) {
+			ok = false;
+			saved_err = errno != 0 ? errno : ENOMEM;
+		}
+		if (ok) {
+			s.payload = tmp;
+			s.fail_errno.store(0, std::memory_order_relaxed);
+			s.tag.store(base | STATE_READY,
+				    std::memory_order_release);
+			errno = caller_errno;
+			return &s.payload;
+		}
+		s.fail_errno.store(saved_err, std::memory_order_relaxed);
+		s.tag.store(base | STATE_FAILED, std::memory_order_release);
+		errno = saved_err != 0 ? saved_err : caller_errno;
+		return nullptr;
+	}
+
+	template <typename CleanupFn>
+	void evict(shm_local_key key, CleanupFn &&cleanup_fn) noexcept
+	{
+		if (key.gen == 0)
+			return;
+		const uint64_t base = base_tag_for(key.gen);
+		slot &s = slots_[key.slot & (Capacity - 1)];
+		uint64_t t = s.tag.load(std::memory_order_acquire);
+		if (t != (base | STATE_READY) && t != (base | STATE_FAILED))
+			return;
+		const bool was_ready = (t == (base | STATE_READY));
+		if (s.tag.compare_exchange_strong(
+			    t, base | STATE_BUSY, std::memory_order_acq_rel,
+			    std::memory_order_acquire)) {
+			const int caller_errno = errno;
+			if (was_ready) {
+				try {
+					cleanup_fn(s.payload);
+				} catch (...) {
+				}
+			}
+			s.payload = Payload{};
+			s.fail_errno.store(0, std::memory_order_relaxed);
+			s.tag.store(STATE_IDLE, std::memory_order_release);
+			errno = caller_errno;
+		}
+	}
 };
 
 } // namespace bpftime

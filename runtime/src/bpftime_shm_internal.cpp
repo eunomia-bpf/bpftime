@@ -19,8 +19,23 @@
 #include <cstdint>
 #include <cstdio>
 #include <memory>
+#include <pthread.h>
 #include <string>
 #include <vector>
+
+namespace bpftime::detail
+{
+constinit std::atomic<uint32_t> g_shm_local_fork_epoch{ 1 };
+namespace
+{
+void bump_shm_local_fork_epoch_in_child() noexcept
+{
+	g_shm_local_fork_epoch.fetch_add(1, std::memory_order_release);
+}
+[[maybe_unused]] const int g_shm_local_atfork_status =
+	pthread_atfork(nullptr, nullptr, bump_shm_local_fork_epoch_in_child);
+} // namespace
+} // namespace bpftime::detail
 #if __linux__
 #include <fcntl.h>
 #include <sys/file.h>
