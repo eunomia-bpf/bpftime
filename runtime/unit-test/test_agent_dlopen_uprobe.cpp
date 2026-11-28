@@ -313,6 +313,7 @@ TEST_CASE(
 	REQUIRE(WIFEXITED(status));
 	REQUIRE(WEXITSTATUS(status) == 0);
 }
+
 TEST_CASE("Preloaded agent dlopen finds a bare name through the caller's RUNPATH",
 	  "[agent][dlopen]")
 {
@@ -349,7 +350,8 @@ TEST_CASE("Preloaded agent dlopen finds a bare name through the caller's RUNPATH
 	close(out_pipe[1]);
 	REQUIRE(read_line(out_pipe[0]) == "ready");
 	// The helper loads the library by name; only its RUNPATH ($ORIGIN)
-	// finds it, and the uprobe in it attaches on that dlopen.
+	// finds it, errno stays as it was, and the uprobe in it attaches on
+	// that dlopen.
 	REQUIRE(write(ctrl_pipe[1], "n", 1) == 1);
 	const std::string reply = read_line(out_pipe[0]);
 	if (reply == "done")

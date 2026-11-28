@@ -971,6 +971,8 @@ using dlopen_fn_t = void *(*)(const char *, int);
 void *dlopen_as_caller(dlopen_fn_t real_dlopen, const char *filename,
 		       int flags, const void *caller) noexcept
 {
+	// The lookups below may set errno; the caller sees only dlopen()'s.
+	const int saved_errno = errno;
 	try {
 		Dl_info info;
 		struct link_map *map = nullptr;
@@ -996,12 +998,15 @@ void *dlopen_as_caller(dlopen_fn_t real_dlopen, const char *filename,
 					continue;
 				std::string path = paths->dls_serpath[i].dls_name;
 				path.append("/").append(filename);
-				if (access(path.c_str(), F_OK) == 0)
+				if (access(path.c_str(), F_OK) == 0) {
+					errno = saved_errno;
 					return real_dlopen(path.c_str(), flags);
+				}
 			}
 		}
 	} catch (...) {
 	}
+	errno = saved_errno;
 	return real_dlopen(filename, flags);
 }
 } // namespace
