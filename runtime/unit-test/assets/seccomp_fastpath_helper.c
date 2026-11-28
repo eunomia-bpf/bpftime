@@ -26,7 +26,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <pthread.h>
+#include <sys/epoll.h>
 #include <sys/mman.h>
+#include <sys/resource.h>
+#include <time.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -188,6 +192,27 @@ report_seccomp_mode(void)
 	}
 	fclose(status);
 	report("seccomp_mode", mode == 2, mode < 0 ? ENODATA : mode);
+}
+
+static int worker_epfd;
+
+static void *
+passthrough_worker(void *arg)
+{
+	long tid = (long)arg;
+	struct epoll_event ev[2];
+	for (int i = 0; i < 40; i++) {
+		char path[96];
+		snprintf(path, sizeof(path), "/tmp/bpftime_fp_%ld_%ld_%d",
+			 (long)getpid(), tid, i);
+		int fd = (int)raw_syscall(__NR_openat, AT_FDCWD, (long)path,
+					  O_CREAT | O_RDWR | O_EXCL, 0600, 0, 0);
+		if (fd < 0 || raw_syscall(__NR_close, fd, 0, 0, 0, 0, 0) != 0 ||
+		    raw_syscall(__NR_unlinkat, AT_FDCWD, (long)path, 0, 0, 0, 0) != 0 ||
+		    raw_syscall(__NR_epoll_pwait, worker_epfd, (long)ev, 2, 1, 0, 0) != 0)
+			return (void *)1;
+	}
+	return NULL;
 }
 
 int
@@ -374,8 +399,13 @@ main(void)
 				PROT_READ | PROT_WRITE, MAP_SHARED, rb_fd, 0);
 			if (page != MAP_FAILED) {
 				mmap_ok = 1;
-				raw_syscall(__NR_munmap, (long)page,
-					    ring_size, 0, 0, 0, 0);
+				long unmap_rc = raw_syscall(
+					__NR_munmap, (long)page, ring_size, 0,
+					0, 0, 0);
+				volatile unsigned long probe =
+					*(volatile unsigned long *)page;
+				(void)probe;
+				mmap_ok = unmap_rc == 0;
 			}
 			close(rb_fd);
 		}
@@ -406,6 +436,36 @@ main(void)
 			close(perf_fd);
 		}
 		report("ioctl_perf_event_enable", ok, errno);
+	}
+
+	{
+		struct rlimit lim = { RLIM_INFINITY, RLIM_INFINITY };
+		struct rlimit old = { 0xdeadbeefUL, 0xdeadbeefUL };
+		long rc = raw_syscall(__NR_prlimit64, 0, RLIMIT_MEMLOCK,
+				      (long)&lim, (long)&old, 0, 0);
+		report("prlimit_memlock",
+		       rc == 0 && old.rlim_cur != 0xdeadbeefUL, errno);
+	}
+	{
+		worker_epfd = (int)raw_syscall(__NR_epoll_create1, 0, 0, 0, 0, 0, 0);
+		pthread_t th[4];
+		int ok = worker_epfd >= 0;
+		int started = 0;
+		for (long t = 0; ok && t < 4; t++) {
+			if (pthread_create(&th[t], NULL, passthrough_worker,
+					   (void *)t) == 0)
+				started++;
+			else
+				ok = 0;
+		}
+		for (int t = 0; t < started; t++) {
+			void *rv = (void *)1;
+			if (pthread_join(th[t], &rv) != 0 || rv != NULL)
+				ok = 0;
+		}
+		if (worker_epfd >= 0)
+			ok = ok && raw_syscall(__NR_close, worker_epfd, 0, 0, 0, 0, 0) == 0;
+		report("native_passthrough_workers", ok, errno);
 	}
 
 	close(pipefds[0]);

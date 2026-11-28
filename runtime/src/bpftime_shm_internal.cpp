@@ -13,6 +13,7 @@
 #include "handler/link_handler.hpp"
 #include "handler/perf_event_handler.hpp"
 #include "spdlog/spdlog.h"
+#include <atomic>
 #include <bpftime_shm_internal.hpp>
 #include <cerrno>
 #include <cctype>
@@ -43,7 +44,7 @@ void stop_cuda_watcher_before_shm_unmap();
 #include <variant>
 #include <sys/mman.h>
 
-static bool global_shm_initialized = false;
+static std::atomic<bool> global_shm_initialized{ false };
 static std::optional<bpftime::runtime_config> uninitialized_shm_config;
 
 extern "C" void bpftime_initialize_global_shm(bpftime::shm_open_type type)
@@ -54,7 +55,7 @@ extern "C" void bpftime_initialize_global_shm(bpftime::shm_open_type type)
 	// Use placement new, which will not allocate memory, but just
 	// call the constructor
 	new (&shm_holder.global_shared_memory) bpftime_shm(type);
-	global_shm_initialized = true;
+	global_shm_initialized.store(true, std::memory_order_release);
 	SPDLOG_INFO("Global shm initialized");
 }
 
@@ -81,16 +82,12 @@ extern "C" void bpftime_protect_restore(int saved)
 extern "C" void bpftime_destroy_global_shm()
 {
 	using namespace bpftime;
-	if (global_shm_initialized) {
+	if (global_shm_initialized.exchange(false, std::memory_order_acq_rel)) {
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 		stop_cuda_watcher_before_shm_unmap();
 #endif
 		// SPDLOG_INFO("Global shm destructed");
 		shm_holder.global_shared_memory.~bpftime_shm();
-		// Make this idempotent: clear the flag so a later explicit call
-		// or the __destruct_shm static destructor does not destroy the
-		// already-destroyed object a second time.
-		global_shm_initialized = false;
 		// Why not spdlog? because global variables that spdlog used
 		// were already destroyed..
 #ifdef DEBUG
@@ -102,7 +99,13 @@ extern "C" void bpftime_destroy_global_shm()
 
 extern "C" bool bpftime_global_shm_is_initialized()
 {
-	return global_shm_initialized;
+	return global_shm_initialized.load(std::memory_order_acquire);
+}
+
+extern "C" int bpftime_is_exist_fake_fd(int fd)
+{
+	return bpftime_global_shm_is_initialized() &&
+	       bpftime::shm_holder.global_shared_memory.is_exist_fake_fd(fd);
 }
 
 extern "C" void bpftime_remove_global_shm()

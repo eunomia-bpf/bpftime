@@ -19,6 +19,7 @@
 #include "rootless_map_files.hpp"
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
@@ -34,6 +35,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/vfs.h>
@@ -54,6 +56,12 @@
 #define F_DUPFD_CLOEXEC 1030
 #endif
 
+extern "C" {
+bool bpftime_global_shm_is_initialized();
+int bpftime_is_ringbuf_map(int), bpftime_is_array_map(int),
+	bpftime_is_software_perf_event(int), bpftime_is_exist_fake_fd(int);
+}
+
 namespace bpftime
 {
 namespace seccomp
@@ -62,6 +70,7 @@ namespace seccomp
 // state; epoll waits run uncontended because they never mutate that state.
 static std::mutex dispatch_mutex;
 static std::atomic<int> go_seccomp_listener{ -1 };
+static std::atomic<bool> flag_continue_supported{ true };
 
 
 static bool is_mapped_file_syscall(const int64_t *args)
@@ -142,7 +151,8 @@ dispatch_redirected_path_syscall(const int64_t *args)
 				    redirected[6]);
 }
 
-static int64_t dispatch_seccomp_syscall(const int64_t *args)
+static int64_t dispatch_seccomp_syscall(const int64_t *args, int listener,
+					uint64_t req_id)
 {
 	// BPF_TOKEN_CREATE is newer than bpftime's bundled UAPI. Reject it before
 	// syscall-server startup so userspace loaders fall back to ordinary FDs.
@@ -156,6 +166,19 @@ static int64_t dispatch_seccomp_syscall(const int64_t *args)
 		memset(status, 0, sizeof(*status));
 		status->f_type = 0x74726163;
 		return 0;
+	}
+	if (args[0] == __NR_prlimit64) {
+		int64_t rc = seccomp::raw_syscall(args[0], args[1], args[2],
+						  args[3], args[4], args[5],
+						  args[6]);
+		if (rc == -EPERM && args[1] == 0 &&
+		    (int)args[2] == RLIMIT_MEMLOCK && args[3] != 0)
+			return args[4] != 0 ?
+				       seccomp::raw_syscall(__NR_prlimit64, 0,
+							    RLIMIT_MEMLOCK, 0,
+							    args[4], 0, 0) :
+				       0;
+		return rc;
 	}
 	if (auto redirected = dispatch_redirected_path_syscall(args);
 	    redirected)
@@ -172,9 +195,27 @@ static int64_t dispatch_seccomp_syscall(const int64_t *args)
 #else
 	if (args[0] == __NR_epoll_pwait) {
 #endif
-		result = dispatch_syscall(
-			args[0], args[1], args[2], args[3], args[4],
-			args[5], args[6]);
+		const int timeout = (int)args[4];
+		const auto start = std::chrono::steady_clock::now();
+		for (bool first = true;; first = false) {
+			if (!bpftime_global_shm_is_initialized())
+				return -EINTR;
+			uint64_t id = req_id;
+			if (!first &&
+			    ioctl(listener, SECCOMP_IOCTL_NOTIF_ID_VALID, &id) < 0 &&
+			    errno == ENOENT)
+				return -EINTR;
+			result = dispatch_syscall(args[0], args[1], args[2],
+						  args[3], 0, args[5], args[6]);
+			if (result != 0 || timeout == 0 ||
+			    (timeout > 0 &&
+			     std::chrono::duration_cast<
+				     std::chrono::milliseconds>(
+				     std::chrono::steady_clock::now() - start)
+					     .count() >= timeout))
+				break;
+			usleep(1000);
+		}
 	} else {
 		std::lock_guard lock(dispatch_mutex);
 		result = dispatch_syscall(
@@ -192,36 +233,89 @@ static void send_seccomp_response(int listener,
 	while (ioctl(listener, SECCOMP_IOCTL_NOTIF_SEND, &response) < 0) {
 		if (errno == EINTR)
 			continue;
-		// Kernels < 5.5 lack SECCOMP_USER_NOTIF_FLAG_CONTINUE and
-		// reject it with EINVAL; fail with ENOSYS rather than faking
-		// success or leaving the target thread blocked forever.
-		if (errno == EINVAL &&
-		    (response.flags & SECCOMP_USER_NOTIF_FLAG_CONTINUE) != 0) {
-			response.flags = 0;
-			response.error = -ENOSYS;
-			response.val = 0;
-			continue;
-		}
-		if (errno != ENOENT) {
-			SPDLOG_ERROR(
-				"seccomp response SEND failed for request {}: {}",
-				response.id, errno);
-		}
+		if (errno != ENOENT)
+			SPDLOG_ERROR("seccomp response SEND failed for request {}: {}",
+				     response.id, errno);
 		break;
+	}
+}
+
+static bool try_send_continue(int listener, uint64_t id)
+{
+	if (!flag_continue_supported.load(std::memory_order_relaxed))
+		return false;
+	struct seccomp_notif_resp resp = {};
+	resp.id = id;
+	resp.flags = SECCOMP_USER_NOTIF_FLAG_CONTINUE;
+	while (ioctl(listener, SECCOMP_IOCTL_NOTIF_SEND, &resp) < 0) {
+		if (errno == EINTR)
+			continue;
+		if (errno == EINVAL) {
+			flag_continue_supported.store(false, std::memory_order_relaxed);
+			return false;
+		}
+		if (errno != ENOENT)
+			SPDLOG_ERROR("seccomp response SEND failed for request {}: {}",
+				     id, errno);
+		break;
+	}
+	return true;
+}
+
+static bool seccomp_syscall_runs_native(const int64_t *a)
+{
+	switch ((int)a[0]) {
+	case __NR_mmap: {
+		int fd = (int)a[5];
+		return !(bpftime_is_ringbuf_map(fd) || bpftime_is_array_map(fd) ||
+			 bpftime_is_software_perf_event(fd));
+	}
+	case __NR_close:
+	case __NR_dup3:
+	case __NR_fcntl:
+		return !bpftime_is_exist_fake_fd((int)a[1]);
+	case __NR_statfs:
+		return a[2] == 0 ||
+		       !is_tracefs_mount_path(reinterpret_cast<const char *>(a[1]));
+	case __NR_readlinkat:
+		return !is_mapped_file_syscall(a);
+	case __NR_openat:
+	case __NR_newfstatat:
+	case __NR_statx:
+	case __NR_faccessat:
+#ifdef __NR_faccessat2
+	case __NR_faccessat2:
+#endif
+	{
+		if (is_mapped_file_syscall(a))
+			return false;
+		const char *p = reinterpret_cast<const char *>(a[2]);
+		if (p == nullptr)
+			return true;
+		if (p[0] != '/' && (int)a[1] != AT_FDCWD)
+			return false;
+		try {
+			return !resolve_redirected_path(std::filesystem::path(p)).has_value();
+		} catch (...) {
+			return false;
+		}
+	}
+	default:
+		return false;
 	}
 }
 
 static void start_go_seccomp_workers()
 {
 	const pid_t owner_tgid = getpid();
-	constexpr size_t worker_count = 4;
+	constexpr size_t worker_count = 8;
 	for (size_t i = 0; i < worker_count; i++) {
 		std::thread([owner_tgid] {
 			int listener;
 			while ((listener = go_seccomp_listener.load(
 					std::memory_order_acquire)) < 0) {
 				if (listener == -2)
-					return; // installation failed before publishing a listener
+					return;
 				std::this_thread::yield();
 			}
 			for (;;) {
@@ -236,57 +330,47 @@ static void start_go_seccomp_workers()
 						return;
 					}
 					received = true;
-
 					response.id = request.id;
-					// SECCOMP_RET_USER_NOTIF filters are inherited across
-					// fork/execve. Emulating notifications from a child
-					// process would mutate this process's fd table (e.g.
-					// Go forkAndExecInChild closing fds before execve) or
-					// dereference child user pointers in parent memory.
+					int64_t args[] = {
+						(int64_t)request.data.nr,
+						(int64_t)request.data.args[0],
+						(int64_t)request.data.args[1],
+						(int64_t)request.data.args[2],
+						(int64_t)request.data.args[3],
+						(int64_t)request.data.args[4],
+						(int64_t)request.data.args[5],
+					};
 					if (raw_syscall(SYS_tgkill, owner_tgid,
-							static_cast<pid_t>(
-								request.pid),
+							static_cast<pid_t>(request.pid),
 							0, 0, 0, 0) != 0) {
-						response.flags =
-							SECCOMP_USER_NOTIF_FLAG_CONTINUE;
-					} else {
-						int64_t args[] = {
-							(int64_t)request.data.nr,
-							(int64_t)request.data
-								.args[0],
-							(int64_t)request.data
-								.args[1],
-							(int64_t)request.data
-								.args[2],
-							(int64_t)request.data
-								.args[3],
-							(int64_t)request.data
-								.args[4],
-							(int64_t)request.data
-								.args[5],
-						};
-						int64_t result =
-							dispatch_seccomp_syscall(
-								args);
-						if (result < 0 &&
-						    result >= -4095)
-							response.error =
-								(int32_t)result;
-						else
-							response.val = result;
+						if (!try_send_continue(listener, request.id)) {
+							response.error = -ENOSYS;
+							send_seccomp_response(listener, response);
+						}
+						continue;
 					}
-					send_seccomp_response(listener,
-							      response);
+					if (flag_continue_supported.load(std::memory_order_relaxed)) {
+						bool native = !bpftime_global_shm_is_initialized();
+						if (!native) {
+							std::lock_guard lock(dispatch_mutex);
+							native = seccomp_syscall_runs_native(args);
+						}
+						if (native && try_send_continue(listener, request.id))
+							continue;
+					}
+					int64_t result = dispatch_seccomp_syscall(
+						args, listener, request.id);
+					if (result < 0 && result >= -4095)
+						response.error = (int32_t)result;
+					else
+						response.val = result;
+					send_seccomp_response(listener, response);
 				} catch (...) {
-					// An acquired notification still blocks its host thread.
-					// If emulation fails, ask the kernel to run the original
-					// syscall instead of abandoning that thread indefinitely.
-					if (received) {
+					if (received && !try_send_continue(listener, request.id)) {
 						response = {};
 						response.id = request.id;
-						response.flags = SECCOMP_USER_NOTIF_FLAG_CONTINUE;
-						send_seccomp_response(listener,
-								      response);
+						response.error = -ENOSYS;
+						send_seccomp_response(listener, response);
 					}
 				}
 			}
@@ -391,6 +475,7 @@ static bool setup_go_seccomp_tracer()
 		BPFTIME_NOTIFY_SYSCALL(__NR_epoll_wait),
 #endif
 		BPFTIME_NOTIFY_SYSCALL(__NR_epoll_pwait),
+		BPFTIME_NOTIFY_SYSCALL(__NR_prlimit64),
 #undef BPFTIME_NOTIFY_SYSCALL
 		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 	};

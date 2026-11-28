@@ -72,6 +72,9 @@ struct seccomp_notif_resp {
 #define SECCOMP_IOCTL_NOTIF_RECV _IOWR('!', 0, struct seccomp_notif)
 #define SECCOMP_IOCTL_NOTIF_SEND _IOWR('!', 1, struct seccomp_notif_resp)
 #endif
+#ifndef SECCOMP_IOCTL_NOTIF_ID_VALID
+#define SECCOMP_IOCTL_NOTIF_ID_VALID _IOW('!', 2, __u64)
+#endif
 
 #endif // __linux__
 

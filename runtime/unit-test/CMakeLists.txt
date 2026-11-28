@@ -185,6 +185,7 @@ if(UNIX AND NOT APPLE)
             assets/seccomp_fastpath_helper.c)
         set_property(TARGET bpftime-seccomp-fastpath-test-helper
                      PROPERTY C_STANDARD 11)
+        target_link_libraries(bpftime-seccomp-fastpath-test-helper PRIVATE pthread)
         add_dependencies(bpftime_runtime_tests
             bpftime-seccomp-fastpath-test-helper)
         set(_seccomp_fastpath_helper_expr

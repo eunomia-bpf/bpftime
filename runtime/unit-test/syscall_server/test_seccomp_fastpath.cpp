@@ -216,5 +216,7 @@ TEST_CASE("Rootless seccomp cBPF argument fast-path", "[seccomp]")
 	CHECK(outcome.checks.at("fork_child_close_passthrough") == 0);
 	CHECK(outcome.checks.at("mmap_ringbuf_map") == 0);
 	CHECK(outcome.checks.at("ioctl_perf_event_enable") == 0);
+	CHECK(outcome.checks.at("prlimit_memlock") == 0);
+	CHECK(outcome.checks.at("native_passthrough_workers") == 0);
 }
 #endif
