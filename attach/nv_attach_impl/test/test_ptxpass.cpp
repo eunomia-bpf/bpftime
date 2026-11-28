@@ -1,13 +1,21 @@
 #include "catch2/catch_test_macros.hpp"
 #include "ptxpass/core.hpp"
+#ifdef BPFTIME_TEST_PTXPASS_RUNNER
+#include "ptxpass_runner_test_config.hpp"
+#endif
+#include <array>
+#include <fcntl.h>
+#include <filesystem>
 #include <memory>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <spdlog/logger.h>
 #include <spdlog/sinks/ostream_sink.h>
 #include <spdlog/spdlog.h>
 #include <sstream>
 #include <string>
+#include <unistd.h>
 #include <vector>
 #if defined(__linux__)
 #include <dlfcn.h>
@@ -15,6 +23,24 @@
 #include "ptxpass_test_paths.hpp"
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
+
+#ifdef BPFTIME_TEST_PTXPASS_RUNNER
+namespace bpftime::attach
+{
+std::optional<std::string> run_ptxpass_runner(const std::string &,
+					      const std::filesystem::path &,
+					      const std::string *, size_t);
+// Defined in nv_attach_impl.cpp next to the internal picker; declared here so
+// the runner-path tests below can exercise it without a private header.
+std::filesystem::path
+pick_ptxpass_runner_path_for_test(const char *override_path,
+				   const std::filesystem::path &self,
+				   const std::filesystem::path &installed);
+std::filesystem::path resolve_ptxpass_library_path_for_test(
+	const std::filesystem::path &baked, const std::filesystem::path &self,
+	const std::filesystem::path &installed_dir);
+}
 #endif
 
 using namespace ptxpass;
@@ -471,3 +497,125 @@ TEST_CASE("compile_ebpf_to_ptx_from_words handles exit instruction",
 	}
 	REQUIRE(target_count <= 1);
 }
+
+#ifdef BPFTIME_TEST_PTXPASS_RUNNER
+TEST_CASE("PTX pass runner client handles closed standard descriptors",
+	  "[ptxpass_runner]")
+{
+	std::optional<std::string> config;
+	std::optional<std::string> process;
+	{
+		struct standard_fd_guard {
+			std::array<int, 4> saved{};
+			standard_fd_guard()
+			{
+				for (int fd = 0; fd < 4; fd++) {
+					saved[fd] =
+						fcntl(fd, F_DUPFD_CLOEXEC, 4);
+					close(fd);
+				}
+			}
+			~standard_fd_guard()
+			{
+				for (int fd = 0; fd < 4; fd++) {
+					if (saved[fd] >= 0) {
+						dup2(saved[fd], fd);
+						close(saved[fd]);
+					}
+				}
+			}
+		};
+		standard_fd_guard guard;
+
+		const std::filesystem::path pass = PTXPASS_RUNNER_TEST_PASS;
+		config = bpftime::attach::run_ptxpass_runner("--config", pass,
+							     nullptr, 1024);
+		const std::string input = "input";
+		process = bpftime::attach::run_ptxpass_runner("--process", pass,
+							      &input, 1024);
+	}
+
+	REQUIRE(config == R"({"mode":"config"})");
+	REQUIRE(process == R"({"input":"input"})");
+}
+
+// The runner is spawned by absolute path, so a tree that installs the library
+// without the runner, or that moves after the build, fails every CUDA attach.
+// The lookup has to find a relocated runner instead of the baked path.
+TEST_CASE("PTX pass runner path survives relocation", "[ptxpass_runner]")
+{
+	const std::filesystem::path root =
+		std::filesystem::temp_directory_path() /
+		("bpftime-runner-path-" + std::to_string(getpid()));
+	const std::filesystem::path self = root / "bin" / "app";
+	const std::filesystem::path sibling = root / "bin" / "bpftime_ptxpass_runner";
+	const std::filesystem::path installed =
+		root / "installed" / "bpftime_ptxpass_runner";
+	std::filesystem::create_directories(self.parent_path());
+	std::filesystem::create_directories(installed.parent_path());
+	std::ofstream(self).close();
+	std::ofstream(installed).close();
+
+	// An explicit override always wins, and may name a path that does not
+	// exist yet: the caller naming it is the caller's decision.
+	REQUIRE(bpftime::attach::pick_ptxpass_runner_path_for_test(
+			"/tmp/explicit-runner", self, installed) ==
+		std::filesystem::path("/tmp/explicit-runner"));
+	// A runner next to the executable wins over both the installed copy and
+	// the baked path, which is what a moved build tree relies on.
+	std::ofstream(sibling).close();
+	REQUIRE(bpftime::attach::pick_ptxpass_runner_path_for_test(
+			nullptr, self, installed) == sibling);
+	std::filesystem::remove(sibling);
+	REQUIRE(bpftime::attach::pick_ptxpass_runner_path_for_test(
+			nullptr, self, installed) == installed);
+	// Nothing reachable: the baked build-tree path is the last resort, and an
+	// empty override is treated as absent rather than as an empty path.
+	const std::filesystem::path fallback =
+		bpftime::attach::pick_ptxpass_runner_path_for_test(
+			nullptr, self, root / "absent");
+	REQUIRE(!fallback.empty());
+	REQUIRE(fallback != installed);
+	REQUIRE(bpftime::attach::pick_ptxpass_runner_path_for_test(
+			"", {}, root / "absent") == fallback);
+	std::filesystem::remove_all(root);
+}
+
+// The pass libraries and the PTX compiler library carry the same baked
+// build-tree paths as the runner, so the resolution that keeps a relocated
+// or installed tree working has to cover them too.
+TEST_CASE("PTX pass library path survives relocation", "[ptxpass_runner]")
+{
+	const std::filesystem::path root =
+		std::filesystem::temp_directory_path() /
+		("bpftime-library-path-" + std::to_string(getpid()));
+	const std::filesystem::path self = root / "bin" / "app";
+	const std::filesystem::path installed_dir = root / "installed";
+	std::filesystem::create_directories(self.parent_path());
+	std::filesystem::create_directories(installed_dir);
+
+	const std::filesystem::path baked = root / "build" / "libpass.so";
+	// An existing path wins unchanged, whatever it names.
+	REQUIRE(bpftime::attach::resolve_ptxpass_library_path_for_test(
+			baked, self, installed_dir) == baked);
+	std::ofstream(baked).close();
+	// Once the baked path is gone, the same basename in the installed
+	// directory takes over, then a library next to the executable.
+	std::filesystem::remove(baked);
+	const std::filesystem::path installed = installed_dir / "libpass.so";
+	std::ofstream(installed).close();
+	REQUIRE(bpftime::attach::resolve_ptxpass_library_path_for_test(
+			baked, self, installed_dir) == installed);
+	std::filesystem::remove(installed);
+	const std::filesystem::path sibling = self.parent_path() / "libpass.so";
+	std::ofstream(sibling).close();
+	REQUIRE(bpftime::attach::resolve_ptxpass_library_path_for_test(
+			baked, self, installed_dir) == sibling);
+	// Nothing reachable anywhere: the baked path is returned so the runner
+	// reports the failure with the original name.
+	std::filesystem::remove(sibling);
+	REQUIRE(bpftime::attach::resolve_ptxpass_library_path_for_test(
+			baked, {}, root / "absent") == baked);
+	std::filesystem::remove_all(root);
+}
+#endif

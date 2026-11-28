@@ -12,7 +12,6 @@
 // #include "spdlog/common.h"
 #include "spdlog/spdlog.h"
 #include <asm/unistd.h> // For architecture-specific syscall numbers
-#include <boost/asio/io_context.hpp>
 #include <boost/asio/post.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/process.hpp>
@@ -23,6 +22,7 @@
 #include <boost/core/demangle.hpp>
 #include <boost/process/start_dir.hpp>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -47,23 +47,19 @@
 #include <sys/wait.h>
 #include <sys/user.h>
 #include <sys/uio.h>
-#if __linux__
 #include <spawn.h>
-#endif
-#include <link.h>
 #include <tuple>
 #include <unistd.h>
 #include <variant>
 #include <vector>
 #include <atomic>
+#include <cerrno>
 #include <optional>
 #include <thread>
 #include "ptxpass/core.hpp"
 #include "ptx_pass_config.h"
 
-#if __linux__
 extern "C" char **environ;
-#endif
 
 using namespace bpftime;
 using namespace attach;
@@ -78,7 +74,240 @@ struct nv_attach_hook_state_holder {
 };
 
 static nv_attach_hook_state_holder g_nv_attach_hook_state_holder{};
+constexpr size_t kPtxPassConfigOutputBytes = 10U << 20;
+constexpr size_t kInitialPtxPassProcessOutputBytes = 1U << 20;
+constexpr size_t kMaxPtxPassProcessOutputBytes = 64U << 20;
+
+using file_ptr = std::unique_ptr<FILE, int (*)(FILE *)>;
+
+struct fd_guard {
+	int value;
+	~fd_guard()
+	{
+		if (value >= 0)
+			close(value);
+	}
+};
+
+static std::string read_file(FILE *file)
+{
+	rewind(file);
+	std::string output;
+	char buffer[4096];
+	while (size_t count = fread(buffer, 1, sizeof(buffer), file))
+		output.append(buffer, count);
+	return output;
+}
+
+// The runner is spawned by absolute path, and the build-tree path baked in at
+// compile time stops existing as soon as the build directory moves or the tree
+// is installed. A path named by the caller wins, then a runner next to the
+// executable, then the installed location, and the baked path last so an
+// in-tree build keeps working unchanged.
+std::filesystem::path pick_ptxpass_runner_path(const char *override_path,
+					       const std::filesystem::path &self,
+					       const std::filesystem::path &installed)
+{
+	if (override_path != nullptr && override_path[0] != '\0') {
+		return std::filesystem::path(override_path);
+	}
+	std::error_code ec;
+	if (!self.empty()) {
+		const std::filesystem::path sibling =
+			self.parent_path() / "bpftime_ptxpass_runner";
+		if (std::filesystem::exists(sibling, ec))
+			return sibling;
+	}
+	if (std::filesystem::exists(installed, ec))
+		return installed;
+	return std::filesystem::path(DEFAULT_PTX_PASS_RUNNER_EXECUTABLE);
+}
+
+static std::filesystem::path ptxpass_runner_path()
+{
+	std::error_code ec;
+	return pick_ptxpass_runner_path(
+		getenv("BPFTIME_PTXPASS_RUNNER"),
+		std::filesystem::read_symlink("/proc/self/exe", ec),
+		PTXPASS_RUNNER_INSTALLED_PATH);
+}
+// Same relocation story for the pass libraries: a baked build-tree path stops
+// existing once the tree moves, so fall back to the same basename inside the
+// installed directory, then next to the executable, before giving the baked
+// path to the runner (which reports the failure).
+std::filesystem::path
+resolve_ptxpass_library_path(const std::filesystem::path &baked,
+			     const std::filesystem::path &self,
+			     const std::filesystem::path &installed_dir)
+{
+	std::error_code ec;
+	if (std::filesystem::exists(baked, ec))
+		return baked;
+	const std::filesystem::path name = baked.filename();
+	if (!name.empty()) {
+		if (!installed_dir.empty()) {
+			const std::filesystem::path installed =
+				installed_dir / name;
+			if (std::filesystem::exists(installed, ec))
+				return installed;
+		}
+		if (!self.empty()) {
+			const std::filesystem::path sibling =
+				self.parent_path() / name;
+			if (std::filesystem::exists(sibling, ec))
+				return sibling;
+		}
+	}
+	return baked;
+}
 } // namespace
+
+// Exercised by the tests below; the picker itself stays internal.
+std::filesystem::path pick_ptxpass_runner_path_for_test(
+	const char *override_path, const std::filesystem::path &self,
+	const std::filesystem::path &installed)
+{
+	return pick_ptxpass_runner_path(override_path, self, installed);
+}
+
+std::filesystem::path resolve_ptxpass_library_path_for_test(
+	const std::filesystem::path &baked, const std::filesystem::path &self,
+	const std::filesystem::path &installed_dir)
+{
+	return resolve_ptxpass_library_path(baked, self, installed_dir);
+}
+
+std::optional<std::string>
+run_ptxpass_runner(const std::string &mode,
+		   const std::filesystem::path &pass_library,
+		   const std::string *stdin_payload, size_t output_bytes)
+{
+	const std::filesystem::path runner_path = ptxpass_runner_path();
+	file_ptr input(tmpfile(), fclose);
+	file_ptr result(tmpfile(), fclose);
+	file_ptr diagnostics(tmpfile(), fclose);
+	if (!input || !result || !diagnostics) {
+		SPDLOG_ERROR("Unable to create PTX pass runner files: {}",
+			     strerror(errno));
+		return std::nullopt;
+	}
+	if (stdin_payload != nullptr &&
+	    fwrite(stdin_payload->data(), 1, stdin_payload->size(),
+		   input.get()) != stdin_payload->size()) {
+		SPDLOG_ERROR("Unable to write PTX pass runner input: {}",
+			     strerror(errno));
+		return std::nullopt;
+	}
+	rewind(input.get());
+	fd_guard input_fd{ fcntl(fileno(input.get()), F_DUPFD_CLOEXEC, 4) };
+	fd_guard result_fd{ fcntl(fileno(result.get()), F_DUPFD_CLOEXEC, 4) };
+	fd_guard diagnostics_fd{ fcntl(fileno(diagnostics.get()),
+				       F_DUPFD_CLOEXEC, 4) };
+	if (input_fd.value < 0 || result_fd.value < 0 ||
+	    diagnostics_fd.value < 0) {
+		SPDLOG_ERROR("Unable to duplicate PTX pass runner fds: {}",
+			     strerror(errno));
+		return std::nullopt;
+	}
+
+	posix_spawn_file_actions_t file_actions;
+	int spawn_rc = posix_spawn_file_actions_init(&file_actions);
+	if (spawn_rc != 0) {
+		SPDLOG_ERROR(
+			"posix_spawn_file_actions_init failed for PTX pass runner: {}",
+			strerror(spawn_rc));
+		return std::nullopt;
+	}
+	struct file_actions_guard {
+		posix_spawn_file_actions_t *actions;
+		~file_actions_guard()
+		{
+			posix_spawn_file_actions_destroy(actions);
+		}
+	} file_actions_cleanup{ &file_actions };
+	const std::pair<int, int> redirects[] = {
+		{ input_fd.value, STDIN_FILENO },
+		{ diagnostics_fd.value, STDOUT_FILENO },
+		{ diagnostics_fd.value, STDERR_FILENO },
+		{ result_fd.value, 3 },
+	};
+	for (const auto &[source, target] : redirects) {
+		int rc = posix_spawn_file_actions_adddup2(&file_actions, source,
+							  target);
+		if (rc != 0) {
+			SPDLOG_ERROR(
+				"Unable to prepare PTX pass runner fd {}: {}",
+				target, strerror(rc));
+			return std::nullopt;
+		}
+	}
+
+	std::vector<std::string> arg_strs = { runner_path.string(), mode,
+					      pass_library.string(),
+					      std::to_string(output_bytes) };
+	std::vector<char *> argv;
+	argv.reserve(arg_strs.size() + 1);
+	for (auto &arg : arg_strs)
+		argv.push_back(arg.data());
+	argv.push_back(nullptr);
+
+	std::vector<std::string> env_strs;
+	for (char **p = ::environ; p && *p; ++p) {
+		if (strncmp(*p, "LD_PRELOAD=", 11) == 0 ||
+		    strncmp(*p, "LD_AUDIT=", 9) == 0)
+			continue;
+		env_strs.emplace_back(*p);
+	}
+	std::vector<char *> envp;
+	envp.reserve(env_strs.size() + 1);
+	for (auto &env : env_strs)
+		envp.push_back(env.data());
+	envp.push_back(nullptr);
+
+	pid_t child_pid = -1;
+	spawn_rc = posix_spawn(&child_pid, runner_path.c_str(), &file_actions,
+			       nullptr, argv.data(), envp.data());
+	if (spawn_rc != 0) {
+		SPDLOG_ERROR("Unable to spawn PTX pass runner {} for {}: {}",
+			     runner_path.c_str(), pass_library.c_str(),
+			     strerror(spawn_rc));
+		return std::nullopt;
+	}
+	int status = 0;
+	pid_t waited_pid = -1;
+	do {
+		waited_pid = waitpid(child_pid, &status, 0);
+	} while (waited_pid < 0 && errno == EINTR);
+	if (waited_pid < 0 && errno != ECHILD) {
+		SPDLOG_ERROR("waitpid failed for PTX pass runner {}: {}",
+			     runner_path.c_str(), strerror(errno));
+		return std::nullopt;
+	}
+	if (waited_pid >= 0 &&
+	    (!WIFEXITED(status) || WEXITSTATUS(status) != 0)) {
+		std::string reason;
+		if (WIFSIGNALED(status))
+			reason = "signal " + std::to_string(WTERMSIG(status));
+		else if (WIFEXITED(status))
+			reason = "exit code " +
+				 std::to_string(WEXITSTATUS(status));
+		else
+			reason = "wait status " + std::to_string(status);
+		SPDLOG_ERROR("PTX pass runner {} failed for {} with {}: {}",
+			     runner_path.c_str(), pass_library.c_str(), reason,
+			     read_file(diagnostics.get()));
+		return std::nullopt;
+	}
+	auto output = read_file(result.get());
+	if (waited_pid < 0 && output.empty()) {
+		SPDLOG_ERROR(
+			"PTX pass runner {} for {} produced no result after its status was reaped: {}",
+			runner_path.c_str(), pass_library.c_str(),
+			read_file(diagnostics.get()));
+		return std::nullopt;
+	}
+	return output;
+}
 
 nv_attach_hook_state &nv_attach_get_hook_state()
 {
@@ -503,51 +732,46 @@ nv_attach_impl::nv_attach_impl()
 		}
 	}
 	auto paths = split_by_colon(ptx_pass_libraries);
-	for (const auto &path : paths) {
-		SPDLOG_INFO("Found path: {}, executing..", path.c_str());
-		void *handle = dlmopen(LM_ID_NEWLM, path.c_str(),
-				       RTLD_NOW | RTLD_LOCAL);
-		if (!handle) {
-			SPDLOG_ERROR(
-				"Unable to load dynamic library of pass {}: {}",
-				path.c_str(), dlerror());
-			continue;
-		}
-		auto print_config =
-			(print_config_fn)dlsym(handle, "print_config");
-		if (!print_config) {
-			SPDLOG_ERROR("Symbol print_config not found in {}",
-				     path.c_str());
-			continue;
-		}
-		auto process_input =
-			(process_input_fn)dlsym(handle, "process_input");
-		if (!process_input) {
-			SPDLOG_ERROR("Symbol process_input not found in {}",
-				     path.c_str());
-			continue;
-		}
+	std::error_code ec;
+	const std::filesystem::path self_exec =
+		std::filesystem::read_symlink("/proc/self/exe", ec);
+	for (auto &path : paths) {
+		path = resolve_ptxpass_library_path(path, self_exec,
+						    PTXPASS_LIBS_INSTALLED_DIR);
+		SPDLOG_INFO("Found path: {}, loading config..", path.c_str());
 		ptxpass::pass_config::PassConfig config;
-		std::vector<char> buf(10 << 20);
-		print_config(buf.size(), buf.data());
+		auto output = run_ptxpass_runner("--config", path, nullptr,
+						 kPtxPassConfigOutputBytes);
+		if (!output)
+			continue;
 
-		auto json = nlohmann::json::parse(buf.data());
-		ptxpass::pass_config::from_json(json, config);
-		SPDLOG_INFO("Retrived config of {}", path.c_str());
-		SPDLOG_DEBUG("Config {}", json.dump(4));
-		this->pass_configurations.emplace_back(
-			std::make_unique<pass_cfg_with_exec_path>(
-				path, config, print_config, process_input,
-				handle));
+		try {
+			auto json = nlohmann::json::parse(*output);
+			ptxpass::pass_config::from_json(json, config);
+			SPDLOG_INFO("Retrieved config of {}", path.c_str());
+			SPDLOG_DEBUG("Config {}", json.dump(4));
+			this->pass_configurations.emplace_back(
+				std::make_unique<pass_cfg_with_exec_path>(
+					path, config));
+		} catch (const std::exception &e) {
+			SPDLOG_ERROR(
+				"Unable to parse PTX pass config from {}: {}",
+				path.c_str(), e.what());
+		}
 	}
 	{
 		const char *provided_compiler_lib =
 			getenv("BPFTIME_PTX_COMPILER_LIB");
-		const char *compiler_lib =
+		std::filesystem::path compiler_path =
 			(provided_compiler_lib &&
 			 strlen(provided_compiler_lib) > 0)
-				? provided_compiler_lib
-				: DEFAULT_PTX_COMPILER_SHARED_LIB;
+			? std::filesystem::path(provided_compiler_lib)
+			: std::filesystem::path(
+				  DEFAULT_PTX_COMPILER_SHARED_LIB);
+		compiler_path = resolve_ptxpass_library_path(
+			compiler_path, self_exec,
+			PTXPASS_LIBS_INSTALLED_DIR);
+		const std::string compiler_lib = compiler_path.string();
 		if (provided_compiler_lib &&
 		    strlen(provided_compiler_lib) > 0) {
 			SPDLOG_INFO(
@@ -555,7 +779,7 @@ nv_attach_impl::nv_attach_impl()
 				compiler_lib);
 		}
 		auto compiler = load_nv_attach_impl_ptx_compiler(
-			compiler_lib, this->ptx_compiler_dl_handle);
+			compiler_lib.c_str(), this->ptx_compiler_dl_handle);
 		if (!compiler)
 			throw std::runtime_error("Unable to load PTX compiler");
 		this->ptx_compiler = *compiler;
@@ -974,48 +1198,27 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 							sha256_string);
 						bool parsed = false;
 						std::string last_parse_error;
-						constexpr size_t kMinBufBytes =
-							1U << 20; // 1 MiB
-						constexpr size_t kMaxBufBytes =
-							64U << 20; // 64 MiB
-						for (size_t buf_bytes =
-							     kMinBufBytes;
-						     buf_bytes <= kMaxBufBytes;
-						     buf_bytes <<= 1) {
+						for (size_t output_bytes =
+							     kInitialPtxPassProcessOutputBytes;
+						     output_bytes <=
+						     kMaxPtxPassProcessOutputBytes;
+						     output_bytes <<= 1) {
+							auto output = run_ptxpass_runner(
+								"--process",
+								hook_entry
+									.config
+									->executable_path,
+								&input_json,
+								output_bytes);
+							if (!output) {
+								SPDLOG_ERROR(
+									"PTX pass runner failed while patching kernel {}",
+									kernel);
+								return;
+							}
 							try {
-								std::vector<char> buf(
-									buf_bytes);
-								buf.back() =
-									'\0';
-								const int len =
-									(buf_bytes >
-									 (size_t)std::numeric_limits<
-										 int>::
-										 max()) ?
-										std::numeric_limits<
-											int>::
-											max() :
-										(int)buf_bytes;
-								int err =
-									hook_entry
-										.config
-										->process_input(
-											input_json
-												.c_str(),
-											len,
-											buf.data());
-								if (err !=
-								    ptxpass::ExitCode::
-									    Success) {
-									SPDLOG_ERROR(
-										"Unable to run pass on kernel {}: {}",
-										kernel,
-										(int)err);
-									return;
-								}
-
 								auto json = nlohmann::json::parse(
-									buf.data(),
+									*output,
 									nullptr,
 									/*allow_exceptions=*/
 									true,
@@ -1033,13 +1236,21 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 								last_parse_error =
 									e.what();
 							}
+							if (output->size() + 1 <
+								    output_bytes ||
+							    output_bytes ==
+								    kMaxPtxPassProcessOutputBytes)
+								break;
+							SPDLOG_WARN(
+								"PTX pass output for kernel {} may be truncated; retrying with {} bytes",
+								kernel,
+								output_bytes *
+									2);
 						}
 						if (!parsed) {
 							SPDLOG_ERROR(
-								"Unable to parse PTX pass output for kernel {} (max {} MiB), last error: {}",
+								"Unable to parse PTX pass output for kernel {}, last error: {}",
 								kernel,
-								(kMaxBufBytes >>
-								 20),
 								last_parse_error);
 							return;
 						}
