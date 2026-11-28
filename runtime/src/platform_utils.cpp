@@ -75,6 +75,11 @@ int bpftime_get_current_cpu()
 	return cpu;
 }
 
+int bpftime_get_perf_output_cpu()
+{
+	return current_bpf_cpu >= 0 ? current_bpf_cpu : bpftime_get_current_cpu();
+}
+
 int bpftime_possible_cpus()
 {
 	return (int)std::clamp(sysconf(_SC_NPROCESSORS_CONF), 1L,

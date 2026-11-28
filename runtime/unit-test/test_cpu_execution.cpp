@@ -421,17 +421,25 @@ TEST_CASE("vCPU slot recovers after holder process dies mid-BPF execution",
 	for (int s : leased)
 		shm.release_vcpu(s);
 
-	// A thread whose own slot is taken runs on an extra slot, and its
-	// bpf_get_smp_processor_id() still reports the CPU it runs on.
 	cpu_set_t saved, one;
 	REQUIRE(sched_getaffinity(0, sizeof(saved), &saved) == 0);
 	const int cpu = sched_getcpu();
 	CPU_ZERO(&one);
 	CPU_SET(cpu, &one);
 	REQUIRE(sched_setaffinity(0, sizeof(one), &one) == 0);
+	// On its own slot, the CPU id a program sees is its real CPU, for perf
+	// output as well, even before anything leases a slot.
+	REQUIRE(bpftime_enter_bpf_exec());
+	REQUIRE(bpftime_get_perf_output_cpu() == cpu);
+	REQUIRE(my_sched_getcpu() == cpu);
+	bpftime_leave_bpf_exec();
+	// With its own slot taken it runs on an extra slot, and every CPU id it
+	// sees (per-CPU maps, bpf_get_smp_processor_id, perf output) is that slot.
 	REQUIRE(shm.try_lease_vcpu(cpu) == cpu);
 	REQUIRE(bpftime_enter_bpf_exec());
-	REQUIRE(my_sched_getcpu() >= real);
+	const int vcpu = my_sched_getcpu();
+	REQUIRE(vcpu >= real);
+	REQUIRE(bpftime_get_perf_output_cpu() == vcpu);
 	REQUIRE(bpftime_get_current_cpu() == cpu);
 	bpftime_leave_bpf_exec();
 	shm.release_vcpu(cpu);
