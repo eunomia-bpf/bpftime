@@ -1398,6 +1398,7 @@ int64_t bpftime_get_stackid(uint64_t ctx_raw, uint64_t map_raw, uint64_t flags,
 	}
 	SPDLOG_DEBUG("After skipping, collected {} frames", frame_count);
 	int real_map_fd = (int)map_raw;
+	shm_write_window_guard shm_window;
 	auto &map_handler = std::get<bpf_map_handler>(
 		shm_holder.global_shared_memory.get_handler(real_map_fd));
 
