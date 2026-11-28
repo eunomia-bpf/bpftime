@@ -208,6 +208,7 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 					     bool from_syscall) const
 {
 	shm_write_window_guard shm_window;
+	struct E { int s; bool r; ~E() { if (r) errno = s; } } e{ errno, !from_syscall };
 	return visit_map_impl(
 		type, [&]() BPFTIME_ALWAYS_INLINE { return map_impl_ptr.get(); },
 		[&](auto *impl) -> const void * {

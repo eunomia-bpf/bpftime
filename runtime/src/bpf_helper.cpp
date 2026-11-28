@@ -828,6 +828,25 @@ uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
 // keep the -1 + errno contract. A backend that already returns a specific
 // kernel errno (for example -ENOTSUP from an unsupported operation) passes
 // through unchanged.
+namespace
+{
+// A BPF map helper runs inside an intercepted host function, so the errno a
+// map backend sets to report its own failure (ENOENT on a miss, E2BIG on a
+// full queue) is not the host's to keep: it becomes the helper's negative
+// return value, and the host thread must see whatever it had before.
+class host_errno_guard {
+	int saved = errno;
+    public:
+	host_errno_guard() = default;
+	~host_errno_guard()
+	{
+		errno = saved;
+	}
+	host_errno_guard(const host_errno_guard &) = delete;
+	host_errno_guard &operator=(const host_errno_guard &) = delete;
+};
+} // namespace
+
 static uint64_t kernel_map_helper_result(long result)
 {
 	if (result >= 0)
@@ -840,6 +859,7 @@ static uint64_t kernel_map_helper_result(long result)
 uint64_t bpftime_map_lookup_elem_helper(uint64_t map, uint64_t key, uint64_t,
 					uint64_t, uint64_t)
 {
+	host_errno_guard preserve_host_errno;
 	return (uint64_t)bpftime::shm_holder.global_shared_memory
 		.bpf_map_lookup_elem((int)map, (void *)key, false);
 }
@@ -848,6 +868,7 @@ uint64_t bpftime_map_update_elem_helper(uint64_t map, uint64_t key,
 					uint64_t value, uint64_t flags,
 					uint64_t)
 {
+	host_errno_guard preserve_host_errno;
 	return kernel_map_helper_result(
 		bpftime::shm_holder.global_shared_memory.bpf_map_update_elem(
 			(int)map, (void *)key, (void *)value, flags, false));
@@ -856,6 +877,7 @@ uint64_t bpftime_map_update_elem_helper(uint64_t map, uint64_t key,
 uint64_t bpftime_map_delete_elem_helper(uint64_t map, uint64_t key, uint64_t,
 					uint64_t, uint64_t)
 {
+	host_errno_guard preserve_host_errno;
 	return kernel_map_helper_result(
 		bpftime::shm_holder.global_shared_memory.bpf_delete_elem(
 			(int)map, (void *)key, false));
@@ -864,6 +886,7 @@ uint64_t bpftime_map_delete_elem_helper(uint64_t map, uint64_t key, uint64_t,
 uint64_t bpftime_map_push_elem_helper(uint64_t map, uint64_t value,
 				      uint64_t flags, uint64_t, uint64_t)
 {
+	host_errno_guard preserve_host_errno;
 	return kernel_map_helper_result(
 		bpftime::shm_holder.global_shared_memory.bpf_map_push_elem(
 			(int)map, (void *)value, flags, false));
@@ -872,6 +895,7 @@ uint64_t bpftime_map_push_elem_helper(uint64_t map, uint64_t value,
 uint64_t bpftime_map_pop_elem_helper(uint64_t map, uint64_t value, uint64_t,
 				     uint64_t, uint64_t)
 {
+	host_errno_guard preserve_host_errno;
 	return kernel_map_helper_result(
 		bpftime::shm_holder.global_shared_memory.bpf_map_pop_elem(
 			(int)map, (void *)value, false));
@@ -880,6 +904,7 @@ uint64_t bpftime_map_pop_elem_helper(uint64_t map, uint64_t value, uint64_t,
 uint64_t bpftime_map_peek_elem_helper(uint64_t map, uint64_t value, uint64_t,
 				      uint64_t, uint64_t)
 {
+	host_errno_guard preserve_host_errno;
 	return kernel_map_helper_result(
 		bpftime::shm_holder.global_shared_memory.bpf_map_peek_elem(
 			(int)map, (void *)value, false));
