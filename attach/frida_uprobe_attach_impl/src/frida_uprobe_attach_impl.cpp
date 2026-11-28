@@ -368,27 +368,27 @@ bool frida_attach_impl::is_module_mapped(const char *module_name) const
 #else
 	if (!module_name || module_name[0] == '\0')
 		return true;
+	// Compare basenames only. `dlpi_name` is the path the loader opened
+	// (for example /lib/x86_64-linux-gnu/libc.so.6 from ld.so.cache on a
+	// merged-/usr system), while a tool may register the /proc/<pid>/maps
+	// or realpath form (/usr/lib/...). A full-path comparison would call
+	// such a library unmapped and its link would never attach; this check
+	// is a prefilter, so erring towards "mapped" only costs one attempt.
+	const char *want = std::strrchr(module_name, '/');
+	want = want ? want + 1 : module_name;
 	struct search_ctx {
-		const char *target;
-		bool has_slash;
+		const char *want;
 		bool found;
-	} ctx{ module_name, std::strchr(module_name, '/') != nullptr, false };
+	} ctx{ want, false };
 	dl_iterate_phdr(
 		[](struct dl_phdr_info *info, size_t, void *data) -> int {
 			auto *s = static_cast<search_ctx *>(data);
 			const char *name = info->dlpi_name;
 			if (!name || name[0] == '\0')
 				return 0;
-			if (s->has_slash) {
-				if (std::strcmp(name, s->target) == 0) {
-					s->found = true;
-					return 1;
-				}
-				return 0;
-			}
 			const char *base = std::strrchr(name, '/');
 			base = base ? base + 1 : name;
-			if (std::strcmp(base, s->target) == 0) {
+			if (std::strcmp(base, s->want) == 0) {
 				s->found = true;
 				return 1;
 			}
