@@ -2,6 +2,19 @@
 
 Newest first. Read before starting a change. A pull request that reverses an entry is a design problem until a maintainer decides again. Every entry quotes the maintainer verbatim; changing a decision means adding a new entry.
 
+- **2026-11-27: uprobes in libraries loaded later attach from the loader's `r_brk` notification; the agent no longer exports `dlopen()`**. This supersedes the exported `dlopen()` of the #970 and #1018 entries below; their attach rules stay.
+  - **Problem.** Since #970 the agent's `dlopen()` called the real one itself, so glibc took the agent as the caller. A bare name was searched in the agent's run path instead of the caller's `RUNPATH`/`$ORIGIN`, so a CUDA injection library could no longer load its CUPTI build.
+  - **Notification.** glibc calls `_dl_debug_state()`, the function `_r_debug.r_brk` names for debuggers, each time the list of loaded objects changes. Once the agent is ready, it puts a branch at that function's entry, after its landing pad, to a trampoline next to the loader. The trampoline jumps to the agent's notification, which returns to the loader.
+  - **Patch site.** The function has an empty body: an optional landing pad, at most a frame pointer pushed and popped, then `ret`. On x86-64 a lone `ret` takes the alignment padding after it for the branch; on aarch64 pointer authentication and `nop` are also accepted.
+  - **Attach.** At `RT_CONSISTENT` the notification runs `attach_uninstantiated_handlers()` with the same guards as before: the initialized PID, outermost, `try_to_lock`. It keeps `errno` unchanged.
+  - **What changes for callers.** `dlopen()` is glibc's own again. `dlmopen()` and glibc's internal loads also notify, and a Frida-injected agent gets the notification too.
+  - **Unsupported cases.** On other architectures, or when the bytes differ (a debugger's breakpoint, for example), the agent logs it once, and uprobes in libraries loaded later attach at the next attach.
+  > 我们出现这个的根本原因就是包装 dlopen? 以后这样危险的操作是不是要注意?
+  >
+  > 我们当时为啥要折腾 dlopen?
+  >
+  > _dl_debug_state 通知可以两边都避开 试试
+
 - **2026-11-27: `HASH_OF_MAPS` stores its inner map ids in `bpftime_hash_map`** (supersedes `HASH_OF_MAPS` in the L2 `bpf_map_handler::map_lock` line of the lock inventory below). `hash_map_of_maps_impl` moves from `var_size_hash_map_impl` (a Boost `unordered_map` under `map_lock`) to the preallocated `bpftime_hash_map` that `HASH` uses, and sets `should_lock = false`: helper lookups take no lock, and the syscall-only updates and deletes take the recover-and-continue write stripes (#1020). The syscall lookup of both map-in-map types no longer takes `map_lock` either: array slots are never freed, and the hash variant copies the 4-byte inner id while `bpftime_hash_map::find_slot` still checks the slot generation, so a concurrent delete and slot reuse restarts the walk instead of returning another key's id. `bpftime_hash_map` writes and reads an aligned 4-byte value with one access, so a lock-free lookup never reads a half-written inner id.
   > HASH_OF_MAPS 建在 var_hash_map 上 value 只是 4 字节的 map id，改建在 bpftime_hash_map 上 小 这个先改动
   >
