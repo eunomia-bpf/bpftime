@@ -231,6 +231,63 @@ static int check_map_held_by_prog(void)
 	return 0;
 }
 
+/* The batch calls cilium/ebpf relies on: BPF_MAP_UPDATE_BATCH (also its
+ * probe for batch support) and BPF_MAP_LOOKUP_AND_DELETE_BATCH draining a hash
+ * map in two rounds. count reports the processed elements, and the round that
+ * runs out of elements fails with ENOENT. */
+static int check_batch(void)
+{
+	int fd = map_create(BPF_MAP_TYPE_HASH, sizeof(unsigned int),
+			    sizeof(unsigned long long), 8, 0);
+	if (fd < 0) {
+		printf("create_ok=0 create_errno=%d\n", errno);
+		return 0;
+	}
+	unsigned int keys[4] = { 1, 2, 3, 4 };
+	unsigned long long values[4] = { 10, 20, 30, 40 };
+	union bpf_attr attr;
+	memset(&attr, 0, sizeof(attr));
+	attr.batch.map_fd = fd;
+	attr.batch.keys = (unsigned long long)(unsigned long)keys;
+	attr.batch.values = (unsigned long long)(unsigned long)values;
+	attr.batch.count = 4;
+	/* cilium/ebpf callers put BPF_NOEXIST here (BatchOptions.Flags); the
+	 * kernel's update batch leaves batch.flags unchecked. */
+	attr.batch.flags = BPF_NOEXIST;
+	errno = 0;
+	int ret = bpf_call(BPF_MAP_UPDATE_BATCH, &attr);
+	printf("update_ret=%d\n", ret);
+	printf("update_count=%u\n", attr.batch.count);
+
+	unsigned int out_keys[8];
+	unsigned long long out_values[8];
+	unsigned int drained = 0, pairs_ok = 1;
+	for (int round = 0; round < 2; round++) {
+		memset(&attr, 0, sizeof(attr));
+		attr.batch.map_fd = fd;
+		attr.batch.keys =
+			(unsigned long long)(unsigned long)(out_keys + drained);
+		attr.batch.values =
+			(unsigned long long)(unsigned long)(out_values + drained);
+		attr.batch.count = round == 0 ? 3 : 8;
+		errno = 0;
+		ret = bpf_call(BPF_MAP_LOOKUP_AND_DELETE_BATCH, &attr);
+		printf("drain%d_ret=%d\n", round, ret);
+		printf("drain%d_errno=%d\n", round, ret == 0 ? 0 : errno);
+		printf("drain%d_count=%u\n", round, attr.batch.count);
+		drained += attr.batch.count;
+	}
+	for (unsigned int i = 0; i < drained; i++)
+		pairs_ok &= out_values[i] == out_keys[i] * 10ULL;
+	printf("pairs_ok=%u\n", pairs_ok);
+	unsigned long long left = 0;
+	errno = 0;
+	ret = map_lookup(fd, &keys[0], &left);
+	printf("after_ret=%d\n", ret);
+	printf("after_errno=%d\n", errno);
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	if (argc != 2) {
@@ -250,6 +307,9 @@ int main(int argc, char **argv)
 	}
 	if (strcmp(argv[1], "map-held-by-prog") == 0) {
 		return check_map_held_by_prog();
+	}
+	if (strcmp(argv[1], "batch") == 0) {
+		return check_batch();
 	}
 	return 64;
 }

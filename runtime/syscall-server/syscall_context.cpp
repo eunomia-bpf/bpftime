@@ -996,6 +996,75 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 			attr->map_fd, (const void *)(uintptr_t)attr->key,
 			(void *)(uintptr_t)attr->value);
 	}
+	case BPF_MAP_UPDATE_BATCH:
+	case BPF_MAP_LOOKUP_AND_DELETE_BATCH: {
+		if (run_with_kernel) {
+			return orig_syscall_fn(__NR_bpf, (long)cmd,
+					       (long)(uintptr_t)attr,
+					       (long)size);
+		}
+		// The kernel's contract: batch.count reports how many elements
+		// were processed, an update batch stops at the first failing
+		// element, and a drain that runs out of elements before count
+		// fails with ENOENT. A drain starts from the first key still
+		// present, since every key it took is deleted: the position
+		// lives in the map itself and in_batch/out_batch stay unused.
+		auto &batch = attr->batch;
+		bpftime::bpf_map_attr map_attr{};
+		if (bpftime_map_get_info(batch.map_fd, &map_attr, nullptr,
+					 nullptr) < 0)
+			return -1;
+		const size_t key_size = map_attr.key_size;
+		const size_t value_size =
+			bpftime_map_value_size_from_syscall(batch.map_fd);
+		auto *keys = (char *)(uintptr_t)batch.keys;
+		auto *values = (char *)(uintptr_t)batch.values;
+		const uint32_t want = batch.count;
+		uint32_t done = 0;
+		if (cmd == BPF_MAP_UPDATE_BATCH) {
+			for (; done < want; done++) {
+				if (handle_map_update(batch.map_fd,
+						      keys + done * key_size,
+						      values + done * value_size,
+						      batch.elem_flags) < 0)
+					break;
+			}
+			batch.count = done;
+			return done == want ? 0 : -1;
+		}
+		// The kernel's hash drain rejects batch.flags; its generic
+		// update batch above leaves it unchecked.
+		if (batch.flags != 0) {
+			errno = EINVAL;
+			return -1;
+		}
+		// Walk up to count keys into the caller's buffer, then take
+		// each value out; a key removed in between is skipped.
+		uint32_t walked = 0;
+		const char *prev = nullptr;
+		for (; walked < want; walked++) {
+			char *key = keys + walked * key_size;
+			if (bpftime_map_get_next_key(batch.map_fd, prev, key) != 0)
+				break;
+			prev = key;
+		}
+		for (uint32_t i = 0; i < walked; i++) {
+			char *key = keys + i * key_size;
+			if (bpftime_map_lookup_and_delete_elem(
+				    batch.map_fd, key,
+				    values + done * value_size) != 0)
+				continue;
+			if (i != done)
+				memcpy(keys + done * key_size, key, key_size);
+			done++;
+		}
+		batch.count = done;
+		if (walked < want) {
+			errno = ENOENT;
+			return -1;
+		}
+		return 0;
+	}
 	case BPF_MAP_GET_NEXT_KEY: {
 		SPDLOG_DEBUG("Getting next key for map {}, key={:x}",
 			     attr->map_fd, (uintptr_t)attr->key);

@@ -213,4 +213,27 @@ TEST_CASE("a map stays reserved while a loaded program references it",
 	// Closing the last referencing program releases the map.
 	REQUIRE(field(result.fields, "reused_after_prog_close") == 1);
 }
+TEST_CASE("intercepted map batch update and lookup-and-delete",
+	  "[map_syscall]")
+{
+	const std::string shm_name = shm_name_for("batch");
+	remove(("/dev/shm/" + shm_name).c_str());
+	auto result = run_map_helper("batch", shm_name.c_str());
+	remove(("/dev/shm/" + shm_name).c_str());
+
+	REQUIRE(result.status == 0);
+	REQUIRE(field(result.fields, "update_ret") == 0);
+	REQUIRE(field(result.fields, "update_count") == 4);
+	// The first round fills its count of 3.
+	REQUIRE(field(result.fields, "drain0_ret") == 0);
+	REQUIRE(field(result.fields, "drain0_count") == 3);
+	// The second round runs out after the last element: ENOENT, count 1.
+	REQUIRE(field(result.fields, "drain1_ret") == -1);
+	REQUIRE(field(result.fields, "drain1_errno") == ENOENT);
+	REQUIRE(field(result.fields, "drain1_count") == 1);
+	REQUIRE(field(result.fields, "pairs_ok") == 1);
+	REQUIRE(field(result.fields, "after_ret") == -1);
+	REQUIRE(field(result.fields, "after_errno") == ENOENT);
+}
+
 #endif
