@@ -238,20 +238,17 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 							return impl->elem_lookup(
 								key);
 						});
-				// Syscall path locks unconditionally (ignoring
-				// should_lock) and copies the 4-byte inner fd
-				// to thread-local storage while map_lock is
-				// held, so the caller's memcpy cannot touch a
-				// concurrently freed hash node.
-				robust_shm_lock_guard guard(map_lock,
-							    name.c_str());
-				if (!guard.owns_lock())
-					return nullptr;
+				// Syscall path copies the 4-byte inner fd to
+				// thread-local storage without map_lock: array
+				// slots are never freed, and the hash variant
+				// returns an id copied under its slot
+				// generation check.
 				const int *stored = static_cast<const int *>(
 					impl->elem_lookup_userspace(key));
 				if (stored == nullptr)
 					return nullptr;
-				tl_map_in_map_fd_snapshot = *stored;
+				tl_map_in_map_fd_snapshot =
+					__atomic_load_n(stored, __ATOMIC_RELAXED);
 				return &tl_map_in_map_fd_snapshot;
 			}
 			return with_robust_shm_lock(

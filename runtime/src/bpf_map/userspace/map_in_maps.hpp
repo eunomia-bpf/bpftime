@@ -8,7 +8,8 @@
 
 #include <bpf_map/map_common_def.hpp>
 #include "array_map.hpp"
-#include "var_hash_map.hpp"
+#include <bpf_map/bpftime_hash_map.hpp>
+#include <cerrno>
 
 namespace bpftime
 {
@@ -48,34 +49,52 @@ class array_map_of_maps_impl : public array_map_impl {
 	}
 };
 
-class hash_map_of_maps_impl : public var_size_hash_map_impl {
+// Values are 4-byte inner map ids, so HASH_OF_MAPS uses the preallocated
+// bpftime_hash_map like HASH: lock-free lookups and recover-and-continue write
+// stripes, with no Boost node allocation and no map_lock.
+class hash_map_of_maps_impl {
+	bpftime_hash_map map_impl;
+
     public:
+	static constexpr bool should_lock = false;
 	hash_map_of_maps_impl(
 		boost::interprocess::managed_shared_memory &memory,
-		uint32_t key_size, uint32_t max_entries, uint32_t flags)
-		: var_size_hash_map_impl(memory, key_size, sizeof(int),
-				 max_entries, flags)
+		uint32_t key_size, uint32_t max_entries, uint32_t /*flags*/)
+		: map_impl(memory, max_entries, key_size, sizeof(int))
 	{
 	}
 
 	void *elem_lookup(const void *key)
 	{
-		auto value = var_size_hash_map_impl::elem_lookup(key);
-		if (value == nullptr)
-			return nullptr;
-		int map_id = *(int *)value;
+		int map_id = 0;
+		if (!map_impl.elem_lookup_copy(key, &map_id))
+			return errno = ENOENT, nullptr;
 		return (void *)((u_int64_t)map_id);
 	}
-	// See array_map_of_maps_impl::elem_lookup_userspace: return the stored
-	// 4-byte inner fd address for the syscall memcpy path instead of the
-	// pointer-sized helper handle.
+	// Slots are recycled after a delete, so copy the id while the slot
+	// generation is still checked instead of returning the slot address.
 	void *elem_lookup_userspace(const void *key)
 	{
-		auto *stored = static_cast<int *>(
-			var_size_hash_map_impl::elem_lookup(key));
-		if (stored == nullptr || *stored == 0)
+		static thread_local int snapshot;
+		if (!map_impl.elem_lookup_copy(key, &snapshot) || snapshot == 0)
 			return nullptr;
-		return stored;
+		return &snapshot;
+	}
+	// Only the syscall path writes: the handler rejects helper updates and
+	// deletes of map-in-map types.
+	long elem_update(const void *key, const void *value, uint64_t flags)
+	{
+		if (flags > 2 /* BPF_EXIST */)
+			return errno = EINVAL, -1;
+		return map_impl.upsert(key, value, flags, true, 0, sizeof(int));
+	}
+	long elem_delete(const void *key)
+	{
+		return map_impl.erase(key, nullptr, true);
+	}
+	int map_get_next_key(const void *key, void *next_key)
+	{
+		return map_impl.map_get_next_key(key, next_key);
 	}
 };
 
