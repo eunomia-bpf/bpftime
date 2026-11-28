@@ -165,6 +165,7 @@ using alive_syscall_server_pid_set = atomic_pid_set<64>;
 
 // global bpftime share memory
 class bpftime_shm {
+	friend class shm_json_import;
 	std::optional<std::function<void(bool)>> mock_setter;
 
 	bpftime::shm_open_type open_type;

@@ -28,16 +28,23 @@ static inline std::string buffer_to_hex_string(const unsigned char *buffer,
 static inline int hex_string_to_buffer(const std::string &hexString,
 				     unsigned char *buffer, size_t bufferSize)
 {
-	if (hexString.length() != bufferSize * 2) {
+	if (hexString.size() % 2 || hexString.size() / 2 != bufferSize ||
+	    (bufferSize && buffer == nullptr))
 		return -1;
-	}
-
-	for (size_t i = 0; i < bufferSize; i++) {
-		std::string byteString = hexString.substr(i * 2, 2);
+	auto digit = [](char c) -> int {
+		if (c >= '0' && c <= '9') return c - '0';
+		if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+		if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+		return -1;
+	};
+	// Validate first, so invalid input never partially changes the buffer.
+	for (char c : hexString)
+		if (digit(c) < 0) return -1;
+	for (size_t i = 0; i < bufferSize; ++i)
 		buffer[i] = static_cast<unsigned char>(
-			std::stoi(byteString, nullptr, 16));
-	}
-    return 0;
+			(digit(hexString[2 * i]) << 4) |
+			digit(hexString[2 * i + 1]));
+	return 0;
 }
 
 int bpftime_export_shm_to_json(const bpftime_shm& shm, const char *filename);

@@ -198,8 +198,7 @@ int main(int argc, char *argv[])
 	} else if (args.program.is_subcommand_used(args.import_cmd)) {
 		bpftime_initialize_global_shm(
 			shm_open_type::SHM_CREATE_OR_OPEN);
-		auto runtime_config = bpftime::construct_runtime_config_from_env();
-		bpftime_set_runtime_config(std::move(runtime_config));
+		// Opening an existing segment must not replace its runtime config.
 		auto filename = args.import_cmd.get<std::string>("filename");
 		return bpftime_import_global_shm_from_json(filename.c_str());
 	} else if (args.program.is_subcommand_used(args.remove)) {

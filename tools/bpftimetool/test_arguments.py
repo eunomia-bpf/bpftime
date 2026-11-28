@@ -45,8 +45,15 @@ def main():
                 assert result.returncode == 0 and "Usage:" in result.stdout, result.stdout
                 assert not shm_path.exists(), shm_path
 
-            result = run(cli, env, "load", "0", json.dumps(MAP))
+            # JSON import reserves 0–2 for standard streams. Use an ordinary
+            # slot for the valid load and keep it intact on reserved-id failure.
+            fixture_fd = "7"
+            definition = json.dumps(MAP)
+            result = run(cli, env, "load", fixture_fd, definition)
             assert result.returncode == 0, result.stdout
+            for reserved_fd in ("0", "1", "2"):
+                result = run(cli, env, "load", reserved_fd, definition)
+                assert result.returncode > 0, result.stdout
             # Extra arguments must not turn a rejected remove into a deletion.
             result = run(cli, env, "remove", "extra")
             assert result.returncode == 1 and shm_path.exists(), result.stdout
@@ -55,10 +62,14 @@ def main():
             exported = directory / "state.json"
             result = run(cli, env, "export", str(exported))
             assert result.returncode == 0, result.stdout
-            assert json.loads(exported.read_text())["0"]["name"] == MAP["name"]
+            state = json.loads(exported.read_text())
+            assert set(state) == {fixture_fd}, state
+            assert state[fixture_fd]["name"] == MAP["name"]
             result = run(cli, env, "export", "./--help", cwd=directory)
             assert result.returncode == 0, result.stdout
-            assert json.loads((directory / "--help").read_text())["0"]["name"] == MAP["name"]
+            state = json.loads((directory / "--help").read_text())
+            assert set(state) == {fixture_fd}, state
+            assert state[fixture_fd]["name"] == MAP["name"]
         finally:
             result = run(cli, env, "remove")
             assert result.returncode == 0 and not shm_path.exists(), result.stdout

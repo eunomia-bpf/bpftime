@@ -243,7 +243,10 @@ long bpftime_get_current_task_tpbase_offset() noexcept;
 int bpftime_protect_open_write_window();
 void bpftime_protect_restore(int saved);
 
-// import the global shared memory from json file
+// JSON import/load restore definitions, not map values or live queue state.
+// The caller must quiesce the registry (no concurrent readers or writers).
+// Occupied descriptors are rejected. On an operation error, the preexisting
+// registry is unchanged; this is not crash recovery. Returns 0 or -1 (errno).
 int bpftime_import_global_shm_from_json(const char *filename);
 // export the global shared memory to json file
 int bpftime_export_global_shm_to_json(const char *filename);
