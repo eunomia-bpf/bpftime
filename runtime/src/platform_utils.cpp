@@ -2,6 +2,7 @@
 #include "bpftime_shm_internal.hpp"
 #include "spdlog/spdlog.h"
 #include <algorithm>
+#include <atomic>
 #include <cerrno>
 #include <cmath>
 #include <cstdlib>
@@ -46,23 +47,23 @@ int my_sched_getcpu()
 	if (current_bpf_cpu != BPF_CPU_LAZY_UNSET)
 		return cpu;
 	auto &shm = bpftime::shm_holder.global_shared_memory;
-	if (shm.has_vcpu_locks()) {
-		int vcpu = shm.try_lease_vcpu(cpu);
-		if (vcpu >= 0) {
-			current_bpf_cpu = vcpu;
-			current_bpf_vcpu_leased = true;
-			return vcpu;
-		}
-		current_bpf_cpu = BPF_CPU_LEASE_EXHAUSTED;
-		return -1;
+	// No vCPU slots (no global shm, or one from an older version): per-CPU
+	// maps have one column per real CPU.
+	if (!shm.has_vcpu_locks()) {
+		if (cpu >= 0)
+			current_bpf_cpu = cpu;
+		return cpu;
 	}
-	if (shm.get_open_type() != bpftime::shm_open_type::SHM_NO_CREATE) {
-		current_bpf_cpu = BPF_CPU_LEASE_EXHAUSTED;
+	// A nested exec on this thread (a signal) sees no slot until the lease
+	// is stored, so it never takes a second one.
+	current_bpf_cpu = BPF_CPU_LEASE_EXHAUSTED;
+	std::atomic_signal_fence(std::memory_order_seq_cst);
+	int vcpu = shm.try_lease_vcpu(cpu);
+	if (vcpu < 0)
 		return -1;
-	}
-	if (cpu >= 0)
-		current_bpf_cpu = cpu;
-	return cpu;
+	current_bpf_vcpu_leased = true;
+	current_bpf_cpu = vcpu;
+	return vcpu;
 }
 
 int bpftime_get_current_cpu()

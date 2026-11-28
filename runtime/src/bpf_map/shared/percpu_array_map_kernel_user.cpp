@@ -4,6 +4,7 @@
  * All rights reserved.
  */
 #include "bpf/bpf.h"
+#include "bpf/libbpf.h"
 #include "spdlog/spdlog.h"
 #include <bpf_map/shared/percpu_array_map_kernel_user.hpp>
 #include <linux/bpf.h>
@@ -68,7 +69,10 @@ percpu_array_map_kernel_user_impl::percpu_array_map_kernel_user_impl(
 	: kernel_map_id(kernel_map_id),
 	  value_data(1, memory.get_segment_manager())
 {
-	ncpu = bpftime_possible_cpus();
+	// The kernel writes a value for every possible CPU, which libbpf reads
+	// from /sys/devices/system/cpu/possible; sysconf may count fewer.
+	const int n = libbpf_num_possible_cpus();
+	ncpu = n > 0 ? n : bpftime_possible_cpus();
 }
 percpu_array_map_kernel_user_impl::~percpu_array_map_kernel_user_impl()
 {

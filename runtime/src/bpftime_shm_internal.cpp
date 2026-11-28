@@ -905,6 +905,12 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		vcpu_locks = seg_mgr->find_no_lock<bpftime_vcpu_locks>(
 					    "bpftime_vcpu_locks")
 				     .first;
+		if (vcpu_locks == nullptr) {
+			SPDLOG_WARN(
+				"vCPU slots missing from shared memory; the segment "
+				"likely uses an older layout, so BPF programs see "
+				"the real CPU");
+		}
 		SPDLOG_DEBUG("done: bpftime_shm for client setup");
 	} else if (type == shm_open_type::SHM_CREATE_OR_OPEN ||
 		   type == shm_open_type::SHM_CREATE_ONLY) {
@@ -1343,6 +1349,8 @@ bool bpftime_shm::register_cuda_host_memory()
 #endif
 bpftime::bpftime_shm::~bpftime_shm()
 {
+	// The segment goes away with this object; leases must not touch it.
+	vcpu_locks = nullptr;
 	if (open_type == shm_open_type::SHM_NO_CREATE) {
 		return; // Nothing to do
 	}

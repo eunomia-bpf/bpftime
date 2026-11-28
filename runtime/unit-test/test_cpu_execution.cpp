@@ -217,6 +217,31 @@ TEST_CASE("Map-free local programs run without shared memory",
 	REQUIRE(result == 42);
 }
 
+TEST_CASE("Without vCPU slots BPF programs see the real CPU",
+	  "[percpu][execution]")
+{
+	// A destroyed segment leaves no slots behind, like a process that never
+	// created one or a segment from an older version.
+	const std::string shm_name =
+		"bpftime_no_vcpu_test_" + std::to_string(getpid());
+	REQUIRE(setenv("BPFTIME_GLOBAL_SHM_NAME", shm_name.c_str(), 1) == 0);
+	boost::interprocess::shared_memory_object::remove(shm_name.c_str());
+	bpftime_initialize_global_shm(shm_open_type::SHM_CREATE_ONLY);
+	REQUIRE(shm_holder.global_shared_memory.has_vcpu_locks());
+	bpftime_destroy_global_shm();
+	boost::interprocess::shared_memory_object::remove(shm_name.c_str());
+	unsetenv("BPFTIME_GLOBAL_SHM_NAME");
+	REQUIRE_FALSE(shm_holder.global_shared_memory.has_vcpu_locks());
+	REQUIRE(bpftime_enter_bpf_exec());
+	const int cpu = my_sched_getcpu();
+	const int real = bpftime_get_current_cpu();
+	const int perf = bpftime_get_perf_output_cpu();
+	bpftime_leave_bpf_exec();
+	CHECK(cpu >= 0);
+	CHECK(cpu == real);
+	CHECK(perf == cpu);
+}
+
 TEST_CASE("PERCPU_ARRAY helper paths reject out-of-range CPU index safely",
 	  "[percpu][execution]")
 {
