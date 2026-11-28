@@ -1038,23 +1038,6 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		SPDLOG_ERROR("pkey_mprotect failed");
 		return;
 	}
-	if (vcpu_locks != nullptr) {
-		const auto pg = static_cast<std::uintptr_t>(sysconf(_SC_PAGESIZE));
-		const auto lo = reinterpret_cast<std::uintptr_t>(vcpu_locks->locks) & ~(pg - 1);
-		const auto hi = (reinterpret_cast<std::uintptr_t>(
-					 vcpu_locks->locks + BPFTIME_MAX_CPU_COUNT) +
-				 pg - 1) & ~(pg - 1);
-		if (pkey_mprotect(reinterpret_cast<void *>(lo), hi - lo,
-				  PROT_READ | PROT_WRITE, 0) == -1) {
-			SPDLOG_ERROR("pkey_mprotect reset for vcpu_locks failed");
-			(void)pkey_mprotect(segment.get_address(),
-					    segment.get_size(),
-					    PROT_READ | PROT_WRITE, 0);
-			(void)pkey_free(pkey);
-			pkey = -1;
-			return;
-		}
-	}
 	is_mpk_init = true;
 #endif
 }

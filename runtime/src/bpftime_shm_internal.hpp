@@ -64,15 +64,9 @@ struct bpftime_global_epoch_state {
 static constexpr int BPFTIME_MAX_CPU_COUNT = 1024;
 
 struct bpftime_vcpu_locks {
-#if BPFTIME_ENABLE_MPK
-	std::byte mpk_head_pad[4096];
-#endif
 	// One slot per possible CPU.
 	uint32_t ncpu = bpftime_possible_cpus();
 	robust_shm_recovering_mutex locks[BPFTIME_MAX_CPU_COUNT];
-#if BPFTIME_ENABLE_MPK
-	std::byte mpk_tail_pad[4096];
-#endif
 };
 
 // Fixed-capacity, lock-free PID table stored directly in shared memory.
