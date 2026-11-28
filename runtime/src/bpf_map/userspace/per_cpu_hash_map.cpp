@@ -18,7 +18,7 @@ per_cpu_hash_map_impl::per_cpu_hash_map_impl(
 	boost::interprocess::managed_shared_memory &memory, uint32_t key_size,
 	uint32_t value_size, uint32_t max_entries)
 	: per_cpu_hash_map_impl(memory, key_size, value_size, max_entries,
-				sysconf(_SC_NPROCESSORS_ONLN))
+				bpftime_percpu_columns())
 {
 }
 
@@ -26,7 +26,7 @@ per_cpu_hash_map_impl::per_cpu_hash_map_impl(
 	boost::interprocess::managed_shared_memory &memory, uint32_t key_size,
 	uint32_t value_size, uint32_t max_entries, int ncpu)
 	: impl(memory, max_entries, key_size,
-	       size_t(value_size) * std::max(1, ncpu)),
+	       size_t((value_size + 7U) & ~7U) * std::max(1, ncpu)),
 	  value_size(value_size), ncpu(std::max(1, ncpu))
 {
 	SPDLOG_DEBUG(
@@ -50,7 +50,7 @@ void *per_cpu_hash_map_impl::elem_lookup(const void *key)
 		errno = ENOENT;
 		return nullptr;
 	}
-	return static_cast<uint8_t *>(base) + size_t(value_size) * cpu;
+	return static_cast<uint8_t *>(base) + size_t(stride()) * cpu;
 }
 
 long per_cpu_hash_map_impl::elem_update(const void *key, const void *value,
@@ -64,7 +64,7 @@ long per_cpu_hash_map_impl::elem_update(const void *key, const void *value,
 		errno = EINVAL;
 		return -1;
 	}
-	return impl.upsert(key, value, flags, false, size_t(cpu) * value_size,
+	return impl.upsert(key, value, flags, false, size_t(cpu) * stride(),
 			   value_size);
 }
 
@@ -96,7 +96,7 @@ long per_cpu_hash_map_impl::elem_update_userspace(const void *key,
 		return -1;
 	flags &= 0xFFFFFFFFULL;
 	return impl.upsert(key, value, flags, true, 0,
-			   size_t(value_size) * ncpu);
+			   size_t(stride()) * ncpu);
 }
 
 long per_cpu_hash_map_impl::elem_delete_userspace(const void *key)

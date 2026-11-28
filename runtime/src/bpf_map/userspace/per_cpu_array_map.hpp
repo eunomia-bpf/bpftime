@@ -22,9 +22,11 @@ class per_cpu_array_map_impl {
 	int ncpu;
 	uint32_t value_size;
 	uint32_t max_ent;
+	// Per-CPU values are 8-byte aligned, the layout the bpf syscall uses.
+	uint32_t stride() const { return (value_size + 7U) & ~7U; }
 	uint8_t *data_at(size_t idx, size_t cpu)
 	{
-		return data.data() + idx * value_size * ncpu + cpu * value_size;
+		return data.data() + (idx * ncpu + cpu) * stride();
 	}
 
     public:
@@ -51,6 +53,10 @@ class per_cpu_array_map_impl {
 				   uint64_t flags);
 
 	long elem_delete_userspace(const void *key);
+	int getncpu() const
+	{
+		return ncpu;
+	}
 };
 } // namespace bpftime
 

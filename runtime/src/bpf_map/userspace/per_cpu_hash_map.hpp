@@ -17,6 +17,8 @@ class per_cpu_hash_map_impl {
 	bpftime_hash_map impl;
 	uint32_t value_size;
 	int ncpu;
+	// Per-CPU values are 8-byte aligned, the layout the bpf syscall uses.
+	uint32_t stride() const { return (value_size + 7U) & ~7U; }
 
     public:
 	const static bool should_lock = false;

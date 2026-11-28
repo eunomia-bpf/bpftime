@@ -29,7 +29,14 @@
 #endif
 
 int my_sched_getcpu();
-int bpftime_get_perf_output_cpu();
+// The CPU the thread runs on, cached for the outermost BPF exec; my_sched_getcpu()
+// returns the leased vCPU, the per-CPU map column, instead.
+int bpftime_get_current_cpu();
+int bpftime_possible_cpus();
+// ceil(possible CPUs * BPFTIME_VCPU_RATIO) + 1 slots; the ratio defaults to 1.2.
+int bpftime_vcpu_slots();
+// Columns of a new per-CPU map: the session's vCPU slots, else possible CPUs.
+int bpftime_percpu_columns();
 bool bpftime_enter_bpf_exec() noexcept;
 void bpftime_leave_bpf_exec() noexcept;
 

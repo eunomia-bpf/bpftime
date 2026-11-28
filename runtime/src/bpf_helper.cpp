@@ -1032,7 +1032,7 @@ uint64_t bpf_ringbuf_discard(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 			       uint64_t data, uint64_t size)
 {
-	int32_t current_cpu = bpftime_get_perf_output_cpu();
+	int32_t current_cpu = bpftime_get_current_cpu();
 	if (unlikely(current_cpu == -1)) {
 		SPDLOG_DEBUG(
 			"Unable to get current cpu when running perf event output");
@@ -1043,7 +1043,7 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 	// Pinning the thread to the current cpu around each output cost three
 	// scheduler syscalls (getaffinity + two setaffinity) and forced two
 	// migrations per event for no correctness benefit. The cpu index comes
-	// from the vDSO via my_sched_getcpu(); a thread migrating between calls
+	// from the vDSO via bpftime_get_current_cpu(); a thread migrating between calls
 	// only selects a different array slot, which the consumer already
 	// enumerates.
 	int fd = (int)map;
@@ -1265,7 +1265,7 @@ uint64_t bpftime_get_func_ip(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 
 uint64_t bpftime_get_smp_processor_id()
 {
-	int cpu = my_sched_getcpu();
+	int cpu = bpftime_get_current_cpu();
 	if (cpu == -1) {
 		SPDLOG_DEBUG("sched_getcpu error");
 		return 0; // unlikely

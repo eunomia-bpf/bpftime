@@ -10,6 +10,8 @@
 #include <fcntl.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <climits>
 #include <atomic>
@@ -186,5 +188,22 @@ TEST_CASE("Rootless mocks sched and raw_syscalls tracepoint ids")
 		REQUIRE(content.has_value());
 		REQUIRE(std::stoi(*content) == rc.id);
 	}
+}
+
+TEST_CASE("Possible CPUs list one entry per vCPU slot")
+{
+	REQUIRE(setenv("BPFTIME_VCPU_RATIO", "2", 1) == 0);
+	BOOST_SCOPE_EXIT_ALL(&) { unsetenv("BPFTIME_VCPU_RATIO"); };
+	const int slots = bpftime_vcpu_slots();
+	REQUIRE(slots == std::min(2 * bpftime_possible_cpus() + 1, 1024));
+	auto content = bpftime::get_synthetic_file_content(
+		"/sys/devices/system/cpu/possible");
+	REQUIRE(content.has_value());
+	REQUIRE(*content == "0-" + std::to_string(slots - 1) + "\n");
+	// Kernel maps keep one column per real CPU.
+	REQUIRE(setenv("BPFTIME_RUN_WITH_KERNEL", "1", 1) == 0);
+	BOOST_SCOPE_EXIT_ALL(&) { unsetenv("BPFTIME_RUN_WITH_KERNEL"); };
+	REQUIRE_FALSE(bpftime::get_synthetic_file_content(
+		"/sys/devices/system/cpu/possible").has_value());
 }
 #endif

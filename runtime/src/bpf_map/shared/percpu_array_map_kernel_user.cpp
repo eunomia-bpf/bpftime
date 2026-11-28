@@ -7,6 +7,7 @@
 #include "spdlog/spdlog.h"
 #include <bpf_map/shared/percpu_array_map_kernel_user.hpp>
 #include <linux/bpf.h>
+#include "platform_utils.hpp"
 namespace bpftime
 {
 void percpu_array_map_kernel_user_impl::init_map_fd()
@@ -29,7 +30,8 @@ void percpu_array_map_kernel_user_impl::init_map_fd()
 	}
 	_value_size = map_info.value_size;
 	_max_entries = map_info.max_entries;
-	value_data.resize(_value_size * ncpu);
+	// The kernel writes each possible CPU's value rounded up to 8 bytes.
+	value_data.resize(((_value_size + 7U) & ~7U) * ncpu);
 }
 void *percpu_array_map_kernel_user_impl::elem_lookup(const void *key)
 {
@@ -66,7 +68,7 @@ percpu_array_map_kernel_user_impl::percpu_array_map_kernel_user_impl(
 	: kernel_map_id(kernel_map_id),
 	  value_data(1, memory.get_segment_manager())
 {
-	ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+	ncpu = bpftime_possible_cpus();
 }
 percpu_array_map_kernel_user_impl::~percpu_array_map_kernel_user_impl()
 {

@@ -10,6 +10,7 @@
 #include "bpf_map/userspace/stack_trace_map.hpp"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include "robust_shm_mutex.hpp"
+#include "platform_utils.hpp"
 #include <atomic>
 #include <cerrno>
 #include <cstddef>
@@ -66,20 +67,12 @@ struct bpftime_vcpu_locks {
 #if BPFTIME_ENABLE_MPK
 	std::byte mpk_head_pad[4096];
 #endif
-	uint32_t ncpu;
+	// Slots [0, real_ncpu) belong to their CPU; [real_ncpu, ncpu) are extra.
+	uint32_t ncpu = bpftime_vcpu_slots(), real_ncpu = bpftime_possible_cpus();
 	robust_shm_recovering_mutex locks[BPFTIME_MAX_CPU_COUNT];
 #if BPFTIME_ENABLE_MPK
 	std::byte mpk_tail_pad[4096];
 #endif
-	bpftime_vcpu_locks()
-	{
-		long n = ::sysconf(_SC_NPROCESSORS_ONLN);
-		ncpu = n <= 0 ? 1U :
-				(n > BPFTIME_MAX_CPU_COUNT ?
-					 static_cast<uint32_t>(
-						 BPFTIME_MAX_CPU_COUNT) :
-					 static_cast<uint32_t>(n));
-	}
 };
 
 // Fixed-capacity, lock-free PID table stored directly in shared memory.
@@ -290,14 +283,19 @@ class bpftime_shm {
 	{
 		return vcpu_locks ? static_cast<int>(vcpu_locks->ncpu) : 0;
 	}
-	int try_lease_vcpu(int preferred) noexcept
+	// The CPU's own slot first; if a preempted holder still has it, an extra
+	// slot from cpu % extras on. Other CPUs' slots are never borrowed.
+	int try_lease_vcpu(int cpu) noexcept
 	{
-		return vcpu_locks ?
-			       try_lease_shm_slot(
-				       vcpu_locks->locks,
-				       static_cast<int>(vcpu_locks->ncpu),
-				       preferred) :
-			       -1;
+		if (!vcpu_locks)
+			return -1;
+		const int real = (int)vcpu_locks->real_ncpu;
+		if (cpu >= 0 && cpu < real && vcpu_locks->locks[cpu].try_lock())
+			return cpu;
+		const int extra = try_lease_shm_slot(vcpu_locks->locks + real,
+						     (int)vcpu_locks->ncpu - real,
+						     cpu);
+		return extra < 0 ? -1 : real + extra;
 	}
 	void release_vcpu(int vcpu) noexcept
 	{

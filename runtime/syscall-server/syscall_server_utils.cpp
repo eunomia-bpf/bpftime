@@ -643,6 +643,11 @@ std::optional<std::string>
 get_synthetic_file_content(const std::filesystem::path &path)
 {
 	auto path_text = path.string();
+	// Per-CPU maps keep one column per vCPU slot, so tools size and sum
+	// per-CPU values by that count; kernel maps keep the real CPUs.
+	if (path_text == "/sys/devices/system/cpu/possible" &&
+	    getenv("BPFTIME_RUN_WITH_KERNEL") == nullptr)
+		return "0-" + std::to_string(bpftime_vcpu_slots() - 1) + "\n";
 	constexpr std::string_view debug_tracepoint_root =
 		"/sys/kernel/debug/tracing/events/";
 	constexpr std::string_view tracepoint_root =
