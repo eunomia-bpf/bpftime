@@ -176,6 +176,18 @@ static int trigger_synthetic_file_caching(void)
 		return 18;
 	}
 	fclose(fp);
+
+	// LFS callers such as libbpf use the 64-bit names.
+	fd = open64("/sys/bus/event_source/devices/uprobe/type",
+		    O_RDONLY | O_CLOEXEC);
+	if (fd < 0 || !fd_is_cached_synthetic_file(fd))
+		return 19;
+	close(fd);
+	fd = openat64(AT_FDCWD, "/sys/bus/event_source/devices/uprobe/type",
+		      O_RDONLY | O_CLOEXEC);
+	if (fd < 0 || !fd_is_cached_synthetic_file(fd))
+		return 20;
+	close(fd);
 	return 0;
 }
 
