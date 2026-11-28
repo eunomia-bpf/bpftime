@@ -145,10 +145,23 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				if (int err = instantiate_handler_at(
 					    manager, i, stk, config, true);
 				    err < 0) {
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+				// STRICT mode: a rejected GPU handler only fails
+				// itself. CPU uprobes and syscall probes
+				// instantiated earlier in the same process stay
+				// attached, so log at error level and fall through
+				// to the common count-and-skip failure path instead
+				// of tearing the whole session down.
+				if (err == attach::GPU_VERIFIER_REJECTED)
+					SPDLOG_ERROR(
+						"GPU verifier rejected handler {}; skipping it and keeping every other attach link",
+						i);
+				else
+#endif
 					SPDLOG_DEBUG(
 						"Failed to instantiate handler {}: {}",
 						i, err);
-					record_failure(i, err);
+				record_failure(i, err);
 				}
 			}
 		}
@@ -361,7 +374,7 @@ int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
 			return err;
 		}
 		if (int err = instantiate_bpf_link_handler_at(
-			    id, link_handler, handle_nv_attach_impl);
+			    id, link_handler, config, handle_nv_attach_impl);
 		    err < 0) {
 			SPDLOG_DEBUG(
 				"Unable to instantiate bpf link handler {}: {}",
@@ -429,7 +442,8 @@ int bpf_attach_ctx::instantiate_prog_handler_at(int id,
 	return 0;
 }
 int bpf_attach_ctx::instantiate_bpf_link_handler_at(
-	int id, const bpf_link_handler &handler, bool handle_nv_attach_impl)
+	int id, const bpf_link_handler &handler, const runtime_config &config,
+	bool handle_nv_attach_impl)
 {
 	SPDLOG_DEBUG(
 		"Instantiating link handler: prog {} -> perf event {}, cookie {}",
@@ -470,6 +484,8 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 				dynamic_cast<attach::nv_attach_private_data &>(
 					*priv_data);
 			nv_attach_private_data.program_name = prog->prog_name();
+			nv_attach_private_data.verifier_mode =
+				config.verifier_mode;
 			nv_attach_private_data.comm_shared_mem =
 				this->cuda_ctx->cuda_shared_mem_device_pointer;
 			nv_attach_private_data.instructions = prog->get_insns();

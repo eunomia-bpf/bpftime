@@ -8,6 +8,7 @@ on:
       - ".github/workflows/test-ptxpass.yml"
       - ".github/actions/ccache/**"
       - "attach/nv_attach_impl/**"
+      - "bpftime-verifier/**"
       - "runtime/**"
       - "vm/**"
       - "cmake/**"
@@ -20,6 +21,7 @@ on:
       - ".github/workflows/test-ptxpass.yml"
       - ".github/actions/ccache/**"
       - "attach/nv_attach_impl/**"
+      - "bpftime-verifier/**"
       - "runtime/**"
       - "vm/**"
       - "cmake/**"
@@ -59,6 +61,11 @@ jobs:
         with:
           variant: gpu
 
+      - name: Initialize verifier submodules
+        run: |
+          rm -rf bpftime-verifier/ebpf-verifier/external/bpf_conformance
+          git submodule update --init --recursive bpftime-verifier/ebpf-verifier
+
       - name: Check and install required tools
         run: |
           # GPU runners are shared hosts running several jobs per machine:
@@ -69,7 +76,7 @@ jobs:
           echo "Checking installed tools..."
           
           sudo -E apt-get "${APT_OPTS[@]}" update
-          sudo -E apt-get "${APT_OPTS[@]}" install -y build-essential llvm-dev llvm-18-dev cmake libboost-all-dev libzstd-dev pkg-config ninja-build
+          sudo -E apt-get "${APT_OPTS[@]}" install -y build-essential llvm-dev llvm-18-dev cmake libboost-all-dev libelf-dev libzstd-dev libyaml-cpp-dev pkg-config ninja-build
 
           # Check CUDA
           nvcc --version || echo "nvcc not found (CUDA compiler)"
@@ -82,6 +89,8 @@ jobs:
               -DBPFTIME_LLVM_JIT=YES \
               -DBPFTIME_ENABLE_UNIT_TESTING=YES \
               -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
+              -DENABLE_EBPF_VERIFIER=YES \
+              -DFETCHCONTENT_SOURCE_DIR_CATCH2="${GITHUB_WORKSPACE}/third_party/Catch2" \
               -DBPFTIME_CUDA_ROOT="${BPFTIME_CUDA_ROOT:-/usr/local/cuda}" \
               -DLLVM_DIR="/usr/lib/llvm-18/lib/cmake/llvm/" \
               -G Ninja
@@ -95,3 +104,15 @@ jobs:
         shell: bash
         run: |
           ./build/attach/nv_attach_impl/test/bpftime_nv_attach_tests
+
+      - name: Build runtime unit tests with CUDA attach enabled
+        run: |
+          cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
+
+      - name: Run GPU verifier partial-failure regression
+        shell: bash
+        run: |
+          # CUDA-gated case in runtime/unit-test/test_attach_failures.cpp:
+          # a STRICT-mode GPU rejection must skip only the rejected handler.
+          ./build/runtime/unit-test/bpftime_runtime_tests \
+            "GPU verifier rejection skips only the rejected handler"
