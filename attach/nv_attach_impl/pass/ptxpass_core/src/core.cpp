@@ -221,6 +221,7 @@ std::string compile_ebpf_to_ptx_from_words(
 	vm.register_external_function(509, "get_sm_id", (void *)test_func);
 	vm.register_external_function(510, "get_warp_id", (void *)test_func);
 	vm.register_external_function(511, "get_lane_id", (void *)test_func);
+	vm.register_external_function(512, "prefetch_l2", (void *)test_func);
 
 	vm.load_code(insts, insts_count * sizeof(ebpf_inst));
 	bpftime::llvm_bpf_jit_context ctx(vm);

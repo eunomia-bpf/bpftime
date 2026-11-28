@@ -17,8 +17,9 @@
 
 /* clang++-17 -S ./default_trampoline.cu -Wall --cuda-gpu-arch=sm_60 -O2
  * -L/usr/local/cuda/lib64/ -lcudart*/
-// The old 1<<30 value makes the shared segment too large for Boost IPC.
-static constexpr int GPU_HELPER_MAX_BUF = 1 << 24;
+// This layout-affecting constant must match BPFTIME_GPU_HELPER_MAX_BUF in
+// runtime/include/bpf_attach_ctx.hpp.
+static constexpr int GPU_HELPER_MAX_BUF = 1 << 20;
 
 enum class HelperOperation {
 	MAP_LOOKUP = 1,
@@ -83,7 +84,8 @@ struct CommSharedMem {
 	uint64_t time_sum[8];
 };
 
-const int BPF_MAP_TYPE_GPU_HASH_MAP = 1501; // non-per-thread, single-copy shared hashmap
+const int BPF_MAP_TYPE_GPU_HASH_MAP = 1501; // non-per-thread, single-copy
+					    // shared hashmap
 // IPC-based GPU maps (for x86 with CUDA IPC support)
 const int BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP = 1502;
 const int BPF_MAP_TYPE_GPU_ARRAY_MAP = 1503; // non-per-thread, single-copy
@@ -217,7 +219,9 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0001(
 	    map_info.map_type == BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP) {
 		auto real_key = *(uint32_t *)(uintptr_t)key;
 		auto base = (char *)map_info.extra_buffer;
-		// printf("real_key=%u, base=%lx, value_size=%lu, mapfd=%d\n",real_key,(uintptr_t)base,(unsigned long)map_info.value_size,(int)map);
+		// printf("real_key=%u, base=%lx, value_size=%lu,
+		// mapfd=%d\n",real_key,(uintptr_t)base,(unsigned
+		// long)map_info.value_size,(int)map);
 		return (uint64_t)(uintptr_t)(base +
 					     (uint64_t)real_key *
 						     map_info.value_size);
@@ -234,7 +238,9 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0001(
 		auto real_key = *(uint32_t *)(uintptr_t)key;
 		auto base = (char *)map_info.extra_buffer;
 		asm("membar.sys;"); // Ensure CPU writes are visible to GPU
-		return (uint64_t)(uintptr_t)(base + (uint64_t)real_key * map_info.value_size);
+		return (uint64_t)(uintptr_t)(base +
+					     (uint64_t)real_key *
+						     map_info.value_size);
 	}
 	// printf("helper1 map %ld keysize=%d valuesize=%d\n", map,
 	//        map_info.key_size, map_info.value_size);
@@ -288,8 +294,11 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0002(
 	if (map_info.map_type == BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP) {
 		auto real_key = *(uint32_t *)(uintptr_t)key;
 		auto base = (char *)map_info.extra_buffer;
-		auto dst = (void *)(uintptr_t)(base + (uint64_t)real_key * map_info.value_size);
-		simple_memcpy(dst, (void *)(uintptr_t)value, map_info.value_size);
+		auto dst =
+			(void *)(uintptr_t)(base + (uint64_t)real_key *
+							   map_info.value_size);
+		simple_memcpy(dst, (void *)(uintptr_t)value,
+			      map_info.value_size);
 		asm("membar.sys;"); // Ensure GPU writes are visible to CPU
 		return 0;
 	}
@@ -486,32 +495,38 @@ _bpf_helper_ext_0508(uint64_t x, uint64_t y, uint64_t z, uint64_t, uint64_t)
 
 	return 0;
 }
-
 extern "C" __noinline__ __device__ uint64_t
 _bpf_helper_ext_0509(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 {
-    // get sm id
-    uint32_t sm_id;
-    asm volatile("mov.u32 %0, %%smid;" : "=r"(sm_id));
-    return (uint64_t)sm_id;
+	// get sm id
+	uint32_t sm_id;
+	asm volatile("mov.u32 %0, %%smid;" : "=r"(sm_id));
+	return (uint64_t)sm_id;
 }
 
 extern "C" __noinline__ __device__ uint64_t
 _bpf_helper_ext_0510(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 {
-    // get warp id
-    uint32_t warp_id;
-    asm volatile("mov.u32 %0, %%warpid;" : "=r"(warp_id));
-    return (uint64_t)warp_id;
+	// get warp id
+	uint32_t warp_id;
+	asm volatile("mov.u32 %0, %%warpid;" : "=r"(warp_id));
+	return (uint64_t)warp_id;
 }
 
 extern "C" __noinline__ __device__ uint64_t
 _bpf_helper_ext_0511(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 {
-    // get lane id
-    uint32_t lane_id;
-    asm volatile("mov.u32 %0, %%laneid;" : "=r"(lane_id));
-    return (uint64_t)lane_id;
+	// get lane id
+	uint32_t lane_id;
+	asm volatile("mov.u32 %0, %%laneid;" : "=r"(lane_id));
+	return (uint64_t)lane_id;
+}
+
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0512(uint64_t addr, uint64_t, uint64_t, uint64_t, uint64_t)
+{
+	asm volatile("prefetch.global.L2 [%0];" ::"l"(addr));
+	return 0;
 }
 
 extern "C" __global__ void bpf_main(void *mem, size_t sz)
