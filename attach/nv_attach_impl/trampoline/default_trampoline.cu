@@ -17,8 +17,12 @@
 
 /* clang++-17 -S ./default_trampoline.cu -Wall --cuda-gpu-arch=sm_60 -O2
  * -L/usr/local/cuda/lib64/ -lcudart*/
-// The old 1<<30 value makes the shared segment too large for Boost IPC.
-static constexpr int GPU_HELPER_MAX_BUF = 1 << 24;
+// This layout-affecting constant must match BPFTIME_GPU_HELPER_MAX_BUF in
+// runtime/include/bpf_attach_ctx.hpp, and `trampoline_ptx.h` must be
+// regenerated whenever it changes: the host side allocates CommSharedMem from
+// the hpp and the device side writes into the same bytes using the offsets
+// compiled from this file.
+static constexpr int GPU_HELPER_MAX_BUF = 1 << 20;
 
 enum class HelperOperation {
 	MAP_LOOKUP = 1,
@@ -82,6 +86,16 @@ struct CommSharedMem {
 	HelperCallResponse resp;
 	uint64_t time_sum[8];
 };
+
+// The host side allocates and zeroes the same bytes from the struct declared in
+// runtime/include/bpf_attach_ctx.hpp. A difference here is silent: the device
+// would read and write the wrong offsets in a buffer the host allocated one
+// size smaller or larger. Keep the two in step, and regenerate
+// `trampoline_ptx.h` (make -C attach/nv_attach_impl/trampoline) when either
+// changes.
+static_assert(sizeof(HelperCallRequest) == 2 * (1 << 20) + sizeof(uint64_t),
+	      "HelperCallRequest size changed: update the host struct's "
+	      "BPFTIME_GPU_HELPER_MAX_BUF and regenerate trampoline_ptx.h");
 
 const int BPF_MAP_TYPE_GPU_HASH_MAP = 1501; // non-per-thread, single-copy shared hashmap
 // IPC-based GPU maps (for x86 with CUDA IPC support)
