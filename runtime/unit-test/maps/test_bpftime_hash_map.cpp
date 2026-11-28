@@ -7,6 +7,7 @@
 #include "bpftime_shm.hpp"
 #include "bpftime_handler.hpp"
 #include <catch2/catch_test_macros.hpp>
+#include <csignal>
 #include <cstdint>
 #include <sched.h>
 #include <sys/mman.h>
@@ -234,6 +235,7 @@ TEST_CASE("bpftime_hash_map recovers stripe after child dies mid-upsert or mid-e
 	pid_t c1 = fork();
 	REQUIRE(c1 >= 0);
 	if (c1 == 0) {
+		std::signal(SIGSEGV, SIG_DFL);
 		uint8_t *bad_in = make_half_guarded_buf();
 		uint32_t k = 7;
 		(void)map->upsert(&k, bad_in, 0, true, 0, val_sz);
@@ -255,6 +257,7 @@ TEST_CASE("bpftime_hash_map recovers stripe after child dies mid-upsert or mid-e
 	pid_t c2 = fork();
 	REQUIRE(c2 >= 0);
 	if (c2 == 0) {
+		std::signal(SIGSEGV, SIG_DFL);
 		uint8_t *bad_out = make_half_guarded_buf();
 		uint32_t k = 7;
 		(void)map->erase(&k, bad_out, true);
