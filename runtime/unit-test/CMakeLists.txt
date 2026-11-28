@@ -149,6 +149,8 @@ if(UNIX AND NOT APPLE)
     add_executable(bpftime-agent-dlopen-helper
         assets/agent_dlopen_helper.c)
     target_link_libraries(bpftime-agent-dlopen-helper PRIVATE ${CMAKE_DL_LIBS})
+    # Finds the target library next to it by bare name, as many plugins do.
+    set_target_properties(bpftime-agent-dlopen-helper PROPERTIES BUILD_RPATH "$ORIGIN")
     add_library(bpftime-agent-dlopen-target SHARED
         assets/agent_dlopen_target.c)
     set_property(TARGET bpftime-agent-dlopen-target PROPERTY POSITION_INDEPENDENT_CODE ON)

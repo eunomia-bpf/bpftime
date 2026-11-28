@@ -21,6 +21,7 @@
 #include <exception>
 #include <atomic>
 #include <cerrno>
+#include <cstdint>
 #include <cstring>
 #include <fcntl.h>
 #include <limits>
@@ -99,6 +100,7 @@ static std::thread agent_ipc_thread;
 
 static std::mutex detach_mutex;
 static std::atomic<bool> global_ctx_constructed{ false };
+static void install_loader_notifications() noexcept;
 
 union bpf_attach_ctx_holder {
 	bpf_attach_ctx ctx;
@@ -928,6 +930,7 @@ static void bpftime_agent_main_impl(const gchar *data,
 			}
 			__atomic_store_n(&initialized, AGENT_READY,
 					 __ATOMIC_SEQ_CST);
+			install_loader_notifications();
 			try {
 				SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
 			} catch (...) {
@@ -955,46 +958,126 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	bpftime_agent_main_impl(data, stay_resident);
 }
 
-#ifdef __linux__
-extern "C" __attribute__((visibility("default"))) void *
-dlopen(const char *filename, int flags)
+#if defined(__linux__) && BPFTIME_HAVE_FRIDA_ATTACH &&                         \
+	(defined(__x86_64__) || defined(__aarch64__))
+namespace
 {
-	using dlopen_fn_t = void *(*)(const char *, int);
-	static std::atomic<dlopen_fn_t> real_dlopen_cache{ nullptr };
-	dlopen_fn_t real_dlopen =
-		real_dlopen_cache.load(std::memory_order_acquire);
-	if (!real_dlopen) {
-		real_dlopen = reinterpret_cast<dlopen_fn_t>(
-			dlsym(RTLD_NEXT, "dlopen"));
-		if (!real_dlopen)
-			return nullptr;
-		real_dlopen_cache.store(real_dlopen, std::memory_order_release);
-	}
-	const pid_t init_pid = agent_init_pid.load(std::memory_order_acquire);
-	if (init_pid == 0 || getpid() != init_pid)
-		return real_dlopen(filename, flags);
-	const int depth_before = agent_loader_reentry_depth;
-	agent_loader_scope loader_scope;
-	void *handle = real_dlopen(filename, flags);
+// glibc calls _dl_debug_state(), the function _r_debug.r_brk names for
+// debuggers, each time the list of loaded objects changes. Uprobes in a newly
+// mapped DSO attach from there, so dlopen() stays glibc's own: it searches the
+// caller's run path and sets errno itself, and dlmopen() and glibc's own loads
+// notify as well.
+void on_loader_change() noexcept
+{
+	if (_r_debug.r_state != r_debug::RT_CONSISTENT || agent_loader_reentry_depth != 0)
+		return;
 	const int saved_errno = errno;
-	if (handle && filename && !(flags & RTLD_NOLOAD) && depth_before == 0 &&
-	    getpid() == init_pid &&
+	const pid_t init_pid = agent_init_pid.load(std::memory_order_acquire);
+	if (init_pid != 0 && getpid() == init_pid &&
 	    __atomic_load_n(&initialized, __ATOMIC_ACQUIRE) == AGENT_READY &&
 	    global_ctx_constructed.load(std::memory_order_acquire)) {
+		agent_loader_scope loader_scope;
 		try {
 			std::unique_lock<std::mutex> lock(detach_mutex,
 							  std::try_to_lock);
 			if (lock.owns_lock() && agent_session_attached) {
 				attach_callback_suppression_scope suppress;
-				(void)ctx_holder.ctx
-					.attach_uninstantiated_handlers(
-						bpftime_get_runtime_config());
+				(void)ctx_holder.ctx.attach_uninstantiated_handlers(
+					bpftime_get_runtime_config());
 			}
 		} catch (...) {
 		}
 	}
 	errno = saved_errno;
-	return handle;
+}
+
+struct code_bytes {
+	const void *data;
+	size_t size;
+};
+
+void write_code(gpointer mem, gpointer user_data)
+{
+	auto *code = static_cast<const code_bytes *>(user_data);
+	memcpy(mem, code->data, code->size);
+}
+
+// _dl_debug_state is a lone return after an optional landing pad; on x86-64
+// alignment padding follows it. Its return becomes a branch to a trampoline
+// next to the loader, which jumps to on_loader_change(), and that returns to
+// the loader as the original return did.
+bool redirect_loader_notifications()
+{
+	auto *site = reinterpret_cast<uint8_t *>(_r_debug.r_brk);
+	const gsize page = gum_query_page_size();
+	const void *target = reinterpret_cast<const void *>(&on_loader_change);
+	if (site == nullptr)
+		return false;
+#if defined(__x86_64__)
+	const size_t ret = memcmp(site, "\xf3\x0f\x1e\xfa", 4) == 0 ? 4 : 0;
+	if (site[ret] != 0xc3 ||
+	    (reinterpret_cast<uintptr_t>(site) & 15) + 5 > 16)
+		return false;
+	for (size_t i = ret + 1; i < 5; i++)
+		if (site[i] != 0 &&
+		    memchr("\x90\xcc\x66\x2e\x0f\x1f\x40\x44\x80\x84", site[i],
+			   10) == nullptr)
+			return false;
+	const GumAddressSpec spec{ site, G_MAXINT32 - page };
+	auto *tramp = static_cast<uint8_t *>(
+		gum_memory_allocate_near(&spec, page, page, GUM_PAGE_RW));
+	if (tramp == nullptr)
+		return false;
+	memcpy(tramp, "\xff\x25\x00\x00\x00\x00", 6); // jmp *0(%rip)
+	memcpy(tramp + 6, &target, sizeof(target));
+	uint8_t branch[5] = { 0xe9 };
+	const int32_t rel = static_cast<int32_t>(tramp - (site + 5));
+	memcpy(branch + 1, &rel, sizeof(rel));
+#else
+	auto *insn = reinterpret_cast<uint32_t *>(site);
+	if (insn[0] == 0xd503245f) // bti c
+		++insn;
+	if (*insn != 0xd65f03c0) // ret
+		return false;
+	site = reinterpret_cast<uint8_t *>(insn);
+	const GumAddressSpec spec{ site, (gsize(1) << 27) - page };
+	auto *tramp = static_cast<uint32_t *>(
+		gum_memory_allocate_near(&spec, page, page, GUM_PAGE_RW));
+	if (tramp == nullptr)
+		return false;
+	tramp[0] = 0x58000050; // ldr x16, #8
+	tramp[1] = 0xd61f0200; // br x16
+	memcpy(tramp + 2, &target, sizeof(target));
+	const uint32_t branch =
+		0x14000000 |
+		(static_cast<uint32_t>(
+			 (reinterpret_cast<uint8_t *>(tramp) - site) / 4) &
+		 0x03ffffff);
+#endif
+	if (!gum_try_mprotect(tramp, page, GUM_PAGE_RX))
+		return false;
+	gum_clear_cache(tramp, page);
+	code_bytes code{ &branch, sizeof(branch) };
+	return gum_memory_patch_code(site, sizeof(branch), write_code, &code);
+}
+} // namespace
+
+static void install_loader_notifications() noexcept
+{
+	static std::atomic<bool> installed{ false };
+	if (installed.exchange(true))
+		return;
+	if (!redirect_loader_notifications()) {
+		try {
+			SPDLOG_WARN(
+				"Unable to redirect the loader's r_brk; uprobes in libraries loaded later attach at the next attach");
+		} catch (...) {
+		}
+	}
+}
+#else
+static void install_loader_notifications() noexcept
+{
 }
 #endif
 
