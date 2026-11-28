@@ -4,8 +4,6 @@
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
-#include <cmath>
-#include <cstdlib>
 #include <unistd.h>
 
 namespace
@@ -85,20 +83,6 @@ int bpftime_possible_cpus()
 {
 	return (int)std::clamp(sysconf(_SC_NPROCESSORS_CONF), 1L,
 			       (long)bpftime::BPFTIME_MAX_CPU_COUNT);
-}
-
-int bpftime_vcpu_slots()
-{
-	const char *env = getenv("BPFTIME_VCPU_RATIO");
-	const double ratio = env ? std::max(1.0, atof(env)) : 1.2;
-	return (int)std::min(std::ceil(bpftime_possible_cpus() * ratio) + 1,
-			     (double)bpftime::BPFTIME_MAX_CPU_COUNT);
-}
-
-int bpftime_percpu_columns()
-{
-	const int n = bpftime::shm_holder.global_shared_memory.vcpu_count();
-	return n > 0 ? n : bpftime_possible_cpus();
 }
 
 bool bpftime_enter_bpf_exec() noexcept

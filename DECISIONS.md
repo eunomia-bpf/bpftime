@@ -2,28 +2,36 @@
 
 Newest first. Read before starting a change. A pull request that reverses an entry is a design problem until a maintainer decides again. Every entry quotes the maintainer verbatim; changing a decision means adding a new entry.
 
-- **2026-11-27: generic shared-memory virtual CPU (`vCPU`) slot pool leased lazily across outermost `bpftime_prog_exec`** (#1028; supersedes the 2026-11-27 `#1001` lock-free `PERCPU_ARRAY` entry below and registers `bpftime_vcpu_locks` in L1 of `robust_shm_mutex.hpp`). Userspace cannot disable kernel preemption like `preempt_disable()`, so an unguarded per-CPU slot lets a timer-preempted thread and the incoming thread on the same core clobber multi-tail-call `PERCPU_ARRAY` scratch state (such as 16 KB stack-unwinder records). Instead of unconditional entry locks (`#730`/`#937`) or a global lock, the segment creator sizes `bpftime_vcpu_locks` once: `ceil(possible CPUs * BPFTIME_VCPU_RATIO) + 1` `robust_shm_recovering_mutex` slots (ratio 1.2 by default, at most 1024); every process reads the count from shared memory. Slots `[0, possible CPUs)` belong to their CPU and the rest are extra. `bpftime_prog_exec` still takes zero locks and makes zero `sched_getcpu()` calls on entry. On the first `my_sched_getcpu()` inside an outermost exec (`PERCPU_ARRAY`, `PERCPU_HASH`), the thread `try_lock`s its own CPU's slot; if a preempted holder still has it, it takes an extra slot, scanning from `cpu % extras`. It never borrows another CPU's slot, and keeps the slot across all nested tail calls until `bpftime_leave_bpf_exec()`; with every extra slot busy, that exec's per-CPU accesses fail and `shm_trylock_skips` counts it. Per-CPU maps carry one column per slot, and the syscall server reports `/sys/devices/system/cpu/possible` and `/sys/devices/system/cpu/online` as `0-(slots-1)` (except under `BPFTIME_RUN_WITH_KERNEL`), so tools size, read and sum per-CPU values over every column and open a perf ring for every slot; the possible count is fixed after boot, so the tools' cached count stays valid. Per-CPU values use the bpf syscall layout: each CPU's value rounded up to 8 bytes. Every CPU id a BPF program reads goes through the vCPU: per-CPU map columns, `bpf_get_smp_processor_id()` and the `BPF_F_CURRENT_CPU` perf ring all use the leased slot, and perf output without a lease uses the CPU's own slot. On its own CPU's slot that id is the real CPU.
+- **2026-11-27: one shared-memory slot per CPU, leased lazily across the outermost `bpftime_prog_exec`, borrowing the next free slot when a preempted holder has it** (#1028; supersedes the 2026-11-27 `#1001` lock-free `PERCPU_ARRAY` entry below and registers `bpftime_vcpu_locks` in L1 of `robust_shm_mutex.hpp`).
+  - **Problem.** Userspace cannot disable kernel preemption like `preempt_disable()`. An unguarded per-CPU slot lets a timer-preempted thread and the incoming thread on the same core clobber multi-tail-call `PERCPU_ARRAY` scratch state, such as 16 KB stack-unwinder records.
+  - **Slots.** Instead of unconditional entry locks (`#730`/`#937`) or a global lock, `bpftime_shm` holds one `robust_shm_recovering_mutex` slot per possible CPU (`bpftime_vcpu_locks`).
+  - **Lease.** `bpftime_prog_exec` still takes zero locks and makes zero `sched_getcpu()` calls on entry.
+    - On the first `my_sched_getcpu()` inside an outermost exec (`PERCPU_ARRAY`, `PERCPU_HASH`, `bpf_get_smp_processor_id()`), the thread `try_lock`s its own CPU's slot.
+    - If a preempted holder still has it, the thread borrows the next free slot after it, which belongs to another CPU.
+    - It keeps the slot across all nested tail calls until `bpftime_leave_bpf_exec()`.
+    - Only with every slot busy do that exec's per-CPU accesses fail, counted in `shm_trylock_skips`.
+  - **Borrowing.** A borrowed slot's values are counted under the other CPU, and that CPU's own thread may then borrow the next slot. Sums over CPUs stay exact, and the slot stays exclusive, so no scratch is shared.
+  - **Layout.** Per-CPU maps keep one column per possible CPU, each CPU's value rounded up to 8 bytes as in the bpf syscall layout. Tools read the real CPU lists.
+  - **CPU ids.** Every CPU id a BPF program reads is its leased slot: per-CPU map columns, `bpf_get_smp_processor_id()` and the `BPF_F_CURRENT_CPU` perf ring. Perf output without a lease uses the real CPU.
+  - **No slots.** Without slots (no global shm, or a segment from an older version), programs see the real CPU.
+  - **Replaces.** This replaces the extra-slot design that an earlier revision of #1028 tried: `ceil(possible CPUs * BPFTIME_VCPU_RATIO) + 1` slots, with the `possible` and `online` lists mocked to match.
   > 这直接说明上游 PerCPURecord 从设计第一天起就要求整条多级尾调用回溯期间独占槽位、绝不允许并发覆盖；内核靠「preempt_disable + bpf_prog_active + 双表隔离中断」保证了这一点，而用户态一旦完全去掉槽位互斥，普通时钟中断抢占就会直接打破这个前提。那么用户态应该怎么做? 直接全局锁还是?
   >
   > 或者全局概念上说, 是不是我们有一个虚拟的 cpu, 数量和真实 cpu 相同(避免动态分配), 但是实际上会在每个入口 assign 到活跃的 cpu 上面? 能 match 的就 match, 那么和进程关系是什么? 具体是什么形态?
   >
   > 是通用的机制, 不是 adhoc 的吗? 以后别的 per cpu map 也是复用? 对于所有的都生效, [profiler] 能不能尽可能不要改?
   >
-  > 继续说说? 能不能改动的最小? 然后去真实拿现有的 master + main 组装一下实现一下, 提交 PR, 测试两三组之前会发生崩溃的真实 [workload] 训练场景
-  >
-  > 说起来这个有么有办法也变成 config 配置? 允许按需增加
-  >
-  > 也就是完全不借, 就靠 vcpu, vcpu 上限通常是正常 cpu 数的 1.2 + 1 (up), 然后可以配置这个 radio?
-  >
-  > 额外槽位 [CPU 数, N) % ? 避免一直扫? per-CPU map 不是很多时候都是直接 iter 吗
-  >
-  > "possible CPU 数在开机后就不变"这个前提 那我觉得还是要mock一下 /sys/devices/system/cpu/possible
-  >
-  > 按这做吧, 更新这个 pr
-  >
   > 该修掉的都修, 并且要测试, 尽可能最小修改, 生产代码增加不超过 50-100? 或者尽可能不要增加?
   >
   > 用真实 libbpf 工具端到端测一下 possible 文件, 也要用真实的 otel profiler 跑一下试试; 另外, 确保记录一下, 所有读取 cpu id 的都应该走这个 vcpu 吧?
+  >
+  > 是不是假如我们还是回到原先的, 没有多的槽位, 通过退避 + lock 的方式代码改动最小? 我们为啥不 spin lock 之类的? 说说? 很多问题都是改动 vcpu 引起的?
+  >
+  > 每个 CPU 一个槽位，不是拿不到可以试试下一个槽位吗
+  >
+  > 借槽：不用额外列，去借别的 CPU 空着的槽，也不丢。但数据会记到别的 CPU 名下，而且会把那个 CPU 自己的线程挤走，你之前否掉了。我觉得没问题
+  >
+  > 就是之前的版本, 我们是直接回到之前的 commit 还是?
 
 - **2026-11-27: `LPM_TRIE` lookups take no lock; writes take one recover-and-continue lock over a preallocated node pool** (supersedes `LPM_TRIE` in the L2 `bpf_map_handler::map_lock` line of the lock inventory below; replaces the 64 prefix shards of #1021). `lpm_trie_map_impl` keeps `should_lock = false`. At creation it allocates `2 * max_entries` fixed nodes (at most `max_entries` leaves and `max_entries - 1` intermediate nodes) linked by `uint32_t` indices; no Boost allocator runs after creation. Writes take one `robust_shm_recovering_mutex` (L1): `try_lock` on helper paths, which skips and counts on contention, and a blocking lock on syscall paths. As in kernel `lpm_trie.c`, an insert builds its nodes completely and links them with one store, and a delete unlinks with one store, so a writer that dies at any step leaves the tree intact; it leaks at most the two nodes it held and may leave the entry count one high. Freed nodes enter a FIFO ring and are recycled only after every node freed before them, so a value pointer returned by a lookup stays readable until the ring cycles. A lookup records the ring's free position before its walk and retries if allocation passed that position by the end, since only then can a node freed during the walk have been rewritten; after 8 attempts it returns NULL and counts in `shm_trylock_skips`. This is the before-and-after version check of point 3 below, using the ring positions as the version: they never stay odd after a writer dies, so no repair step is needed. An update of an existing key still writes the value in place.
   > LPM_TRIE 怎么做

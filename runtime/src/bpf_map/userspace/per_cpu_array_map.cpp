@@ -27,7 +27,7 @@ per_cpu_array_map_impl::per_cpu_array_map_impl(
 	boost::interprocess::managed_shared_memory &memory, uint32_t value_size,
 	uint32_t max_entries)
 	: per_cpu_array_map_impl(memory, value_size, max_entries,
-				 bpftime_percpu_columns())
+				 bpftime_possible_cpus())
 {
 }
 

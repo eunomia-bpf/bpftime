@@ -643,17 +643,6 @@ std::optional<std::string>
 get_synthetic_file_content(const std::filesystem::path &path)
 {
 	auto path_text = path.string();
-	// Every vCPU slot is a CPU to the tools: per-CPU values are sized and
-	// summed over it, and perf buffers open a ring for each. Kernel maps
-	// keep the real CPUs.
-	// The segment's slot count wins: its creator may use another ratio.
-	if ((path_text == "/sys/devices/system/cpu/possible" ||
-	     path_text == "/sys/devices/system/cpu/online") &&
-	    getenv("BPFTIME_RUN_WITH_KERNEL") == nullptr) {
-		const int n = shm_holder.global_shared_memory.vcpu_count();
-		return "0-" + std::to_string((n > 0 ? n : bpftime_vcpu_slots()) - 1) +
-		       "\n";
-	}
 	constexpr std::string_view debug_tracepoint_root =
 		"/sys/kernel/debug/tracing/events/";
 	constexpr std::string_view tracepoint_root =

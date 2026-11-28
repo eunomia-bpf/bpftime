@@ -18,7 +18,7 @@ per_cpu_hash_map_impl::per_cpu_hash_map_impl(
 	boost::interprocess::managed_shared_memory &memory, uint32_t key_size,
 	uint32_t value_size, uint32_t max_entries)
 	: per_cpu_hash_map_impl(memory, key_size, value_size, max_entries,
-				bpftime_percpu_columns())
+				bpftime_possible_cpus())
 {
 }
 

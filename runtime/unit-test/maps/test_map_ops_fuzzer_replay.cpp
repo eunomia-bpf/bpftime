@@ -66,7 +66,7 @@ struct input_builder {
 				    shape == shape_percpu_array;
 		value_buf_size =
 			percpu ? ((value_size + 7) & ~size_t(7)) *
-					 bpftime_percpu_columns() :
+					 bpftime_possible_cpus() :
 				 value_size;
 		if (shape == shape_array || shape == shape_percpu_array)
 			key_size = sizeof(uint32_t);

@@ -298,7 +298,7 @@ uint64_t percpu_scratch_helper(uint64_t token, uint64_t, uint64_t, uint64_t,
 }
 } // namespace
 
-TEST_CASE("Preempted threads on one physical CPU get distinct vCPU slots without scratch corruption",
+TEST_CASE("Preempted threads on one physical CPU get distinct slots without scratch corruption",
 	  "[percpu][execution]")
 {
 	const int ncpu = std::max<int>(1, sysconf(_SC_NPROCESSORS_ONLN));
@@ -307,8 +307,7 @@ TEST_CASE("Preempted threads on one physical CPU get distinct vCPU slots without
 		"bpftime_vcpu_scratch_" + std::to_string(getpid());
 	const std::string map_shm_name = shm_name + "_map";
 	REQUIRE(setenv("BPFTIME_GLOBAL_SHM_NAME", shm_name.c_str(), 1) == 0);
-	// All workers share one CPU, so all but one run on extra slots.
-	REQUIRE(setenv("BPFTIME_VCPU_RATIO", "4", 1) == 0);
+	// All workers share one CPU, so all but one borrow other CPUs' slots.
 	boost::interprocess::shared_memory_object::remove(shm_name.c_str());
 	boost::interprocess::shared_memory_object::remove(map_shm_name.c_str());
 	bpftime_initialize_global_shm(shm_open_type::SHM_CREATE_ONLY);
@@ -324,7 +323,6 @@ TEST_CASE("Preempted threads on one physical CPU get distinct vCPU slots without
 			boost::interprocess::shared_memory_object::remove(
 				name.c_str());
 			unsetenv("BPFTIME_GLOBAL_SHM_NAME");
-			unsetenv("BPFTIME_VCPU_RATIO");
 		}
 	} cleanup{ shm_name, map_shm_name };
 
@@ -332,7 +330,7 @@ TEST_CASE("Preempted threads on one physical CPU get distinct vCPU slots without
 		boost::interprocess::create_only, map_shm_name.c_str(),
 		2 << 20);
 	per_cpu_array_map_impl map(map_mem, 64 * sizeof(uint64_t), 1,
-				   shm_holder.global_shared_memory.vcpu_count());
+				   bpftime_possible_cpus());
 	g_scratch_map = &map;
 	g_scratch_corruptions = 0;
 	g_scratch_completed = 0;
@@ -423,26 +421,18 @@ TEST_CASE("vCPU slot recovers after holder process dies mid-BPF execution",
 	REQUIRE(waitpid(pid, &status, 0) == pid);
 	REQUIRE(WIFSIGNALED(status));
 
-	const int real = bpftime_possible_cpus(), slots = shm.vcpu_count();
-	REQUIRE(slots == bpftime_vcpu_slots());
-	REQUIRE(slots > real);
+	const int slots = bpftime_possible_cpus();
 	// CPU 0's slot recovers from the dead holder; while it is held, CPU 0
-	// gets only the extra slots, then nothing.
+	// borrows the next slots in order, and with every slot held gets none.
 	std::vector<int> leased{ shm.try_lease_vcpu(0) };
 	REQUIRE(leased[0] == 0);
-	for (int i = real; i < slots; ++i) {
-		const int s = shm.try_lease_vcpu(0);
-		REQUIRE((s >= real && s < slots));
-		leased.push_back(s);
+	for (int i = 1; i < slots; ++i) {
+		leased.push_back(shm.try_lease_vcpu(0));
+		REQUIRE(leased.back() == i);
 	}
 	uint64_t skips_before = get_shm_trylock_skip_count();
 	REQUIRE(shm.try_lease_vcpu(0) == -1);
 	REQUIRE(get_shm_trylock_skip_count() == skips_before + 1);
-	// Other CPUs' slots were never borrowed.
-	if (real > 1) {
-		REQUIRE(shm.try_lease_vcpu(1) == 1);
-		leased.push_back(1);
-	}
 	for (int s : leased)
 		shm.release_vcpu(s);
 
@@ -458,13 +448,13 @@ TEST_CASE("vCPU slot recovers after holder process dies mid-BPF execution",
 	REQUIRE(bpftime_get_perf_output_cpu() == cpu);
 	REQUIRE(my_sched_getcpu() == cpu);
 	bpftime_leave_bpf_exec();
-	// With its own slot taken it runs on an extra slot, and every CPU id it
+	// With its own slot taken it borrows the next one, and every CPU id it
 	// sees (per-CPU maps, bpf_get_smp_processor_id, perf output) is that slot.
 	REQUIRE(shm.try_lease_vcpu(cpu) == cpu);
 	REQUIRE(bpftime_enter_bpf_exec());
 	const int vcpu = my_sched_getcpu();
-	REQUIRE(vcpu >= real);
-	REQUIRE(bpftime_get_perf_output_cpu() == vcpu);
+	REQUIRE(vcpu == (slots > 1 ? (cpu + 1) % slots : -1));
+	REQUIRE(bpftime_get_perf_output_cpu() == (vcpu >= 0 ? vcpu : cpu));
 	REQUIRE(bpftime_get_current_cpu() == cpu);
 	bpftime_leave_bpf_exec();
 	shm.release_vcpu(cpu);

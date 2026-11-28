@@ -28,18 +28,14 @@
     #error "Unsupported platform"
 #endif
 
-// The CPU id a BPF program sees is its vCPU: my_sched_getcpu() leases one for
-// the outermost exec (per-CPU maps, bpf_get_smp_processor_id), and perf output
-// uses the leased vCPU, else the CPU's own slot id, its real CPU.
+// The CPU id a BPF program sees is its leased slot: my_sched_getcpu() leases
+// one for the outermost exec (per-CPU maps, bpf_get_smp_processor_id), its own
+// CPU's or else the next free one, and perf output uses it, else the real CPU.
 int my_sched_getcpu();
 int bpftime_get_perf_output_cpu();
 // The real CPU the thread runs on, cached for the outermost BPF exec.
 int bpftime_get_current_cpu();
 int bpftime_possible_cpus();
-// ceil(possible CPUs * BPFTIME_VCPU_RATIO) + 1 slots; the ratio defaults to 1.2.
-int bpftime_vcpu_slots();
-// Columns of a new per-CPU map: the session's vCPU slots, else possible CPUs.
-int bpftime_percpu_columns();
 bool bpftime_enter_bpf_exec() noexcept;
 void bpftime_leave_bpf_exec() noexcept;
 

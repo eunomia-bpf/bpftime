@@ -67,8 +67,8 @@ struct bpftime_vcpu_locks {
 #if BPFTIME_ENABLE_MPK
 	std::byte mpk_head_pad[4096];
 #endif
-	// Slots [0, real_ncpu) belong to their CPU; [real_ncpu, ncpu) are extra.
-	uint32_t ncpu = bpftime_vcpu_slots(), real_ncpu = bpftime_possible_cpus();
+	// One slot per possible CPU.
+	uint32_t ncpu = bpftime_possible_cpus();
 	robust_shm_recovering_mutex locks[BPFTIME_MAX_CPU_COUNT];
 #if BPFTIME_ENABLE_MPK
 	std::byte mpk_tail_pad[4096];
@@ -279,23 +279,13 @@ class bpftime_shm {
 	// Returns UINT64_MAX if the epoch couldn't be stabilized within max_tries.
 	std::uint64_t read_stable_epoch_seq(int max_tries = 200) const;
 	bool has_vcpu_locks() const noexcept { return vcpu_locks != nullptr; }
-	int vcpu_count() const noexcept
-	{
-		return vcpu_locks ? static_cast<int>(vcpu_locks->ncpu) : 0;
-	}
-	// The CPU's own slot first; if a preempted holder still has it, an extra
-	// slot from cpu % extras on. Other CPUs' slots are never borrowed.
+	// The CPU's own slot first; if a preempted holder still has it, the
+	// next free slot after it, which belongs to another CPU.
 	int try_lease_vcpu(int cpu) noexcept
 	{
-		if (!vcpu_locks)
-			return -1;
-		const int real = (int)vcpu_locks->real_ncpu;
-		if (cpu >= 0 && cpu < real && vcpu_locks->locks[cpu].try_lock())
-			return cpu;
-		const int extra = try_lease_shm_slot(vcpu_locks->locks + real,
-						     (int)vcpu_locks->ncpu - real,
-						     cpu);
-		return extra < 0 ? -1 : real + extra;
+		return vcpu_locks ? try_lease_shm_slot(vcpu_locks->locks,
+						      (int)vcpu_locks->ncpu, cpu) :
+				    -1;
 	}
 	void release_vcpu(int vcpu) noexcept
 	{
