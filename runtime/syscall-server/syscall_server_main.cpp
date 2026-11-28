@@ -422,6 +422,30 @@ extern "C" int open(const char *file, int oflag, ...)
 						    (unsigned short)mode); },
 		call_original, safe_ptr_str(file), oflag, mode);
 }
+// libbpf and other LFS builds (_FILE_OFFSET_BITS=64) call the 64-bit names;
+// route them through the same handlers so redirected files reach them too.
+extern "C" int open64(const char *file, int oflag, ...)
+{
+	mode_t mode = 0;
+	if (open_flags_have_mode(oflag)) {
+		va_list args;
+		va_start(args, oflag);
+		mode = va_arg(args, mode_t);
+		va_end(args);
+	}
+	return open(file, oflag, mode);
+}
+extern "C" int openat64(int fd, const char *file, int oflag, ...)
+{
+	mode_t mode = 0;
+	if (open_flags_have_mode(oflag)) {
+		va_list args;
+		va_start(args, oflag);
+		mode = va_arg(args, mode_t);
+		va_end(args);
+	}
+	return openat(fd, file, oflag, mode);
+}
 extern "C" FILE *fopen(const char *pathname, const char *flags)
 {
 	auto call_original = [&]() {
